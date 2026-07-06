@@ -2,7 +2,7 @@
 set "SDK=C:\Users\msi\AppData\Local\Android\Sdk"
 set "EMU=%SDK%\emulator\emulator.exe"
 set "ADB=%SDK%\platform-tools\adb.exe"
-set "LOG=C:\Users\msi\develop\podchet_kalloriy\launch-app.log"
+set "LOG=%~dp0launch-app.log"
 
 > "%LOG%" echo [%DATE% %TIME%] Launch sequence
 
@@ -32,11 +32,11 @@ ping -n 20 127.0.0.1 >nul
 >> "%LOG%" echo === backend health ===
 curl -s http://127.0.0.1:8000/health >> "%LOG%" 2>&1 || (
   >> "%LOG%" echo Starting backend...
-  start "Backend" cmd /c "cd /d C:\Users\msi\develop\podchet_kalloriy\backend && .venv\Scripts\uvicorn.exe main:app --host 0.0.0.0 --port 8000"
+  start "Backend" cmd /c "cd /d %~dp0backend && .venv\Scripts\uvicorn.exe main:app --host 0.0.0.0 --port 8000"
   ping -n 8 127.0.0.1 >nul
 )
 
 >> "%LOG%" echo.
 >> "%LOG%" echo === flutter run ===
-cd /d C:\Users\msi\develop\podchet_kalloriy\mobile
+cd /d %~dp0mobile
 C:\Users\msi\develop\flutter\bin\flutter.bat run -d emulator-5554 >> "%LOG%" 2>&1

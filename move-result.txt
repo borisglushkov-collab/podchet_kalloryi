@@ -1,0 +1,12 @@
+Проект перенесён: 2026-07-06
+
+Источник: C:\Users\msi\develop\podchet_kalloriy
+Назначение: D:\ucheba\podchet_kalloriy
+
+Скопировано: ~14889 файлов, ~3.3 GB (включая .git, backend\.venv, mobile\build)
+Пути в .bat-файлах обновлены на относительные (%~dp0).
+
+Если папка на C: ещё есть — удалите вручную после закрытия старого workspace:
+  Remove-Item -Recurse -Force 'C:\Users\msi\develop\podchet_kalloriy'
+
+Откройте в Cursor: File → Open Folder → D:\ucheba\podchet_kalloriy

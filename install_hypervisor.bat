@@ -1,7 +1,7 @@
 @echo off
 set "SDK=C:\Users\msi\AppData\Local\Android\Sdk"
 set "SDKMGR=%SDK%\cmdline-tools\latest\bin\sdkmanager.bat"
-set "LOG=C:\Users\msi\develop\podchet_kalloriy\hypervisor-install.log"
+set "LOG=%~dp0hypervisor-install.log"
 
 echo Installing hypervisor driver... > "%LOG%"
 echo y | "%SDKMGR%" "extras;google;Android_Emulator_Hypervisor_Driver" >> "%LOG%" 2>&1
