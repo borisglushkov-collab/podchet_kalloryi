@@ -1,0 +1,10 @@
+.env
+backend/.env
+backend/.venv
+__pycache__
+mobile/build
+mobile/.dart_tool
+*.apk
+podchet_backend_deploy.zip
+backend/deploy/*-output.txt
+deploy.log
