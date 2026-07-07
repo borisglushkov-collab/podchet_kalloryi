@@ -41,9 +41,12 @@ final mealSuggestionProvider =
   final profile = await ref.watch(profileProvider.future);
   final targets = await ref.watch(dailyTargetsProvider.future);
   final consumed = await ref.watch(dailyTotalsProvider(date).future);
+  final entries = await ref.watch(dailyEntriesProvider(date).future);
   if (profile == null || targets == null) {
     throw Exception('Заполните профиль');
   }
+  final mealConsumed = NutritionCalculator.consumedForMeal(entries, mealType);
+  final mealsConsumed = NutritionCalculator.consumedByMeal(entries);
   final prefs = profile.preferences
       .split(',')
       .map((e) => e.trim())
@@ -53,6 +56,8 @@ final mealSuggestionProvider =
         mealType: mealType,
         consumed: consumed,
         targets: targets,
+        mealConsumed: mealConsumed,
+        mealsConsumed: mealsConsumed,
         preferences: prefs,
       );
 });

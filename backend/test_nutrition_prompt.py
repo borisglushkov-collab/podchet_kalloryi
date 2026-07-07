@@ -2,7 +2,13 @@
 
 import json
 
-from nutrition_prompt import build_user_prompt, parse_ai_response
+from nutrition_prompt import (
+    build_top_up_summary_fallback,
+    build_user_prompt,
+    compute_meal_plan,
+    parse_ai_response,
+    priority_macros,
+)
 
 
 def test_build_user_prompt():
@@ -10,12 +16,53 @@ def test_build_user_prompt():
         "dinner",
         {"calories": 1200, "protein": 45, "fat": 40, "carbs": 130},
         {"calories": 2000, "protein": 120, "fat": 65, "carbs": 250},
+        {"calories": 200, "protein": 10, "fat": 8, "carbs": 20},
         ["без свинины"],
         "Москва",
+        meals_consumed={
+            "breakfast": {"calories": 331, "protein": 20, "fat": 21, "carbs": 13},
+            "lunch": {"calories": 700, "protein": 45, "fat": 25, "carbs": 60},
+            "dinner": {"calories": 200, "protein": 10, "fat": 8, "carbs": 20},
+            "snack": {"calories": 0, "protein": 0, "fat": 0, "carbs": 0},
+        },
     )
     assert "ужин" in prompt.lower()
-    assert "1200" in prompt
+    assert "добить" in prompt.lower()
+    assert "перенос" in prompt.lower()
     assert "без свинины" in prompt
+
+
+def test_meal_plan_rollover_to_last_meal():
+    plan = compute_meal_plan(
+        {"calories": 2000, "protein": 150, "fat": 90, "carbs": 158},
+        {
+            "breakfast": {"calories": 331, "protein": 20, "fat": 21, "carbs": 13},
+            "lunch": {"calories": 700, "protein": 45, "fat": 25, "carbs": 60},
+            "dinner": {"calories": 600, "protein": 40, "fat": 20, "carbs": 50},
+            "snack": {"calories": 156, "protein": 44, "fat": 10, "carbs": 20},
+        },
+    )
+    assert plan["breakfast"]["deficit"]["calories"] == 169
+    assert plan["lunch"]["rollover_in"]["calories"] == 169
+    assert plan["snack"]["deficit"]["calories"] == 213
+    assert plan["snack"]["is_last"] is True
+
+
+def test_top_up_summary_fallback_last_meal():
+    summary = build_top_up_summary_fallback(
+        "перекус",
+        {"calories": 113, "protein": 1, "fat": 14, "carbs": 15},
+        rollover_in={"calories": 69, "protein": 0, "fat": 5, "carbs": 3},
+        is_last=True,
+    )
+    assert "переноса" in summary.lower()
+    assert "113" in summary
+
+
+def test_priority_macros():
+    result = priority_macros({"calories": 100, "protein": 40, "fat": 5, "carbs": 10})
+    assert result[0] == "калории"
+    assert "белки" in result
 
 
 def test_parse_ai_response_plain_json():

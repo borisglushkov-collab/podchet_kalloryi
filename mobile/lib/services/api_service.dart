@@ -54,6 +54,8 @@ class ApiService {
     required MealType mealType,
     required Macros consumed,
     required Macros targets,
+    required Macros mealConsumed,
+    required Map<MealType, Macros> mealsConsumed,
     List<String> preferences = const [],
     String? city,
   }) async {
@@ -65,6 +67,11 @@ class ApiService {
         'meal_type': mealType.apiValue,
         'consumed': consumed.toJson(),
         'targets': targets.toJson(),
+        'meal_consumed': mealConsumed.toJson(),
+        'meals_consumed': {
+          for (final entry in mealsConsumed.entries)
+            entry.key.apiValue: entry.value.toJson(),
+        },
         'preferences': preferences,
         'city': resolvedCity,
       },

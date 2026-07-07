@@ -23,7 +23,7 @@ class AppDatabase {
     final path = await _databasePath();
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE user_profile (
@@ -34,7 +34,12 @@ class AppDatabase {
             weight_kg REAL NOT NULL,
             activity TEXT NOT NULL,
             goal TEXT NOT NULL,
-            preferences TEXT NOT NULL DEFAULT ''
+            preferences TEXT NOT NULL DEFAULT '',
+            use_custom_targets INTEGER NOT NULL DEFAULT 0,
+            target_calories REAL,
+            target_protein REAL,
+            target_fat REAL,
+            target_carbs REAL
           )
         ''');
         await db.execute('''
@@ -50,6 +55,25 @@ class AppDatabase {
             carbs REAL NOT NULL
           )
         ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            'ALTER TABLE user_profile ADD COLUMN use_custom_targets INTEGER NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE user_profile ADD COLUMN target_calories REAL',
+          );
+          await db.execute(
+            'ALTER TABLE user_profile ADD COLUMN target_protein REAL',
+          );
+          await db.execute(
+            'ALTER TABLE user_profile ADD COLUMN target_fat REAL',
+          );
+          await db.execute(
+            'ALTER TABLE user_profile ADD COLUMN target_carbs REAL',
+          );
+        }
       },
     );
   }
