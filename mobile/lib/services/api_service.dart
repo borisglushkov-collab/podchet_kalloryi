@@ -2,6 +2,8 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
+import '../utils/search_query_utils.dart';
+import 'local_food_fallback.dart';
 
 class SettingsService {
   static const _backendUrlKey = 'backend_url';
@@ -71,32 +73,45 @@ class ApiService {
   }
 }
 
-class OpenFoodFactsService {
+class FoodSearchService {
   final Dio _dio = Dio(
     BaseOptions(
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 15),
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 30),
     ),
   );
 
   Future<List<FoodSearchResult>> search(String query) async {
     if (query.trim().length < 2) return [];
-    final baseUrl = await SettingsService.getBackendUrl();
-    final response = await _dio.get(
-      '$baseUrl/api/search-food',
-      queryParameters: {'query': query},
-    );
-    final items = response.data['items'] as List<dynamic>? ?? [];
-    return items.map((raw) {
-      final map = raw as Map<String, dynamic>;
-      return FoodSearchResult(
-        name: map['name'] as String,
-        brand: map['brand'] as String?,
-        kcalPer100g: (map['kcal_per_100g'] as num).toDouble(),
-        proteinPer100g: (map['protein_per_100g'] as num?)?.toDouble() ?? 0,
-        fatPer100g: (map['fat_per_100g'] as num?)?.toDouble() ?? 0,
-        carbsPer100g: (map['carbs_per_100g'] as num?)?.toDouble() ?? 0,
+    final q = normalizeSearchQuery(query);
+    try {
+      final baseUrl = await SettingsService.getBackendUrl();
+      final response = await _dio.get(
+        '$baseUrl/api/search-food',
+        queryParameters: {'query': q},
       );
-    }).toList();
+      final items = response.data['items'] as List<dynamic>? ?? [];
+      final remote = items.map((raw) {
+        final map = raw as Map<String, dynamic>;
+        return FoodSearchResult(
+          name: map['name'] as String,
+          brand: map['brand'] as String?,
+          kcalPer100g: _num(map['kcal_per_100g']),
+          proteinPer100g: _num(map['protein_per_100g'] ?? map['proteins_per_100g']),
+          fatPer100g: _num(map['fat_per_100g']),
+          carbsPer100g: _num(map['carbs_per_100g'] ?? map['carbohydrates_per_100g']),
+        );
+      }).toList();
+      return mergeSearchResults(remote: remote, query: q);
+    } catch (_) {
+      final local = searchLocalFallback(q);
+      if (local.isNotEmpty) return local;
+      rethrow;
+    }
+  }
+
+  double _num(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse('$value') ?? 0;
   }
 }

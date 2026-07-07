@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 set "EMU=C:\Users\msi\AppData\Local\Android\Sdk\emulator\emulator.exe"
 set "ADB=C:\Users\msi\AppData\Local\Android\Sdk\platform-tools\adb.exe"
-set "OUT=C:\Users\msi\develop\podchet_kalloriy\emulator-start-result.txt"
+set "OUT=%~dp0emulator-start-result.txt"
 
 > "%OUT%" echo [%DATE% %TIME%] Emulator launcher
 >> "%OUT%" echo EMU path: %EMU%

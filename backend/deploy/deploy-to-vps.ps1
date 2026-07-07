@@ -10,12 +10,21 @@ param(
 
 $ErrorActionPreference = "Stop"
 $BackendRoot = Split-Path $PSScriptRoot -Parent
-$Staging = Join-Path $env:TEMP "podchet_backend_staging"
+$ProjectRoot = Split-Path $BackendRoot -Parent
+. (Join-Path $ProjectRoot "config\project-paths.ps1") -ProjectRoot $ProjectRoot
+
+$Staging = Join-Path $ProjectStaging "podchet_backend_staging"
+$SshArgs = { param([string[]]$Extra = @()) Get-ProjectSshArgs -Extra $Extra }
 
 Write-Host "=== Podchet Kalloriy: деплой на $Server ===" -ForegroundColor Cyan
+Write-Host "SSH-ключ: $ProjectSshDir" -ForegroundColor DarkGray
 
 if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) {
     throw "ssh не найден. Установите OpenSSH Client (Параметры Windows -> Приложения -> Дополнительные компоненты)."
+}
+
+if (-not (Test-Path (Join-Path $ProjectSshDir "id_ed25519"))) {
+    throw "Нет SSH-ключа: $ProjectSshDir\id_ed25519"
 }
 
 # Проверка .env локально (ключ уйдёт на сервер)
@@ -28,35 +37,42 @@ Write-Host "Подготовка файлов..." -ForegroundColor Yellow
 if (Test-Path $Staging) { Remove-Item $Staging -Recurse -Force }
 New-Item -ItemType Directory -Path $Staging | Out-Null
 
-$exclude = @('.venv', '__pycache__', '*.pyc')
 Get-ChildItem $BackendRoot -Force | Where-Object {
     $_.Name -notin @('.venv', '__pycache__')
 } | ForEach-Object {
     Copy-Item $_.FullName -Destination $Staging -Recurse -Force
 }
+# dot-файлы вроде .env.example иногда не попадают в scp с Windows — копируем явно
+foreach ($dot in @('.env.example', '.env')) {
+    $p = Join-Path $BackendRoot $dot
+    if (Test-Path $p) { Copy-Item $p -Destination $Staging -Force }
+}
 
 Write-Host "Копирование на сервер (scp)..." -ForegroundColor Yellow
-$sshTest = ssh -o BatchMode=yes -o ConnectTimeout=15 $Server "echo ok" 2>&1
+$sshBase = & $SshArgs @("-o", "BatchMode=yes", "-o", "ConnectTimeout=15")
+$sshTest = & ssh @sshBase $Server "echo ok" 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Host "SSH недоступен: $sshTest" -ForegroundColor Red
     Write-Host "Используйте pack-for-vps.ps1 и консоль Timeweb (см. DEPLOY-VPS.md)" -ForegroundColor Yellow
     exit 1
 }
-ssh -o ConnectTimeout=20 $Server "mkdir -p $RemoteDir"
-scp -r -o ConnectTimeout=20 "$Staging\*" "${Server}:${RemoteDir}/"
+$sshRun = & $SshArgs @("-o", "ConnectTimeout=20")
+& ssh @sshRun $Server "mkdir -p $RemoteDir"
+& scp @sshRun -r "$Staging\*" "${Server}:${RemoteDir}/"
 
 Write-Host "Установка на сервере..." -ForegroundColor Yellow
-$remoteCmd = @"
+$remoteCmd = (@"
 set -e
 rsync -a --delete --exclude '.venv' --exclude '__pycache__' $RemoteDir/ /opt/podchet_kalloriy/backend/ 2>/dev/null || {
   mkdir -p /opt/podchet_kalloriy
   rsync -a --delete --exclude '.venv' --exclude '__pycache__' $RemoteDir/ /opt/podchet_kalloriy/backend/
 }
 cd /opt/podchet_kalloriy/backend
+sed -i 's/\r$//' deploy/install-vps.sh
 bash deploy/install-vps.sh
-"@
+"@) -replace "`r`n", "`n"
 
-ssh -o ConnectTimeout=20 $Server $remoteCmd
+$remoteCmd | & ssh @sshRun "bash -s"
 
 Write-Host ""
 Write-Host "=== Деплой завершён ===" -ForegroundColor Green

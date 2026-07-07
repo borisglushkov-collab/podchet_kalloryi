@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
     cursor_client = None
 
 
-app = FastAPI(title="Podchet Kalloriy API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Podchet Kalloriy API", version="1.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

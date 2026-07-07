@@ -7,7 +7,7 @@ import '../services/api_service.dart';
 import '../services/nutrition_calculator.dart';
 
 final apiServiceProvider = Provider((ref) => ApiService());
-final offServiceProvider = Provider((ref) => OpenFoodFactsService());
+final foodSearchServiceProvider = Provider((ref) => FoodSearchService());
 
 final profileProvider = FutureProvider<UserProfile?>((ref) async {
   return AppDatabase.getProfile();

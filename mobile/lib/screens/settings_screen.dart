@@ -73,7 +73,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             decoration: const InputDecoration(
               labelText: 'Адрес сервера',
               hintText: 'http://5.42.111.122',
-              helperText: 'VPS Timeweb или локально: http://127.0.0.1:8000',
+              helperText: 'VPS (nginx, порт 80) или локально: http://127.0.0.1:8000',
             ),
           ),
           const SizedBox(height: 12),

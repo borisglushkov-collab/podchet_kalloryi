@@ -192,6 +192,12 @@ class _MealSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final totalKcal = entries.fold(0.0, (sum, e) => sum + e.calories);
+    final totalProtein = entries.fold(0.0, (sum, e) => sum + e.protein);
+    final totalFat = entries.fold(0.0, (sum, e) => sum + e.fat);
+    final totalCarbs = entries.fold(0.0, (sum, e) => sum + e.carbs);
+    final macroSummary = (totalProtein > 0 || totalFat > 0 || totalCarbs > 0)
+        ? ' · Б ${totalProtein.toStringAsFixed(0)} · Ж ${totalFat.toStringAsFixed(0)} · У ${totalCarbs.toStringAsFixed(0)}'
+        : '';
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -199,7 +205,7 @@ class _MealSection extends StatelessWidget {
         children: [
           ListTile(
             title: Text(mealType.label),
-            subtitle: Text('${totalKcal.toStringAsFixed(0)} ккал'),
+            subtitle: Text('${totalKcal.toStringAsFixed(0)} ккал$macroSummary'),
             trailing: IconButton(
               icon: const Icon(Icons.add_circle_outline),
               onPressed: () async {
