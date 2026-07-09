@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Макеты дизайна — Подсчёт калорий</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0f12;
+      color: #e8e8ec;
+      padding: 32px 24px 64px;
+      line-height: 1.4;
+    }
+    h1 { font-size: 28px; margin-bottom: 8px; }
+    .subtitle { color: #9a9aa8; margin-bottom: 40px; max-width: 720px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 40px;
+      align-items: start;
+    }
+    .variant { display: flex; flex-direction: column; gap: 16px; }
+    .variant h2 { font-size: 18px; }
+    .variant .ref { font-size: 13px; color: #7a7a8a; }
+    .phone {
+      width: 300px;
+      border-radius: 32px;
+      border: 2px solid #2a2a34;
+      background: #18181f;
+      overflow: hidden;
+      box-shadow: 0 24px 48px rgba(0,0,0,.4);
+    }
+    .notch {
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .notch div { width: 72px; height: 5px; background: #2a2a34; border-radius: 3px; }
+    .screen { padding: 12px 16px 0; min-height: 560px; font-size: 13px; }
+    .nav {
+      display: flex;
+      justify-content: space-around;
+      padding: 10px 8px 18px;
+      border-top: 1px solid #2a2a34;
+      background: #14141a;
+      font-size: 11px;
+      color: #7a7a8a;
+    }
+    .nav .fab {
+      width: 44px; height: 44px; border-radius: 22px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; font-weight: 700; color: #fff;
+      margin-top: -8px;
+    }
+    .nav .active { color: #6bc9ff; font-weight: 600; }
+
+    /* shared */
+    .row { display: flex; align-items: center; justify-content: space-between; }
+    .muted { color: #7a7a8a; font-size: 12px; }
+    .divider { height: 1px; background: #2a2a34; margin: 8px 0; }
+    .chip { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+    .btn { padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; border: none; cursor: default; }
+    .btn-primary { background: #3b82f6; color: #fff; }
+    .btn-ghost { background: transparent; color: #9a9aa8; border: 1px solid #2a2a34; }
+    .card { background: #1e1e28; border-radius: 14px; padding: 14px; margin: 10px 0; }
+    .card-filled { background: #242430; }
+
+    /* A: MFP */
+    .ring-wrap { display: flex; justify-content: center; padding: 16px 0 8px; }
+    .ring {
+      width: 130px; height: 130px; border-radius: 50%;
+      border: 12px solid #2a2a34;
+      border-top-color: #0072ce;
+      border-right-color: #0072ce;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .ring .num { font-size: 32px; font-weight: 700; line-height: 1; }
+    .macros-row { display: flex; justify-content: center; gap: 28px; margin: 8px 0; }
+    .macro-col { text-align: center; }
+    .macro-col .val { font-weight: 700; font-size: 15px; }
+    .macro-col .b { color: #4a90d9; }
+    .macro-col .f { color: #e8a04c; }
+    .macro-col .c { color: #a78bfa; }
+    .bars { display: flex; gap: 4px; margin-bottom: 12px; }
+    .bars div { flex: 1; height: 4px; border-radius: 2px; background: #2a2a34; overflow: hidden; }
+    .bars div span { display: block; height: 100%; border-radius: 2px; }
+    .meal { padding: 8px 0; }
+    .meal-head { display: flex; align-items: center; gap: 8px; }
+    .dot { width: 10px; height: 10px; border-radius: 5px; flex-shrink: 0; }
+    .meal-item { padding-left: 18px; color: #9a9aa8; font-size: 12px; margin-top: 4px; }
+    .plus-btn { width: 26px; height: 26px; border-radius: 13px; border: 1px solid #3a3a48; display: flex; align-items: center; justify-content: center; color: #7a7a8a; font-size: 16px; }
+
+    /* B: Yazio */
+    .streak { background: #242430; padding: 6px 12px; border-radius: 12px; }
+    .streak span { color: #ff6b35; font-weight: 700; }
+    .week { display: flex; justify-content: space-between; margin: 12px 0; font-size: 11px; }
+    .day { text-align: center; }
+    .day-circle { width: 30px; height: 30px; border-radius: 15px; background: #2a2a34; margin: 4px auto 0; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px; }
+    .day-circle.today { background: #6bcb77; color: #0a1a0c; border: 2px solid #6bcb77; }
+    .day-circle.done { background: #2d4a32; color: #8fdf96; }
+    .big-kcal { font-size: 40px; font-weight: 800; color: #6bcb77; line-height: 1; }
+    .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+    .tile { background: #1e1e28; border-radius: 12px; padding: 12px; }
+    .tile.current { background: #242430; outline: 1px solid #3a4a3c; }
+    .tile .bar { height: 4px; background: #2a2a34; border-radius: 2px; margin-top: 8px; overflow: hidden; }
+    .tile .bar span { display: block; height: 100%; border-radius: 2px; }
+    .water { display: flex; gap: 4px; }
+    .water div { width: 10px; height: 18px; border-radius: 3px; background: #2a2a34; }
+    .water div.on { background: #4ecdc4; }
+
+    /* C: Hybrid */
+    .hero { display: flex; gap: 14px; align-items: center; }
+    .ring-sm {
+      width: 100px; height: 100px; border-radius: 50%; flex-shrink: 0;
+      border: 9px solid #2a2a34;
+      border-top-color: #2ecc9a; border-right-color: #2ecc9a;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .ring-sm .num { font-size: 22px; font-weight: 700; }
+    .dots { display: flex; gap: 3px; }
+    .dots span { width: 7px; height: 7px; border-radius: 4px; background: #2a2a34; }
+    .dots span.on { background: #4a90d9; }
+    .grid4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; text-align: center; margin: 10px 0; }
+    .grid4 .g { background: #1e1e28; border-radius: 10px; padding: 8px 4px; }
+    .grid4 .gv { font-weight: 700; font-size: 14px; }
+    .accordion { padding: 8px 0; }
+    .acc-head { display: flex; align-items: center; gap: 8px; cursor: default; }
+    .acc-body { padding: 6px 0 6px 20px; color: #9a9aa8; font-size: 12px; }
+    .ai-panel { background: #1a2a22; border: 1px solid #2a4a34; border-radius: 14px; padding: 14px; margin-top: 10px; }
+
+    .notes { margin-top: 12px; font-size: 12px; color: #7a7a8a; max-width: 300px; }
+    .notes li { margin: 4px 0 4px 16px; }
+  </style>
+</head>
+<body>
+  <h1>Макеты дизайна</h1>
+  <p class="subtitle">Три варианта главного экрана «Дневник питания». Откройте этот файл в браузере — двойной клик по preview.html.</p>
+
+  <div class="grid">
+    <!-- A: MFP -->
+    <div class="variant">
+      <h2>A — MyFitnessPal / FatSecret</h2>
+      <p class="ref">Классический дневник, данные важнее декора</p>
+      <div class="phone">
+        <div class="notch"><div></div></div>
+        <div class="screen">
+          <div class="row muted" style="margin-bottom:12px">
+            <span>&lt;</span><span style="font-weight:600;color:#e8e8ec">Среда, 8 июля</span><span>&gt;</span>
+          </div>
+          <div class="ring-wrap">
+            <div class="ring">
+              <div class="num">1240</div>
+              <div class="muted">осталось</div>
+            </div>
+          </div>
+          <div class="macros-row">
+            <div class="macro-col"><div class="muted">Белки</div><div class="val b">85г</div></div>
+            <div class="macro-col"><div class="muted">Жиры</div><div class="val f">42г</div></div>
+            <div class="macro-col"><div class="muted">Углев.</div><div class="val c">98г</div></div>
+          </div>
+          <div class="bars">
+            <div><span style="width:71%;background:#4a90d9"></span></div>
+            <div><span style="width:65%;background:#e8a04c"></span></div>
+            <div><span style="width:54%;background:#a78bfa"></span></div>
+          </div>
+          <div class="card card-filled" style="padding:10px 14px">
+            <div class="row"><div><div class="muted">ИИ-подсказка</div><div style="font-size:12px">До цели: 340 ккал на ужин</div></div><button class="btn btn-ghost">Открыть</button></div>
+          </div>
+          <div style="margin-top:12px;font-weight:600">Приёмы пищи</div>
+          <div class="meal">
+            <div class="meal-head"><div class="dot" style="background:#e8c84c"></div><span style="flex:1;font-weight:600">Завтрак</span><span class="muted">320/400</span><div class="plus-btn">+</div></div>
+            <div class="meal-item">Омлет 2 яйца · 180 ккал</div>
+            <div class="meal-item">Кофе с молоком · 140 ккал</div>
+          </div>
+          <div class="divider"></div>
+          <div class="meal">
+            <div class="meal-head"><div class="dot" style="background:#e8a04c"></div><span style="flex:1;font-weight:600">Обед</span><span class="muted">580/600</span><div class="plus-btn">+</div></div>
+            <div class="meal-item">Куриный суп · 280 ккал</div>
+          </div>
+          <div class="divider"></div>
+          <div class="meal">
+            <div class="meal-head"><div class="dot" style="background:#a78bfa"></div><span style="flex:1;font-weight:600">Ужин</span><span class="muted">0/500</span><div class="plus-btn">+</div></div>
+            <div class="meal-item">Нет записей</div>
+          </div>
+        </div>
+        <div class="nav">
+          <span class="active">Дневник</span><span>Поиск</span>
+          <div class="fab" style="background:#0072ce">+</div>
+          <span>Отчёт</span><span>Профиль</span>
+        </div>
+      </div>
+      <ul class="notes">
+        <li>Кольцо — единственный герой</li>
+        <li>Плоский список без карточек</li>
+        <li>Синий акцент #0072CE</li>
+      </ul>
+    </div>
+
+    <!-- B: Yazio -->
+    <div class="variant">
+      <h2>B — Yazio / Noom / Lose It!</h2>
+      <p class="ref">Wellness + геймификация, мотивация</p>
+      <div class="phone">
+        <div class="notch"><div></div></div>
+        <div class="screen">
+          <div class="row">
+            <div><div style="font-weight:600">Привет, Алексей</div><div class="muted">Твой план на сегодня</div></div>
+            <div class="streak"><span>12</span> дней</div>
+          </div>
+          <div class="week">
+            <div class="day"><div>Пн</div><div class="day-circle done">6</div></div>
+            <div class="day"><div>Вт</div><div class="day-circle done">7</div></div>
+            <div class="day"><div style="color:#6bcb77;font-weight:600">Ср</div><div class="day-circle today">8</div></div>
+            <div class="day"><div>Чт</div><div class="day-circle">9</div></div>
+            <div class="day"><div>Пт</div><div class="day-circle">10</div></div>
+            <div class="day"><div>Сб</div><div class="day-circle">11</div></div>
+            <div class="day"><div>Вс</div><div class="day-circle">12</div></div>
+          </div>
+          <div class="card card-filled">
+            <div class="row"><span class="muted">Осталось сегодня</span><span class="chip" style="background:#1a3a22;color:#6bcb77">Оценка 72/100</span></div>
+            <div class="big-kcal" style="margin:8px 0 2px">1240</div>
+            <div class="muted">ккал до цели</div>
+            <div style="margin-top:10px;height:6px;background:#2a2a34;border-radius:3px;overflow:hidden"><div style="width:38%;height:100%;background:#6bcb77;border-radius:3px"></div></div>
+            <div class="row muted" style="margin-top:4px"><span>38% дня</span><span>760 из 2000</span></div>
+          </div>
+          <div class="card">
+            <div class="row" style="margin-bottom:8px"><span style="font-weight:600">Совет дня</span><span class="chip" style="background:#1a2a3a;color:#6bc9ff">Коуч</span></div>
+            <div style="font-size:12px;color:#b0b0bc;margin-bottom:10px">До обеда 35г белка. Куриная грудка с гречкой — 420 ккал.</div>
+            <button class="btn btn-primary" style="background:#6bcb77">Добавить в обед</button>
+          </div>
+          <div style="font-weight:600;margin:10px 0 6px">Приёмы пищи</div>
+          <div class="tiles">
+            <div class="tile"><div class="muted">Завтрак</div><div style="font-size:18px;font-weight:700;margin:4px 0">320</div><div class="muted">/ 400</div><div class="bar"><span style="width:80%;background:#6bcb77"></span></div><span class="chip" style="background:#1a3a22;color:#6bcb77;margin-top:6px">Готово</span></div>
+            <div class="tile"><div class="muted">Обед</div><div style="font-size:18px;font-weight:700;margin:4px 0">580</div><div class="muted">/ 600</div><div class="bar"><span style="width:97%;background:#6bcb77"></span></div><span class="chip" style="background:#1a3a22;color:#6bcb77;margin-top:6px">Готово</span></div>
+            <div class="tile current"><div class="muted">Ужин</div><div style="font-size:18px;font-weight:700;margin:4px 0">0</div><div class="muted">/ 500</div><div class="bar"><span style="width:0%"></span></div><span class="chip" style="background:#1a2a3a;color:#6bc9ff;margin-top:6px">Сейчас</span></div>
+            <div class="tile"><div class="muted">Перекус</div><div style="font-size:18px;font-weight:700;margin:4px 0">0</div><div class="muted">/ 200</div><div class="bar"><span style="width:0%"></span></div></div>
+          </div>
+          <div class="card card-filled">
+            <div class="row"><div><div class="muted">Вода</div><div style="font-weight:600">1.2 / 2.0 л</div></div><div class="water"><div class="on"></div><div class="on"></div><div class="on"></div><div></div><div></div></div></div>
+          </div>
+        </div>
+        <div class="nav">
+          <span class="active" style="color:#6bcb77">Сегодня</span><span>Аналитика</span>
+          <div class="fab" style="background:#6bcb77">+</div>
+          <span>Коуч</span><span>Профиль</span>
+        </div>
+      </div>
+      <ul class="notes">
+        <li>Streak 12 дней + календарь</li>
+        <li>AI как «коуч», не кнопка</li>
+        <li>Плитки приёмов 2×2</li>
+      </ul>
+    </div>
+
+    <!-- C: Hybrid -->
+    <div class="variant">
+      <h2>C — Гибрид Lifesum + Cronometer</h2>
+      <p class="ref">Wellness + pro-dashboard + ИИ</p>
+      <div class="phone">
+        <div class="notch"><div></div></div>
+        <div class="screen">
+          <div class="row" style="margin-bottom:10px">
+            <div><div style="font-weight:600">Доброе утро, Алексей</div><div class="muted">Среда, 8 июля</div></div>
+          </div>
+          <div class="card card-filled hero">
+            <div class="ring-sm"><div class="num">1240</div><div class="muted" style="font-size:10px">ккал</div></div>
+            <div style="flex:1">
+              <div class="muted">Прогресс дня</div>
+              <div style="margin:6px 0;height:6px;background:#2a2a34;border-radius:3px;overflow:hidden"><div style="width:38%;height:100%;background:#2ecc9a"></div></div>
+              <div class="row muted" style="font-size:11px"><span>38%</span><span>760/2000</span></div>
+              <div class="row" style="margin-top:8px;gap:12px">
+                <div><div class="muted" style="font-size:10px">Белки</div><div class="dots"><span class="on"></span><span class="on"></span><span class="on"></span><span></span><span></span></div><div style="font-size:11px;font-weight:600">85/120</div></div>
+                <div><div class="muted" style="font-size:10px">Жиры</div><div class="dots"><span class="on" style="background:#e8a04c"></span><span class="on" style="background:#e8a04c"></span><span></span><span></span><span></span></div><div style="font-size:11px;font-weight:600">42/65</div></div>
+                <div><div class="muted" style="font-size:10px">Углев.</div><div class="dots"><span class="on" style="background:#a78bfa"></span><span class="on" style="background:#a78bfa"></span><span class="on" style="background:#a78bfa"></span><span></span><span></span></div><div style="font-size:11px;font-weight:600">98/180</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="grid4">
+            <div class="g"><div class="gv" style="color:#2ecc9a">1240</div><div class="muted">ккал</div></div>
+            <div class="g"><div class="gv">85</div><div class="muted">Б</div></div>
+            <div class="g"><div class="gv">42</div><div class="muted">Ж</div></div>
+            <div class="g"><div class="gv">98</div><div class="muted">У</div></div>
+          </div>
+          <div class="card">
+            <div class="row" style="margin-bottom:6px"><span style="font-weight:600">Что съесть на обед?</span><span class="chip" style="background:#1a2a3a;color:#6bc9ff">ИИ</span></div>
+            <div style="font-weight:600;font-size:13px">Куриная грудка с гречкой</div>
+            <div class="muted" style="margin:4px 0 8px">420 ккал · Б 38 · ~25 мин</div>
+            <button class="btn btn-primary" style="background:#2ecc9a">Добавить</button>
+          </div>
+          <div class="accordion">
+            <div class="acc-head"><div class="dot" style="background:#e8c84c"></div><span style="flex:1;font-weight:600">Завтрак</span><span class="muted">320/400</span></div>
+            <div class="acc-body">Омлет · 180 ккал</div>
+          </div>
+          <div class="divider"></div>
+          <div class="accordion">
+            <div class="acc-head"><div class="dot" style="background:#e8a04c"></div><span style="flex:1;font-weight:600">Обед</span><span class="chip" style="background:#1a3a22;color:#6bcb77">выполнен</span></div>
+          </div>
+          <div class="divider"></div>
+          <div class="accordion">
+            <div class="acc-head"><div class="dot" style="background:#a78bfa"></div><span style="flex:1;font-weight:600">Ужин</span><span class="muted">0/500</span></div>
+            <div class="acc-body" style="font-style:italic">Перенос: +340 ккал · Б 35</div>
+          </div>
+          <div class="ai-panel">
+            <div style="font-weight:600;margin-bottom:4px">ИИ-ассистент</div>
+            <div class="muted" style="margin-bottom:8px">Дефицит: 340 ккал, 35г белка</div>
+            <div class="row" style="gap:8px"><button class="btn btn-primary" style="background:#2ecc9a">Рецепты</button><button class="btn btn-ghost">Перекрёсток</button></div>
+          </div>
+        </div>
+        <div class="nav">
+          <span class="active" style="color:#2ecc9a">Дневник</span><span>Поиск</span>
+          <div class="fab" style="background:#2ecc9a">+</div>
+          <span>ИИ</span><span>Профиль</span>
+        </div>
+      </div>
+      <ul class="notes">
+        <li>Кольцо + grid 4 метрик</li>
+        <li>Accordion с rollover</li>
+        <li>ИИ-панель внизу</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>
