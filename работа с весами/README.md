@@ -25,7 +25,7 @@ ls "работа с весами"
 | Репозиторий | [borisglushkov-collab/podchet_kalloryi](https://github.com/borisglushkov-collab/podchet_kalloryi) |
 | Ветка разработки | `cursor/chat-podchet-kalloryi-a36d` |
 | Основная ветка | `main` (папка смержена) |
-| Cloud-агент | [Чат в podchet_kalloryi](https://cursor.com/agents/bc-d08cfe81-8032-42ce-acd9-ee7f66c9a36d) |
+| Cloud-агент | **Работа с весами** ([bc-d08cfe81](https://cursor.com/agents/bc-d08cfe81-8032-42ce-acd9-ee7f66c9a36d)) |
 | Рабочая копия | `/workspace` (cloud worktree) |
 
 **Правило:** весь код, документы и черновики из этого cloud-чата сохраняются в `работа с весами/`, а не в корень репозитория.
