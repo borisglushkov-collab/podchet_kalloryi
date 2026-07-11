@@ -1,7 +1,7 @@
 # Установка APK — Health Scale
 
-**Последняя версия:** 1.2.5+8  
-**Файл:** `podchet_kalloriy-1.2.5-health-scale.apk` (~66 MB)
+**Последняя версия:** 1.3.0+9  
+**Файл:** `podchet_kalloriy-1.3.0-9-health-scale.apk` (~66 MB)
 
 ## v1.2.5 — исправлен краш при запуске / весах
 

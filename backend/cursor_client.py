@@ -33,13 +33,23 @@ class CursorClient:
         full_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
         async with httpx.AsyncClient(timeout=60.0) as client:
             if self._agent_id:
-                run_id = await self._create_run(client, self._agent_id, full_prompt)
-                agent_id = self._agent_id
+                try:
+                    run_id = await self._create_run(client, self._agent_id, full_prompt)
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code in {404, 410}:
+                        self._agent_id = None
+                        agent_id, run_id = await self._create_agent(client, full_prompt)
+                        self._agent_id = agent_id
+                    elif exc.response.status_code == 409:
+                        await self._cancel_active_run(client, self._agent_id)
+                        run_id = await self._create_run(client, self._agent_id, full_prompt)
+                    else:
+                        raise
             else:
                 agent_id, run_id = await self._create_agent(client, full_prompt)
                 self._agent_id = agent_id
 
-            return await self._wait_for_result(client, agent_id, run_id)
+            return await self._wait_for_result(client, self._agent_id, run_id)
 
     async def _create_agent(self, client: httpx.AsyncClient, prompt: str) -> tuple[str, str]:
         payload = {
@@ -51,29 +61,81 @@ class CursorClient:
             headers=self._headers(),
             json=payload,
         )
+        if response.status_code == 400:
+            detail = self._error_detail(response)
+            if "limit" in detail.lower() or "upgrade" in detail.lower():
+                agent_id = await self._reuse_existing_agent(client)
+                if agent_id:
+                    self._agent_id = agent_id
+                    run_id = await self._create_run(client, agent_id, prompt)
+                    return agent_id, run_id
         response.raise_for_status()
         data = response.json()
         agent_id = data["agent"]["id"]
-        run_id = data["run"]["id"]
+        run_id = self._parse_run_id(data)
         return agent_id, run_id
+
+    def _parse_run_id(self, data: dict) -> str:
+        run = data.get("run")
+        if isinstance(run, dict) and run.get("id"):
+            return str(run["id"])
+        if data.get("id"):
+            return str(data["id"])
+        raise RuntimeError(f"Cursor API: run id not found in response: {data}")
 
     async def _create_run(
         self, client: httpx.AsyncClient, agent_id: str, prompt: str
     ) -> str:
-        response = await client.post(
-            f"{CURSOR_BASE_URL}/v1/agents/{agent_id}/runs",
-            headers=self._headers(),
-            json={"prompt": {"text": prompt}},
-        )
-        if response.status_code == 409:
-            await asyncio.sleep(POLL_INTERVAL_SEC * 2)
+        for attempt in range(3):
             response = await client.post(
                 f"{CURSOR_BASE_URL}/v1/agents/{agent_id}/runs",
                 headers=self._headers(),
                 json={"prompt": {"text": prompt}},
             )
-        response.raise_for_status()
-        return response.json()["id"]
+            if response.status_code == 409:
+                await self._cancel_active_run(client, agent_id)
+                await asyncio.sleep(POLL_INTERVAL_SEC * (attempt + 1))
+                continue
+            response.raise_for_status()
+            return self._parse_run_id(response.json())
+        raise RuntimeError("Cursor API: agent is busy (409), try again later")
+
+    async def _cancel_active_run(self, client: httpx.AsyncClient, agent_id: str) -> None:
+        response = await client.get(
+            f"{CURSOR_BASE_URL}/v1/agents/{agent_id}",
+            headers=self._headers(),
+        )
+        if response.status_code != 200:
+            return
+        latest_run_id = response.json().get("latestRunId")
+        if not latest_run_id:
+            return
+        await client.post(
+            f"{CURSOR_BASE_URL}/v1/agents/{agent_id}/runs/{latest_run_id}/cancel",
+            headers=self._headers(),
+        )
+
+    async def _reuse_existing_agent(self, client: httpx.AsyncClient) -> Optional[str]:
+        response = await client.get(
+            f"{CURSOR_BASE_URL}/v1/agents?limit=20",
+            headers=self._headers(),
+        )
+        if response.status_code != 200:
+            return None
+        items = response.json().get("items", [])
+        if not items:
+            return None
+        return str(items[0]["id"])
+
+    def _error_detail(self, response: httpx.Response) -> str:
+        try:
+            data = response.json()
+            error = data.get("error", data)
+            if isinstance(error, dict):
+                return str(error.get("message", error))
+            return str(error)
+        except Exception:
+            return response.text
 
     async def _wait_for_result(
         self, client: httpx.AsyncClient, agent_id: str, run_id: str

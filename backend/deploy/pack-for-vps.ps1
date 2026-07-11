@@ -1,9 +1,10 @@
 # Упаковка backend для GitHub Release / загрузки на VPS
 $BackendRoot = Split-Path $PSScriptRoot -Parent
 $ProjectRoot = Split-Path $BackendRoot -Parent
+. (Join-Path $ProjectRoot "config\project-paths.ps1") -ProjectRoot $ProjectRoot
 $ReleasesDir = Join-Path $ProjectRoot "releases"
 $OutZip = Join-Path $ReleasesDir "podchet_backend_deploy.zip"
-$Staging = Join-Path $env:TEMP "podchet_pack_$(Get-Random)"
+$Staging = Join-Path $ProjectStaging "podchet_pack_$(Get-Random)"
 
 Write-Host "Упаковка backend -> $OutZip"
 
