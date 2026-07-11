@@ -6,12 +6,25 @@
 - интеграция с кухонными весами (Bluetooth / USB, по мере реализации);
 - расчёт КБЖУ по весу порции.
 
+## Доступ с основной ветки
+
+Папка входит в **`main`** и видна всем, кто клонировал репозиторий:
+
+```bash
+git checkout main
+git pull
+ls "работа с весами"
+```
+
+Ссылка из корня: [README.md](../README.md#рабочие-области-worktree).
+
 ## Cloud worktree этого чата
 
 | Параметр | Значение |
 |----------|----------|
 | Репозиторий | [borisglushkov-collab/podchet_kalloryi](https://github.com/borisglushkov-collab/podchet_kalloryi) |
-| Ветка | `cursor/chat-podchet-kalloryi-a36d` |
+| Ветка разработки | `cursor/chat-podchet-kalloryi-a36d` |
+| Основная ветка | `main` (папка смержена) |
 | Cloud-агент | [Чат в podchet_kalloryi](https://cursor.com/agents/bc-d08cfe81-8032-42ce-acd9-ee7f66c9a36d) |
 | Рабочая копия | `/workspace` (cloud worktree) |
 

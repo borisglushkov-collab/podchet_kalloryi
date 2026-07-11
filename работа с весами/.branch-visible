@@ -1,0 +1,3 @@
+# Маркер: папка видна на ветке main и перечислена в корневом README.md
+branch=main
+visible_from=README.md#рабочие-области-worktree
