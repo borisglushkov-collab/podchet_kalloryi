@@ -141,6 +141,14 @@ class HealthScaleService {
 
       final config = await rootBundle.loadString('assets/lefu.config');
       PPBluetoothKitManager.initSDK(appKey, appSecret, config);
+
+      try {
+        final deviceJson = await rootBundle.loadString('assets/lefu_device.json');
+        PPBluetoothKitManager.setDeviceSetting(deviceJson);
+      } catch (_) {
+        // Не критично — lefu.config уже содержит базовые профили
+      }
+
       _registerSdkListeners();
       _registerMeasurementListener();
       _sdkReady = true;
@@ -249,12 +257,41 @@ class HealthScaleService {
         score += 40;
       }
     }
+    if (key.startsWith('CFE7') || mac.toUpperCase().startsWith('CF:E7')) score += 90;
     if (lowerName.contains('health')) score += 80;
     if (lowerName.contains('scale')) score += 30;
     if (lowerName.contains('futula') || lowerName.contains('lefu')) score += 20;
     if (deviceTypeName == 'cf' || deviceTypeName == 'ce') score += 25;
     score += ((rssi ?? -100) + 100).clamp(0, 30);
     return score;
+  }
+
+  bool _isTargetScale(String name, String mac, String targetMac) {
+    if (_macKey(mac) == _macKey(targetMac)) return true;
+    if (mac.toUpperCase().startsWith('CF:E7') || _macKey(mac).startsWith('CFE7')) return true;
+    return _looksLikeScaleName(name);
+  }
+
+  String _bleDisplayName(ScanResult result) {
+    final adv = result.advertisementData;
+    if (adv.advName.isNotEmpty) return adv.advName;
+    if (result.device.platformName.isNotEmpty) return result.device.platformName;
+    if (adv.manufacturerData.isNotEmpty) {
+      for (final entry in adv.manufacturerData.entries) {
+        final bytes = entry.value;
+        if (bytes.length >= 6) {
+          final hex = bytes
+              .take(6)
+              .map((b) => b.toRadixString(16).padLeft(2, '0'))
+              .join(':')
+              .toUpperCase();
+          if (hex.startsWith('CF:E7') || hex.contains('E7')) {
+            return 'Health Scale? ($hex)';
+          }
+        }
+      }
+    }
+    return 'BLE ${result.device.remoteId.str}';
   }
 
   int _matchScoreDevice(PPDeviceModel device, String targetMac) {
@@ -343,19 +380,14 @@ class HealthScaleService {
     try {
       bleSub = FlutterBluePlus.onScanResults.listen((results) {
         for (final result in results) {
-          _rawBleCount++;
           final mac = result.device.remoteId.str;
-          final name = result.advertisementData.advName.isNotEmpty
-              ? result.advertisementData.advName
-              : (result.device.platformName.isNotEmpty
-                  ? result.device.platformName
-                  : 'BLE');
+          if (!bleFound.containsKey(mac)) _rawBleCount++;
+          final name = _bleDisplayName(result);
           final score = _matchScore(name, mac, result.rssi, null, targetMac);
           bleFound[mac] = ScannedScaleDevice.fromBle(name, mac, result.rssi, score);
         }
         _emitScanProgress(lefuFound, bleFound, targetMac);
       });
-      await FlutterBluePlus.startScan(timeout: timeout);
 
       await PPBluetoothKitManager.startScan((device) {
         final key = _deviceKey(device);
@@ -370,6 +402,10 @@ class HealthScaleService {
         }
         _emitScanProgress(lefuFound, bleFound, targetMac);
       });
+
+      // Параллельный системный BLE-скан (не await — иначе LeFu ждёт 30 с)
+      // ignore: unawaited_futures
+      FlutterBluePlus.startScan(timeout: timeout);
 
       await Future<void>.delayed(timeout);
     } finally {
@@ -404,22 +440,41 @@ class HealthScaleService {
     final merged = <String, ScannedScaleDevice>{...lefuFound};
 
     for (final entry in bleFound.entries) {
-      if (merged.containsKey(entry.key)) continue;
-      final name = entry.value.label.split(' · ').first;
-      if (_looksLikeScaleName(name) || _macKey(entry.key) == _macKey(targetMac)) {
-        merged[entry.key] = entry.value;
-      }
-    }
-
-    if (merged.isEmpty && lefuFound.isEmpty) {
-      for (final entry in bleFound.entries) {
-        merged[entry.key] = entry.value;
-      }
+      merged.putIfAbsent(entry.key, () => entry.value);
     }
 
     final items = merged.values.toList()
       ..sort((a, b) => b.matchScore.compareTo(a.matchScore));
+
+    final preferred = items.where((d) => _isTargetScale(
+          d.label.split(' · ').first,
+          d.mac,
+          targetMac,
+        ));
+    if (preferred.isNotEmpty) {
+      final rest = items.where((d) => !preferred.contains(d));
+      return [...preferred, ...rest];
+    }
     return items;
+  }
+
+  ScannedScaleDevice? bestMatch(List<ScannedScaleDevice> devices, String targetMac) {
+    if (devices.isEmpty) return null;
+    for (final d in devices) {
+      if (d.fromLeFu && d.isPreferred) return d;
+    }
+    for (final d in devices) {
+      if (_macKey(d.mac) == _macKey(targetMac)) return d;
+    }
+    for (final d in devices) {
+      if (_macKey(d.mac).startsWith('CFE7') || d.mac.toUpperCase().startsWith('CF:E7')) {
+        return d;
+      }
+    }
+    for (final d in devices) {
+      if (_looksLikeScaleName(d.label)) return d;
+    }
+    return devices.first;
   }
 
   List<ScannedScaleDevice> _rankDevices(String targetMac) {
@@ -431,15 +486,29 @@ class HealthScaleService {
 
   Future<PPDeviceModel?> _waitForLeFuDevice(
     String targetMac, {
-    Duration timeout = const Duration(seconds: 40),
+    Duration timeout = const Duration(seconds: 60),
   }) async {
     PPDeviceModel? found;
     final completer = Completer<PPDeviceModel?>();
+    StreamSubscription<List<ScanResult>>? bleSub;
 
     _emit(_status.copyWith(
       state: HealthScaleConnectionState.scanning,
-      message: 'Ждём сигнал весов… Встаньте на платформу босиком.',
+      message: 'Ждём сигнал весов ${timeout.inSeconds} с… Встаньте на платформу босиком.',
     ));
+
+    bleSub = FlutterBluePlus.onScanResults.listen((results) {
+      for (final result in results) {
+        final mac = result.device.remoteId.str;
+        if (_macKey(mac) == _macKey(targetMac) ||
+            _macKey(mac).startsWith('CFE7') ||
+            _looksLikeScaleName(_bleDisplayName(result))) {
+          _emit(_status.copyWith(
+            message: 'Bluetooth видит весы: ${_bleDisplayName(result)} ($mac)',
+          ));
+        }
+      }
+    });
 
     await PPBluetoothKitManager.startScan((device) {
       final mac = device.deviceMac ?? '';
@@ -448,6 +517,7 @@ class HealthScaleService {
       _lastScan[_deviceKey(device)] = device;
 
       final matches = _macKey(mac) == _macKey(targetMac) ||
+          _macKey(mac).startsWith('CFE7') ||
           (device.deviceName ?? '').toLowerCase().contains('health');
 
       if (matches && !completer.isCompleted) {
@@ -457,13 +527,18 @@ class HealthScaleService {
 
       _emit(_status.copyWith(
         discoveredDevices: _rankDevices(targetMac),
-        message: 'LeFu видит: ${device.deviceName ?? mac}',
+        message: 'LeFu: ${device.deviceName ?? mac}',
       ));
     });
+
+    // ignore: unawaited_futures
+    FlutterBluePlus.startScan(timeout: timeout);
 
     try {
       return await completer.future.timeout(timeout, onTimeout: () => null);
     } finally {
+      await FlutterBluePlus.stopScan();
+      await bleSub?.cancel();
       if (found == null) {
         await PPBluetoothKitManager.stopScan();
       }
@@ -506,9 +581,9 @@ class HealthScaleService {
 
     if (target == null) {
       final hint = _rawBleCount > 0
-          ? 'Bluetooth работает (найдено $_rawBleCount устройств), но весы Health Scale не видны. '
-              'Закройте Futula Scale, встаньте на платформу и нажмите «Найти весы».'
-          : 'Bluetooth не видит устройств. Включите геолокацию, Bluetooth и разрешения для приложения.';
+          ? 'LeFu SDK не распознал весы среди $_rawBleCount BLE-устройств. '
+              'Нажмите «Найти весы», выберите устройство с CF:E7 или Health Scale в списке.'
+          : 'Bluetooth не видит устройств. Включите геолокацию (GPS), Bluetooth и разрешения.';
       throw StateError(hint);
     }
 

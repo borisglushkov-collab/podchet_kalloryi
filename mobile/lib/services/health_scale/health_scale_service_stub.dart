@@ -53,6 +53,9 @@ class HealthScaleService {
 
   Future<List<ScannedScaleDevice>> scanDevices({Duration? timeout}) async => [];
 
+  ScannedScaleDevice? bestMatch(List<ScannedScaleDevice> devices, [String? targetMac]) =>
+      devices.isEmpty ? null : devices.first;
+
   Future<void> connect({String? macAddress, ScannedScaleDevice? picked}) async {
     throw UnsupportedError('Health Scale недоступны на этой платформе.');
   }

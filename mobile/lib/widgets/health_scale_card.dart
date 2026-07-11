@@ -41,19 +41,21 @@ class _HealthScaleCardState extends State<HealthScaleCard> {
         final raw = _service.status.rawBleCount;
         _showSnack(
           raw > 0
-              ? 'LeFu не видит весы, хотя Bluetooth находит $raw устройств. '
-                  'Закройте Futula Scale, встаньте на платформу и повторите.'
-              : 'Устройства не найдены. Включите Bluetooth и геолокацию, '
-                  'разрешите доступ приложению.',
+              ? 'Найдено $raw BLE-устройств, но весы не опознаны. '
+                  'Повторите поиск, стоя на платформе босиком.'
+              : 'Устройства не найдены. Включите Bluetooth и геолокацию (GPS).',
         );
         return;
       }
 
-      final picked = await showModalBottomSheet<ScannedScaleDevice>(
-        context: context,
-        showDragHandle: true,
-        builder: (ctx) => _DevicePickerSheet(devices: devices),
-      );
+      final auto = _service.bestMatch(devices, HealthScaleService.defaultMac);
+      final picked = (auto != null && auto.fromLeFu)
+          ? auto
+          : await showModalBottomSheet<ScannedScaleDevice>(
+              context: context,
+              showDragHandle: true,
+              builder: (ctx) => _DevicePickerSheet(devices: devices),
+            );
       if (picked == null || !mounted) return;
 
       _lastPicked = picked;
@@ -71,9 +73,40 @@ class _HealthScaleCardState extends State<HealthScaleCard> {
   Future<void> _connectAndWeigh({ScannedScaleDevice? picked}) async {
     setState(() => _busy = true);
     try {
-      final target = picked ?? _lastPicked;
+      var target = picked ?? _lastPicked;
+
+      if (target == null) {
+        if (!mounted) return;
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => _ScanProgressDialog(service: _service),
+        );
+        final devices = await _service.scanDevices();
+        if (mounted) Navigator.of(context, rootNavigator: true).pop();
+        target = _service.bestMatch(devices, HealthScaleService.defaultMac);
+
+        if (target != null && target.fromLeFu) {
+          _lastPicked = target;
+        } else if (devices.isNotEmpty && mounted) {
+          target = await showModalBottomSheet<ScannedScaleDevice>(
+            context: context,
+            showDragHandle: true,
+            builder: (ctx) => _DevicePickerSheet(devices: devices),
+          );
+          if (target != null) _lastPicked = target;
+        }
+      }
+
+      if (target == null) {
+        _showSnack(
+          'Выберите весы через «Найти весы». Ищите CF:E7 или Health Scale в списке.',
+        );
+        return;
+      }
+
       await _service.connect(
-        macAddress: target?.mac,
+        macAddress: target.mac.isNotEmpty ? target.mac : HealthScaleService.defaultMac,
         picked: target,
       );
       if (!mounted) return;
@@ -278,8 +311,9 @@ class _DevicePickerSheet extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 20),
             child: Text(
-              'Выберите Health Scale (CF:E7:…). Устройства без метки LeFu '
-              'потребуют повторного поиска при подключении.',
+              'LeFu-устройства отмечены звёздочкой. '
+              'Если Health Scale нет — выберите устройство с MAC CF:E7… '
+              'или именем Health / Scale.',
               style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
           ),
