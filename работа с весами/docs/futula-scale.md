@@ -85,11 +85,25 @@ SDK уже умеет парсить протокол LeFu — **не нужен
 
 ## План внедрения в Podchet Kalloriy
 
-1. [ ] Подтвердить модель: Kitchen Scale 3 / 5 или напольные.
-2. [ ] Зарегистрироваться на LeFu Open Platform, получить AppKey + `lefu.config`.
-3. [ ] Добавить `pp_bluetooth_kit_flutter` в `работа с весами/mobile/`, протестировать demo.
-4. [ ] Кнопка «Подключить Futula» на экране добавления продукта.
-5. [ ] Автоподстановка граммов + сохранение `deviceId` в `shared_preferences`.
+1. [x] Подтвердить модель: **Health Scale** (напольные, MAC `CF:E7:02:17:03:93`).
+2. [x] SDK LeFu (`pp_bluetooth_kit_flutter`) + `lefu.config` + demo-ключи для теста.
+3. [x] Сервис `mobile/lib/services/health_scale/` — сканирование по MAC, синхронизация веса.
+4. [x] Карточка **Futula Health Scale** на экране профиля.
+5. [ ] Свои AppKey/AppSecret с [LeFu Open Platform](https://uniquehealth.lefuenergy.com/unique-open-web/#/home) для продакшена.
+
+### Как пользоваться
+
+1. Соберите APK: `cd mobile && flutter pub get && flutter build apk`.
+2. Профиль → блок **Futula Health Scale** → MAC уже `CF:E7:02:17:03:93`.
+3. Закройте **Futula Scale** на телефоне.
+4. Нажмите **Синхр. вес** → встаньте на весы → вес подставится в «Вес (кг)» и сохранится в профиль.
+
+### Файлы
+
+- `mobile/lib/services/health_scale/health_scale_service_io.dart`
+- `mobile/lib/widgets/health_scale_card.dart`
+- `mobile/lib/screens/profile_screen.dart`
+- `mobile/assets/lefu.config`, `mobile/assets/lefu_credentials.json`
 
 ## Связанные файлы проекта
 

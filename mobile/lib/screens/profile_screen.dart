@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../db/database.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../widgets/health_scale_card.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -54,6 +55,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _weightController.dispose();
     _prefsController.dispose();
     super.dispose();
+  }
+
+  Future<void> _applySyncedWeight(double weightKg) async {
+    final profile = await AppDatabase.getProfile();
+    if (profile == null) return;
+
+    final updated = profile.copyWith(weightKg: weightKg);
+    await AppDatabase.saveProfile(updated);
+    ref.invalidate(profileProvider);
+    ref.invalidate(dailyTargetsProvider);
   }
 
   Future<void> _save() async {
@@ -122,6 +133,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               decoration: const InputDecoration(labelText: 'Вес (кг)'),
               keyboardType: TextInputType.number,
               validator: (v) => v == null || double.tryParse(v) == null ? 'Введите вес' : null,
+            ),
+            const SizedBox(height: 16),
+            HealthScaleCard(
+              weightController: _weightController,
+              onWeightSynced: _applySyncedWeight,
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<ActivityLevel>(
