@@ -22,13 +22,18 @@ fi
 FOLDER="${YANDEX_DISK_FOLDER:-app:/podchet_kalloriy/apk}"
 FILENAME="$(basename "$APK_PATH")"
 REMOTE_PATH="${FOLDER}/${FILENAME}"
-ENCODED_PATH="$(python3 -c "import urllib.parse; print(urllib.parse.quote('${REMOTE_PATH}'))")"
 
-echo "[yandex] Создаю папку ${FOLDER}..."
-curl -sf -X PUT \
-  -H "Authorization: OAuth ${YANDEX_DISK_TOKEN}" \
-  "https://cloud-api.yandex.net/v1/disk/resources?path=${ENCODED_PATH%/*}&" \
-  >/dev/null 2>&1 || true
+# Создать вложенные папки (app:/a/b → app:/a, затем app:/a/b)
+IFS='/' read -ra PARTS <<< "${FOLDER#app:}"
+ACC="app:"
+for part in "${PARTS[@]}"; do
+  [[ -z "$part" ]] && continue
+  ACC="${ACC}/${part}"
+  curl -sf -X PUT \
+    -H "Authorization: OAuth ${YANDEX_DISK_TOKEN}" \
+    "https://cloud-api.yandex.net/v1/disk/resources?path=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${ACC}'))")" \
+    >/dev/null 2>&1 || true
+done
 
 echo "[yandex] Получаю URL загрузки..."
 UPLOAD_JSON="$(curl -sf -G \
