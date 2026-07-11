@@ -78,6 +78,39 @@ class DailySummaryCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Сводка дня', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Text(
+              'Осталось сегодня ${remaining.calories.toStringAsFixed(0)} ккал',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                _MacroChip(
+                  label: 'Б',
+                  current: consumed.protein,
+                  target: targets.protein,
+                  color: Colors.blue,
+                ),
+                _MacroChip(
+                  label: 'Ж',
+                  current: consumed.fat,
+                  target: targets.fat,
+                  color: Colors.orange,
+                ),
+                _MacroChip(
+                  label: 'У',
+                  current: consumed.carbs,
+                  target: targets.carbs,
+                  color: Colors.purple,
+                ),
+              ],
+            ),
             const SizedBox(height: 12),
             MacroProgressBar(
               label: 'Калории',
@@ -104,15 +137,40 @@ class DailySummaryCard extends StatelessWidget {
               target: targets.carbs,
               color: Colors.purple,
             ),
-            const Divider(height: 24),
-            Text(
-              'Осталось: ${remaining.calories.toStringAsFixed(0)} ккал',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _MacroChip extends StatelessWidget {
+  final String label;
+  final double current;
+  final double target;
+  final Color color;
+
+  const _MacroChip({
+    required this.label,
+    required this.current,
+    required this.target,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Text(
+        '$label ${current.toStringAsFixed(0)}/${target.toStringAsFixed(0)}',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
       ),
     );
   }
@@ -128,17 +186,49 @@ class FoodEntryTile extends StatelessWidget {
     required this.onDelete,
   });
 
+  static String _macroLine(FoodEntry entry) {
+    final parts = <String>[
+      '${entry.grams.toStringAsFixed(0)} г',
+      '${entry.calories.toStringAsFixed(0)} ккал',
+    ];
+    if (entry.protein > 0 || entry.fat > 0 || entry.carbs > 0) {
+      parts.add(
+        'Б ${entry.protein.toStringAsFixed(0)} · '
+        'Ж ${entry.fat.toStringAsFixed(0)} · '
+        'У ${entry.carbs.toStringAsFixed(0)}',
+      );
+    }
+    return parts.join(' · ');
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListTile(
       title: Text(entry.name),
-      subtitle: Text(
-        '${entry.grams.toStringAsFixed(0)} г · ${entry.calories.toStringAsFixed(0)} ккал',
-      ),
+      subtitle: Text(_macroLine(entry)),
       trailing: IconButton(
         icon: const Icon(Icons.delete_outline),
         onPressed: onDelete,
       ),
     );
   }
+}
+
+String formatMacrosPer100({
+  required double kcal,
+  required double protein,
+  required double fat,
+  required double carbs,
+}) {
+  return '${kcal.toStringAsFixed(0)} ккал · '
+      'Б ${protein.toStringAsFixed(1)} · '
+      'Ж ${fat.toStringAsFixed(1)} · '
+      'У ${carbs.toStringAsFixed(1)} (на 100 г)';
+}
+
+String formatMacrosTotal(Macros macros) {
+  return '${macros.calories.toStringAsFixed(0)} ккал · '
+      'Б ${macros.protein.toStringAsFixed(1)} · '
+      'Ж ${macros.fat.toStringAsFixed(1)} · '
+      'У ${macros.carbs.toStringAsFixed(1)}';
 }

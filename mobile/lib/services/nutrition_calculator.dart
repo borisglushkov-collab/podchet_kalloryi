@@ -41,10 +41,13 @@ class NutritionCalculator {
   }
 
   static Macros dailyTargets(UserProfile profile) {
+    final custom = profile.customDailyTargets;
+    if (custom != null) return custom;
+
     final calories = targetCalories(profile);
     final protein = profile.weightKg * 1.8;
     final fat = calories * 0.25 / 9;
-    final carbs = (calories - protein * 4 - fat * 9) / 4;
+    final carbs = carbsFromMacros(calories, protein, fat);
     return Macros(
       calories: calories,
       protein: protein,
@@ -52,4 +55,140 @@ class NutritionCalculator {
       carbs: carbs.clamp(50, double.infinity),
     );
   }
+
+  static double carbsFromMacros(double calories, double protein, double fat) {
+    return ((calories - protein * 4 - fat * 9) / 4).clamp(0, double.infinity);
+  }
+
+  static double mealShare(MealType meal) {
+    switch (meal) {
+      case MealType.breakfast:
+        return 0.25;
+      case MealType.lunch:
+        return 0.35;
+      case MealType.dinner:
+        return 0.30;
+      case MealType.snack:
+        return 0.10;
+    }
+  }
+
+  static String mealShareLabel(MealType meal) =>
+      '${(mealShare(meal) * 100).round()}% дневной нормы';
+
+  static Macros mealTargets(Macros daily, MealType meal) {
+    final share = mealShare(meal);
+    return Macros(
+      calories: daily.calories * share,
+      protein: daily.protein * share,
+      fat: daily.fat * share,
+      carbs: daily.carbs * share,
+    );
+  }
+
+  static Macros consumedForMeal(List<FoodEntry> entries, MealType meal) {
+    var total = const Macros();
+    for (final entry in entries.where((e) => e.mealType == meal)) {
+      total = total +
+          Macros(
+            calories: entry.calories,
+            protein: entry.protein,
+            fat: entry.fat,
+            carbs: entry.carbs,
+          );
+    }
+    return total;
+  }
+
+  static Macros mealDeficit({
+    required Macros dailyTargets,
+    required Macros mealConsumed,
+    required MealType meal,
+  }) {
+    final targets = mealTargets(dailyTargets, meal);
+    return Macros(
+      calories: (targets.calories - mealConsumed.calories).clamp(0, double.infinity),
+      protein: (targets.protein - mealConsumed.protein).clamp(0, double.infinity),
+      fat: (targets.fat - mealConsumed.fat).clamp(0, double.infinity),
+      carbs: (targets.carbs - mealConsumed.carbs).clamp(0, double.infinity),
+    );
+  }
+
+  static Map<MealType, Macros> consumedByMeal(List<FoodEntry> entries) {
+    return {
+      for (final meal in MealType.values)
+        meal: consumedForMeal(entries, meal),
+    };
+  }
+
+  static Map<MealType, MealPlanInfo> computeMealPlan(
+    Macros dailyTargets,
+    Map<MealType, Macros> mealsConsumed,
+  ) {
+    var rollover = const Macros();
+    final plan = <MealType, MealPlanInfo>{};
+
+    for (var index = 0; index < MealType.values.length; index++) {
+      final meal = MealType.values[index];
+      final base = mealTargets(dailyTargets, meal);
+      final consumed = mealsConsumed[meal] ?? const Macros();
+      final effective = base + rollover;
+      final deficit = Macros(
+        calories: (effective.calories - consumed.calories).clamp(0, double.infinity),
+        protein: (effective.protein - consumed.protein).clamp(0, double.infinity),
+        fat: (effective.fat - consumed.fat).clamp(0, double.infinity),
+        carbs: (effective.carbs - consumed.carbs).clamp(0, double.infinity),
+      );
+      plan[meal] = MealPlanInfo(
+        baseTarget: base,
+        rolloverIn: rollover,
+        effectiveTarget: effective,
+        consumed: consumed,
+        deficit: deficit,
+        isLastMeal: index == MealType.values.length - 1,
+      );
+      rollover = deficit;
+    }
+
+    return plan;
+  }
+
+  static String formatMealProgress(MealPlanInfo plan) {
+    final consumed = plan.consumed.calories;
+    final target = plan.effectiveTarget.calories;
+    var text =
+        '${consumed.toStringAsFixed(0)} / ${target.toStringAsFixed(0)} ккал';
+    if (plan.rolloverIn.calories > 0) {
+      text +=
+          ' (+${plan.rolloverIn.calories.toStringAsFixed(0)} перенос)';
+    }
+    if (plan.isLastMeal && plan.deficit.calories > 0) {
+      text += ' · добить день';
+    }
+    return text;
+  }
+}
+
+class MealPlanInfo {
+  final Macros baseTarget;
+  final Macros rolloverIn;
+  final Macros effectiveTarget;
+  final Macros consumed;
+  final Macros deficit;
+  final bool isLastMeal;
+
+  const MealPlanInfo({
+    required this.baseTarget,
+    required this.rolloverIn,
+    required this.effectiveTarget,
+    required this.consumed,
+    required this.deficit,
+    required this.isLastMeal,
+  });
+
+  bool get hasRollover =>
+      rolloverIn.calories > 0 ||
+      rolloverIn.protein > 0 ||
+      rolloverIn.fat > 0 ||
+      rolloverIn.carbs > 0;
 }

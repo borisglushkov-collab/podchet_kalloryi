@@ -5,6 +5,9 @@ import '../db/database.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../services/api_service.dart';
+import '../utils/search_query_utils.dart';
+import '../services/local_food_fallback.dart';
+import '../widgets/widgets.dart';
 
 class AddFoodScreen extends ConsumerStatefulWidget {
   final String date;
@@ -23,6 +26,7 @@ class AddFoodScreen extends ConsumerStatefulWidget {
 class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
   MealType _mealType = MealType.breakfast;
   final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
   final _gramsController = TextEditingController(text: '100');
   final _nameController = TextEditingController();
   final _kcalController = TextEditingController();
@@ -43,6 +47,7 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _gramsController.dispose();
     _nameController.dispose();
     _kcalController.dispose();
@@ -53,13 +58,18 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
   }
 
   Future<void> _search() async {
+    final query = normalizeSearchQuery(_searchController.text);
+    if (query != _searchController.text) {
+      _searchController.text = query;
+      _searchController.selection = TextSelection.collapsed(offset: query.length);
+    }
     setState(() {
       _searching = true;
       _results = [];
       _selected = null;
     });
     try {
-      final results = await ref.read(offServiceProvider).search(_searchController.text);
+      final results = await ref.read(foodSearchServiceProvider).search(query);
       if (!mounted) return;
       setState(() => _results = results);
       if (results.isEmpty) {
@@ -69,8 +79,21 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
       }
     } catch (e) {
       if (mounted) {
+        final local = searchLocalFallback(query);
+        if (local.isNotEmpty) {
+          setState(() => _results = local);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Сервер медленный — показаны продукты из локальной базы'),
+            ),
+          );
+          return;
+        }
+        final message = e.toString().contains('receive timeout')
+            ? 'Сервер не ответил вовремя. Проверьте интернет и адрес в настройках.'
+            : 'Ошибка поиска: $e';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка поиска: $e')),
+          SnackBar(content: Text(message)),
         );
       }
     } finally {
@@ -83,6 +106,13 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
       _selected = result;
       _nameController.text = result.name;
     });
+  }
+
+  Macros? get _previewMacros {
+    if (_selected == null) return null;
+    final grams = double.tryParse(_gramsController.text);
+    if (grams == null || grams <= 0) return null;
+    return _selected!.macrosForGrams(grams);
   }
 
   Future<void> _save() async {
@@ -114,6 +144,18 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
     } else if (_selected != null) {
       name = _selected!.name;
       macros = _selected!.macrosForGrams(grams);
+      if (macros.protein == 0 && macros.fat == 0 && macros.carbs == 0 && macros.calories > 0) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'У продукта нет данных БЖУ на сервере. Заполните вручную во вкладке «Вручную».',
+              ),
+            ),
+          );
+        }
+        return;
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Выберите продукт из поиска')),
@@ -140,6 +182,7 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Добавить продукт')),
       body: ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.all(16),
         children: [
           DropdownButtonFormField<MealType>(
@@ -157,13 +200,21 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
               ButtonSegment(value: true, label: Text('Вручную')),
             ],
             selected: {_manualMode},
-            onSelectionChanged: (s) => setState(() => _manualMode = s.first),
+            onSelectionChanged: (s) {
+              setState(() => _manualMode = s.first);
+              if (!s.first) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _searchFocusNode.requestFocus();
+                });
+              }
+            },
           ),
           const SizedBox(height: 16),
           TextFormField(
             controller: _gramsController,
             decoration: const InputDecoration(labelText: 'Вес (г)'),
             keyboardType: TextInputType.number,
+            onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 16),
           if (_manualMode) ...[
@@ -174,37 +225,59 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
             const SizedBox(height: 12),
             TextFormField(
               controller: _kcalController,
-              decoration: const InputDecoration(labelText: 'Калории (ккал)'),
+              decoration: const InputDecoration(
+                labelText: 'Калории (ккал)',
+                helperText: 'На всю порцию, не на 100 г',
+              ),
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _proteinController,
-              decoration: const InputDecoration(labelText: 'Белки (г)'),
+              decoration: const InputDecoration(
+                labelText: 'Белки (г)',
+                helperText: 'На всю порцию',
+              ),
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _fatController,
-              decoration: const InputDecoration(labelText: 'Жиры (г)'),
+              decoration: const InputDecoration(
+                labelText: 'Жиры (г)',
+                helperText: 'На всю порцию',
+              ),
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _carbsController,
-              decoration: const InputDecoration(labelText: 'Углеводы (г)'),
+              decoration: const InputDecoration(
+                labelText: 'Углеводы (г)',
+                helperText: 'На всю порцию',
+              ),
               keyboardType: TextInputType.number,
             ),
           ] else ...[
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: TextFormField(
+                    focusNode: _searchFocusNode,
+                    autofocus: true,
                     controller: _searchController,
+                    keyboardType: TextInputType.text,
+                    textInputAction: TextInputAction.search,
+                    enableInteractiveSelection: true,
                     decoration: const InputDecoration(
                       labelText: 'Поиск продукта',
-                      hintText: 'овсянка, курица...',
+                      hintText: 'омлет, гречка...',
+                      helperText:
+                          'Эмулятор: экранная клав. → глобус → Русский. Или латиницей: omlet, grechka',
+                      suffixIcon: Icon(Icons.keyboard),
                     ),
+                    onTap: () => _searchFocusNode.requestFocus(),
                     onFieldSubmitted: (_) => _search(),
                   ),
                 ),
@@ -221,17 +294,49 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
               ],
             ),
             const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: ['омлет', 'гречка', 'творог', 'курица'].map((sample) {
+                return ActionChip(
+                  label: Text(sample),
+                  onPressed: () {
+                    _searchController.text = sample;
+                    _searchFocusNode.requestFocus();
+                    _search();
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 8),
             ..._results.map(
               (r) => ListTile(
                 title: Text(r.name),
                 subtitle: Text(
-                  '${r.kcalPer100g.toStringAsFixed(0)} ккал/100г'
-                  '${r.brand != null ? ' · ${r.brand}' : ''}',
+                  '${formatMacrosPer100(
+                    kcal: r.kcalPer100g,
+                    protein: r.proteinPer100g,
+                    fat: r.fatPer100g,
+                    carbs: r.carbsPer100g,
+                  )}${r.brand != null ? ' · ${r.brand}' : ''}',
                 ),
                 selected: _selected?.name == r.name,
                 onTap: () => _selectResult(r),
               ),
             ),
+            if (_previewMacros != null) ...[
+              const SizedBox(height: 8),
+              Card(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    'На ${_gramsController.text} г: ${formatMacrosTotal(_previewMacros!)}',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              ),
+            ],
           ],
           const SizedBox(height: 24),
           FilledButton(

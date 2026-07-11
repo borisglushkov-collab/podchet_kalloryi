@@ -18,6 +18,13 @@ class Macros {
         carbs: carbs + other.carbs,
       );
 
+  Macros operator *(double factor) => Macros(
+        calories: calories * factor,
+        protein: protein * factor,
+        fat: fat * factor,
+        carbs: carbs * factor,
+      );
+
   Map<String, dynamic> toJson() => {
         'calories': calories,
         'protein': protein,
@@ -97,6 +104,11 @@ class UserProfile {
   final ActivityLevel activity;
   final Goal goal;
   final String preferences;
+  final bool useCustomTargets;
+  final double? targetCalories;
+  final double? targetProtein;
+  final double? targetFat;
+  final double? targetCarbs;
 
   const UserProfile({
     this.id,
@@ -107,7 +119,27 @@ class UserProfile {
     required this.activity,
     required this.goal,
     this.preferences = '',
+    this.useCustomTargets = false,
+    this.targetCalories,
+    this.targetProtein,
+    this.targetFat,
+    this.targetCarbs,
   });
+
+  Macros? get customDailyTargets {
+    if (!useCustomTargets) return null;
+    final kcal = targetCalories;
+    final protein = targetProtein;
+    final fat = targetFat;
+    if (kcal == null || protein == null || fat == null) return null;
+    final carbs = targetCarbs ?? ((kcal - protein * 4 - fat * 9) / 4).clamp(0, double.infinity);
+    return Macros(
+      calories: kcal,
+      protein: protein,
+      fat: fat,
+      carbs: carbs,
+    );
+  }
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -118,6 +150,11 @@ class UserProfile {
         'activity': activity.name,
         'goal': goal.name,
         'preferences': preferences,
+        'use_custom_targets': useCustomTargets ? 1 : 0,
+        'target_calories': targetCalories,
+        'target_protein': targetProtein,
+        'target_fat': targetFat,
+        'target_carbs': targetCarbs,
       };
 
   factory UserProfile.fromMap(Map<String, dynamic> map) => UserProfile(
@@ -129,6 +166,12 @@ class UserProfile {
         activity: ActivityLevel.values.byName(map['activity'] as String),
         goal: Goal.values.byName(map['goal'] as String),
         preferences: map['preferences'] as String? ?? '',
+        useCustomTargets: map['use_custom_targets'] == 1 ||
+            map['use_custom_targets'] == true,
+        targetCalories: (map['target_calories'] as num?)?.toDouble(),
+        targetProtein: (map['target_protein'] as num?)?.toDouble(),
+        targetFat: (map['target_fat'] as num?)?.toDouble(),
+        targetCarbs: (map['target_carbs'] as num?)?.toDouble(),
       );
 
   UserProfile copyWith({
@@ -140,6 +183,11 @@ class UserProfile {
     ActivityLevel? activity,
     Goal? goal,
     String? preferences,
+    bool? useCustomTargets,
+    double? targetCalories,
+    double? targetProtein,
+    double? targetFat,
+    double? targetCarbs,
   }) =>
       UserProfile(
         id: id ?? this.id,
@@ -150,6 +198,11 @@ class UserProfile {
         activity: activity ?? this.activity,
         goal: goal ?? this.goal,
         preferences: preferences ?? this.preferences,
+        useCustomTargets: useCustomTargets ?? this.useCustomTargets,
+        targetCalories: targetCalories ?? this.targetCalories,
+        targetProtein: targetProtein ?? this.targetProtein,
+        targetFat: targetFat ?? this.targetFat,
+        targetCarbs: targetCarbs ?? this.targetCarbs,
       );
 }
 
@@ -231,12 +284,22 @@ class FoodSearchResult {
 
 class MealSuggestion {
   final Macros deficit;
+  final Macros dailyDeficit;
+  final Macros effectiveTarget;
+  final Macros rolloverIn;
+  final String topUpSummary;
+  final List<String> priorityMacros;
   final String disclaimer;
   final List<RecipeSuggestion> recipes;
   final List<ProductSuggestion> products;
 
   const MealSuggestion({
     required this.deficit,
+    required this.dailyDeficit,
+    required this.effectiveTarget,
+    required this.rolloverIn,
+    required this.topUpSummary,
+    required this.priorityMacros,
     required this.disclaimer,
     required this.recipes,
     required this.products,
@@ -244,6 +307,19 @@ class MealSuggestion {
 
   factory MealSuggestion.fromJson(Map<String, dynamic> json) => MealSuggestion(
         deficit: Macros.fromJson(json['deficit'] as Map<String, dynamic>),
+        dailyDeficit: json['daily_deficit'] != null
+            ? Macros.fromJson(json['daily_deficit'] as Map<String, dynamic>)
+            : Macros.fromJson(json['deficit'] as Map<String, dynamic>),
+        effectiveTarget: json['effective_target'] != null
+            ? Macros.fromJson(json['effective_target'] as Map<String, dynamic>)
+            : Macros.fromJson(json['deficit'] as Map<String, dynamic>),
+        rolloverIn: json['rollover_in'] != null
+            ? Macros.fromJson(json['rollover_in'] as Map<String, dynamic>)
+            : const Macros(),
+        topUpSummary: json['top_up_summary'] as String? ?? '',
+        priorityMacros: (json['priority_macros'] as List<dynamic>? ?? [])
+            .map((e) => e.toString())
+            .toList(),
         disclaimer: json['disclaimer'] as String? ?? '',
         recipes: (json['recipes'] as List<dynamic>? ?? [])
             .map((e) => RecipeSuggestion.fromJson(e as Map<String, dynamic>))
@@ -258,6 +334,7 @@ class RecipeSuggestion {
   final String name;
   final int cookingTimeMin;
   final String difficulty;
+  final String whyFits;
   final List<Map<String, String>> ingredients;
   final List<String> steps;
   final Macros nutrition;
@@ -266,6 +343,7 @@ class RecipeSuggestion {
     required this.name,
     required this.cookingTimeMin,
     required this.difficulty,
+    required this.whyFits,
     required this.ingredients,
     required this.steps,
     required this.nutrition,
@@ -275,6 +353,7 @@ class RecipeSuggestion {
         name: json['name'] as String? ?? '',
         cookingTimeMin: (json['cooking_time_min'] as num?)?.toInt() ?? 0,
         difficulty: json['difficulty'] as String? ?? '',
+        whyFits: json['why_fits'] as String? ?? '',
         ingredients: (json['ingredients'] as List<dynamic>? ?? [])
             .map((e) => Map<String, String>.from(
                   (e as Map).map((k, v) => MapEntry(k.toString(), v.toString())),

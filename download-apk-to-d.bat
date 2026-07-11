@@ -2,8 +2,8 @@
 chcp 65001 >nul
 setlocal
 
-set "URL=https://github.com/borisglushkov-collab/podchet_kalloryi/releases/download/v1.1.0-health-scale/podchet_kalloriy-1.1.0-health-scale.apk"
-set "DST=D:\podchet_kalloriy-1.1.0-health-scale.apk"
+set "URL=https://github.com/borisglushkov-collab/podchet_kalloryi/releases/download/v1.2.1-health-scale/podchet_kalloriy-1.2.1-health-scale.apk"
+set "DST=D:\podchet_kalloriy-1.2.1-health-scale.apk"
 set "INSTALL_DIR=D:\ucheba\podchet_kalloriy\работа с весами\install"
 
 echo Скачивание APK...
@@ -14,7 +14,7 @@ if errorlevel 1 (
 )
 
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
-copy /Y "%DST%" "%INSTALL_DIR%\podchet_kalloriy-1.1.0-health-scale.apk"
+copy /Y "%DST%" "%INSTALL_DIR%\podchet_kalloriy-1.2.1-health-scale.apk"
 
 echo.
 echo Готово:
