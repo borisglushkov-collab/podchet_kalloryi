@@ -8,7 +8,8 @@ build/
 android/.gradle
 ios/Pods
 *.apk
-!работа с весами/install/*.apk
+!android-сборки/install/*.apk
+android-сборки/scripts/yandex-disk.env
 node_modules/
 .idea/
 *.log

@@ -1,0 +1,17 @@
+{
+  "purpose": "design",
+  "repo": "https://github.com/borisglushkov-collab/podchet_kalloryi",
+  "branch": "cursor/design-a36d",
+  "designBranch": "origin/cursor/new-design-apk-a3bf",
+  "localPathWindows": "D:\\ucheba\\podchet_kalloriy",
+  "localWorktreePath": "D:\\ucheba\\podchet_kalloriy\\design",
+  "mockupPath": "D:\\ucheba\\podchet_kalloriy\\design\\docs\\mockups\\profile-health-scale.png",
+  "outputDirectory": "design",
+  "sourceInMobile": {
+    "theme": "mobile/lib/theme/app_theme.dart",
+    "widgets": "mobile/lib/widgets/wellness_widgets.dart",
+    "shell": "mobile/lib/screens/main_shell.dart",
+    "diary": "mobile/lib/screens/diary_screen.dart",
+    "analytics": "mobile/lib/screens/analytics_screen.dart"
+  }
+}

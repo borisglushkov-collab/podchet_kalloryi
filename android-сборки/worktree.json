@@ -1,0 +1,13 @@
+{
+  "purpose": "android-builds",
+  "repo": "https://github.com/borisglushkov-collab/podchet_kalloryi",
+  "branch": "cursor/android-builds-a36d",
+  "localPathWindows": "D:\\ucheba\\podchet_kalloriy",
+  "localWorktreePath": "D:\\ucheba\\podchet_kalloriy\\android-сборки",
+  "outputDirectory": "android-сборки",
+  "latestApk": "podchet_kalloriy-1.2.5-health-scale.apk",
+  "yandexDisk": {
+    "folder": "app:/podchet_kalloriy/apk",
+    "configExample": "scripts/yandex-disk.env.example"
+  }
+}

@@ -4,19 +4,36 @@
 
 ## Структура
 
+```
+podchet_kalloryi/
+├── mobile/                 # Flutter-приложение
+├── backend/                # FastAPI сервер
+├── design/                 # UI/UX, макеты (ветка cursor/design-a36d)
+├── android-сборки/         # APK, сборка, Яндекс.Диск (ветка cursor/android-builds-a36d)
+└── работа с весами/        # Bluetooth Health Scale, документация по весам
+```
+
 - `mobile/` — Flutter Android-приложение
 - `backend/` — Python FastAPI сервер (локально на ПК)
-- [`работа с весами/`](работа%20с%20весами/) — cloud worktree: вес продукта, кухонные весы, КБЖУ по порции
 
 ## Рабочие области (worktree)
 
-| Папка | Назначение |
-|-------|------------|
-| [`работа с весами/`](работа%20с%20весами/) | Разработка функций с весами (граммы, Bluetooth-весы). См. [README](работа%20с%20весами/README.md) |
+| Папка | Ветка | Назначение |
+|-------|-------|------------|
+| [`design/`](design/) | `cursor/design-a36d` | Wellness UI (Yazio), макеты, design-system |
+| [`android-сборки/`](android-сборки/) | `cursor/android-builds-a36d` | APK, скрипты сборки, загрузка на Яндекс.Диск |
+| [`работа с весами/`](работа%20с%20весами/) | `cursor/chat-podchet-kalloryi-a36d` | Health Scale, Futula, BLE-документация |
 
-Весь код и документы по этой теме хранятся в подпапке, а не в корне репозитория.
+## Сборка APK + Яндекс.Диск
 
-## Быстрый старт
+```bat
+android-сборки\scripts\build-apk.bat
+```
+
+Настройка токена: `android-сборки\scripts\yandex-disk.env.example` → `yandex-disk.env`
+
+Скачать APK без GitHub CDN: `android-сборки\pull-apk-from-git.bat`
+
 
 ### 1. Backend
 
