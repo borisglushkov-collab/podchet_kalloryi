@@ -1,5 +1,3 @@
-import 'dart:async';
-
 enum HealthScaleConnectionState {
   idle,
   initializing,
@@ -10,67 +8,54 @@ enum HealthScaleConnectionState {
   error,
 }
 
-class HealthScaleStatus {
-  final HealthScaleConnectionState state;
-  final String? message;
-  final double? lastWeightKg;
-  final String? deviceMac;
-  final String? deviceName;
-
-  const HealthScaleStatus({
-    this.state = HealthScaleConnectionState.idle,
-    this.message,
-    this.lastWeightKg,
-    this.deviceMac,
-    this.deviceName,
+class ScannedScaleDevice {
+  const ScannedScaleDevice({
+    required this.label,
+    required this.mac,
+    this.deviceType,
+    this.isPreferred = false,
   });
 
-  HealthScaleStatus copyWith({
-    HealthScaleConnectionState? state,
-    String? message,
-    double? lastWeightKg,
-    String? deviceMac,
-    String? deviceName,
-  }) =>
-      HealthScaleStatus(
-        state: state ?? this.state,
-        message: message ?? this.message,
-        lastWeightKg: lastWeightKg ?? this.lastWeightKg,
-        deviceMac: deviceMac ?? this.deviceMac,
-        deviceName: deviceName ?? this.deviceName,
-      );
+  final String label;
+  final String mac;
+  final String? deviceType;
+  final bool isPreferred;
+}
+
+class HealthScaleStatus {
+  const HealthScaleStatus({
+    this.state = HealthScaleConnectionState.idle,
+    this.message = 'Health Scale доступны только на Android и iOS.',
+    this.discoveredDevices = const [],
+  });
+
+  final HealthScaleConnectionState state;
+  final String message;
+  final List<ScannedScaleDevice> discoveredDevices;
 }
 
 class HealthScaleService {
   HealthScaleService._();
   static final HealthScaleService instance = HealthScaleService._();
 
-  static const defaultMac = 'CF:E7:02:17:03:93';
+  static const String defaultMac = 'CF:E7:02:17:03:93';
 
-  final _statusController = StreamController<HealthScaleStatus>.broadcast();
-  Stream<HealthScaleStatus> get statusStream => _statusController.stream;
+  HealthScaleStatus get status => const HealthScaleStatus();
+
+  Stream<HealthScaleStatus> get statusStream =>
+      Stream.value(const HealthScaleStatus());
 
   Future<void> initialize() async {}
 
-  Future<String> getSavedMac() async => defaultMac;
-
-  Future<void> saveMac(String mac) async {}
+  Future<List<ScannedScaleDevice>> scanDevices({Duration? timeout}) async => [];
 
   Future<void> connect({String? macAddress}) async {
-    throw UnsupportedError('Bluetooth-весы доступны только в Android-приложении');
-  }
-
-  Future<double> waitForWeight({Duration timeout = const Duration(seconds: 60)}) async {
-    throw UnsupportedError('Bluetooth-весы доступны только в Android-приложении');
-  }
-
-  Future<double> syncWeightToProfile({String? macAddress}) async {
-    throw UnsupportedError('Bluetooth-весы доступны только в Android-приложении');
+    throw UnsupportedError('Health Scale недоступны на этой платформе.');
   }
 
   void disconnect() {}
 
-  void dispose() {
-    _statusController.close();
+  Future<double> waitForWeight({Duration? timeout}) async {
+    throw UnsupportedError('Health Scale недоступны на этой платформе.');
   }
 }

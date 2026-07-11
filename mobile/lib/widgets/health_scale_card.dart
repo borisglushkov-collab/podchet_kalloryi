@@ -3,252 +3,242 @@ import 'package:flutter/material.dart';
 import '../services/health_scale/health_scale_service.dart';
 import '../theme/app_theme.dart';
 
+/// Карточка подключения Health Scale (Futula / LeFu) на экране профиля.
 class HealthScaleCard extends StatefulWidget {
-  final TextEditingController weightController;
-  final Future<void> Function(double weightKg) onWeightSynced;
-
   const HealthScaleCard({
     super.key,
     required this.weightController,
     required this.onWeightSynced,
   });
 
+  final TextEditingController weightController;
+  final Future<void> Function(double weightKg) onWeightSynced;
+
   @override
   State<HealthScaleCard> createState() => _HealthScaleCardState();
 }
 
 class _HealthScaleCardState extends State<HealthScaleCard> {
-  final _macController = TextEditingController();
   final _service = HealthScaleService.instance;
   bool _busy = false;
-  HealthScaleStatus _status = const HealthScaleStatus();
 
   @override
   void initState() {
     super.initState();
-    _loadMac();
-    _service.statusStream.listen((status) {
-      if (mounted) setState(() => _status = status);
-    });
+    _service.initialize();
   }
 
-  Future<void> _loadMac() async {
-    try {
-      await _service.initialize();
-      final mac = await _service.getSavedMac();
-      if (mounted) _macController.text = mac;
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _status = HealthScaleStatus(
-            state: HealthScaleConnectionState.error,
-            message: e.toString(),
-          );
-        });
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _macController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _run(Future<void> Function() action) async {
+  Future<void> _scanAndPick() async {
     setState(() => _busy = true);
     try {
-      await action();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: AppColors.textPrimary,
-            content: Text('$e'),
-          ),
+      final devices = await _service.scanDevices();
+      if (!mounted) return;
+      if (devices.isEmpty) {
+        _showSnack(
+          'Весы не найдены. Включите их, закройте Futula Scale, '
+          'разрешите Bluetooth и геолокацию.',
         );
+        return;
       }
+
+      final picked = await showModalBottomSheet<ScannedScaleDevice>(
+        context: context,
+        showDragHandle: true,
+        builder: (ctx) => _DevicePickerSheet(devices: devices),
+      );
+      if (picked == null || !mounted) return;
+
+      await _connectAndWeigh(mac: picked.mac);
+    } catch (e) {
+      if (mounted) _showSnack('Ошибка поиска: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _connect() async {
-    await _run(() async {
-      await _service.saveMac(_macController.text);
-      await _service.connect(macAddress: _macController.text);
+  Future<void> _connectAndWeigh({String? mac}) async {
+    setState(() => _busy = true);
+    try {
+      await _service.connect(macAddress: mac);
+      if (!mounted) return;
+      _showSnack('Весы подключены. Встаньте на платформу…');
+      final kg = await _service.waitForWeight();
+      if (!mounted) return;
+      widget.weightController.text = kg.toStringAsFixed(1);
+      await widget.onWeightSynced(kg);
+      _showSnack('Вес ${kg.toStringAsFixed(1)} кг записан в профиль');
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Весы подключены. Встаньте на платформу.')),
+        _showSnack(
+          e.toString().replaceFirst('Bad state: ', '').replaceFirst('Exception: ', ''),
         );
       }
-    });
-  }
-
-  Future<void> _syncWeight() async {
-    await _run(() async {
-      await _service.saveMac(_macController.text);
-      final weightKg = await _service.syncWeightToProfile(macAddress: _macController.text);
-      widget.weightController.text = weightKg.toStringAsFixed(1);
-      await widget.onWeightSynced(weightKg);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Вес обновлён: ${weightKg.toStringAsFixed(1)} кг')),
-        );
-      }
-    });
-  }
-
-  Color _statusColor(HealthScaleConnectionState state) {
-    switch (state) {
-      case HealthScaleConnectionState.connected:
-      case HealthScaleConnectionState.measuring:
-        return AppColors.primary;
-      case HealthScaleConnectionState.error:
-        return AppColors.streak;
-      default:
-        return AppColors.textSecondary;
+    } finally {
+      _service.disconnect();
+      if (mounted) setState(() => _busy = false);
     }
   }
 
-  String _stateLabel(HealthScaleConnectionState state) {
-    switch (state) {
-      case HealthScaleConnectionState.idle:
-        return 'Не подключено';
-      case HealthScaleConnectionState.initializing:
-        return 'Инициализация SDK...';
-      case HealthScaleConnectionState.scanning:
-        return 'Поиск весов...';
-      case HealthScaleConnectionState.connecting:
-        return 'Подключение...';
-      case HealthScaleConnectionState.connected:
-        return 'Подключено';
-      case HealthScaleConnectionState.measuring:
-        return 'Измерение...';
-      case HealthScaleConnectionState.error:
-        return 'Ошибка';
-    }
+  void _showSnack(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(text), behavior: SnackBarBehavior.floating),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.surfaceMuted),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+    return StreamBuilder<HealthScaleStatus>(
+      stream: _service.statusStream,
+      initialData: _service.status,
+      builder: (context, snapshot) {
+        final s = snapshot.data ?? _service.status;
+        final connected = s.state == HealthScaleConnectionState.connected ||
+            s.state == HealthScaleConnectionState.measuring;
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.surfaceMuted),
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.monitor_weight_outlined, color: AppColors.primaryDark),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Futula Health Scale',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    Text(
-                      _stateLabel(_status.state),
-                      style: TextStyle(
-                        color: _statusColor(_status.state),
-                        fontWeight: FontWeight.w600,
+                    child: const Icon(Icons.monitor_weight_outlined, color: AppColors.primary),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Health Scale',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                        Text(
+                          s.message ?? 'Нажмите «Найти весы»',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_busy)
+                    const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    Icon(
+                      connected ? Icons.bluetooth_connected : Icons.bluetooth_searching,
+                      color: connected ? AppColors.primary : AppColors.textSecondary,
+                    ),
+                ],
+              ),
+              if (s.discoveredDevices.isNotEmpty && !_busy) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'Найдено: ${s.discoveredDevices.map((d) => d.label).join(', ')}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.primary,
                       ),
+                ),
+              ],
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _busy ? null : _scanAndPick,
+                      icon: const Icon(Icons.search, size: 18),
+                      label: const Text('Найти весы'),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _busy ? null : () => _connectAndWeigh(),
+                      icon: const Icon(Icons.scale, size: 18),
+                      label: const Text('Взвеситься'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Перед подключением закройте Futula Scale. '
+                'Если не находит — нажмите «Найти весы» и выберите Health Scale из списка.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                    ),
               ),
             ],
           ),
-          if (_status.message != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              _status.message!,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.textSecondary,
+        );
+      },
+    );
+  }
+}
+
+class _DevicePickerSheet extends StatelessWidget {
+  const _DevicePickerSheet({required this.devices});
+
+  final List<ScannedScaleDevice> devices;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+            child: Text(
+              'Выберите весы',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
                   ),
             ),
-          ],
-          if (_status.lastWeightKg != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              'Последний замер: ${_status.lastWeightKg!.toStringAsFixed(1)} кг',
-              style: const TextStyle(
-                color: AppColors.primaryDark,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _macController,
-            decoration: InputDecoration(
-              labelText: 'MAC-адрес весов',
-              hintText: 'CF:E7:02:17:03:93',
-              filled: true,
-              fillColor: AppColors.surfaceMuted,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              'Health Scale обычно отображается с именем «Health Scale» или MAC CF:E7:…',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _busy ? null : _connect,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.primaryDark,
-                    side: const BorderSide(color: AppColors.primary),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: devices.length,
+              itemBuilder: (context, i) {
+                final d = devices[i];
+                return ListTile(
+                  leading: Icon(
+                    d.isPreferred ? Icons.star : Icons.bluetooth,
+                    color: d.isPreferred ? AppColors.streak : AppColors.textSecondary,
                   ),
-                  icon: _busy
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.bluetooth),
-                  label: const Text('Подключить'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _busy ? null : _syncWeight,
-                  icon: const Icon(Icons.sync),
-                  label: const Text('Синхр. вес'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Закройте Futula Scale перед подключением. Встаньте на весы босиком для замера.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+                  title: Text(d.label),
+                  subtitle: Text('${d.mac}${d.deviceType != null ? ' · ${d.deviceType}' : ''}'),
+                  onTap: () => Navigator.pop(context, d),
+                );
+              },
+            ),
           ),
         ],
       ),
