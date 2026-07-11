@@ -1,7 +1,18 @@
+import com.android.build.gradle.LibraryExtension
+
 allprojects {
     repositories {
+        maven { url = uri("https://raw.githubusercontent.com/LefuHengqi/PPBaseKit-Android/main") }
         google()
         mavenCentral()
+    }
+}
+
+subprojects {
+    pluginManager.withPlugin("com.android.library") {
+        extensions.configure(LibraryExtension::class.java) {
+            compileSdk = 36
+        }
     }
 }
 
