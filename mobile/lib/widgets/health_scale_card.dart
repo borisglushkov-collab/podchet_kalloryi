@@ -27,16 +27,10 @@ class _HealthScaleCardState extends State<HealthScaleCard> {
     setState(() => _busy = true);
     try {
       if (!mounted) return;
-      showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => _ScanProgressDialog(service: _service),
-      );
 
       final devices = await _service.scanDevices();
-      if (mounted) Navigator.of(context, rootNavigator: true).pop();
-
       if (!mounted) return;
+
       if (devices.isEmpty) {
         final raw = _service.status.rawBleCount;
         _showSnack(
@@ -62,7 +56,6 @@ class _HealthScaleCardState extends State<HealthScaleCard> {
       await _connectAndWeigh(picked: picked);
     } catch (e) {
       if (mounted) {
-        Navigator.of(context, rootNavigator: true).popUntil((r) => r is! DialogRoute);
         _showSnack('Ошибка поиска: $e');
       }
     } finally {
@@ -77,13 +70,8 @@ class _HealthScaleCardState extends State<HealthScaleCard> {
 
       if (target == null) {
         if (!mounted) return;
-        showDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          builder: (ctx) => _ScanProgressDialog(service: _service),
-        );
         final devices = await _service.scanDevices();
-        if (mounted) Navigator.of(context, rootNavigator: true).pop();
+        if (!mounted) return;
         target = _service.bestMatch(devices, HealthScaleService.defaultMac);
 
         if (target != null && target.fromLeFu) {
@@ -143,6 +131,8 @@ class _HealthScaleCardState extends State<HealthScaleCard> {
         final s = snapshot.data ?? _service.status;
         final connected = s.state == HealthScaleConnectionState.connected ||
             s.state == HealthScaleConnectionState.measuring;
+        final scanning = s.state == HealthScaleConnectionState.scanning ||
+            s.state == HealthScaleConnectionState.connecting;
 
         return Container(
           padding: const EdgeInsets.all(16),
@@ -198,6 +188,20 @@ class _HealthScaleCardState extends State<HealthScaleCard> {
                     ),
                 ],
               ),
+              if (_busy && (scanning || s.state == HealthScaleConnectionState.measuring)) ...[
+                const SizedBox(height: 12),
+                const LinearProgressIndicator(),
+                if (s.discoveredDevices.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Найдено устройств: ${s.discoveredDevices.length}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.textSecondary,
+                          fontSize: 11,
+                        ),
+                  ),
+                ],
+              ],
               if (s.rawBleCount > 0 && !_busy) ...[
                 const SizedBox(height: 8),
                 Text(
@@ -244,46 +248,6 @@ class _HealthScaleCardState extends State<HealthScaleCard> {
           ),
         );
       },
-    );
-  }
-}
-
-class _ScanProgressDialog extends StatelessWidget {
-  const _ScanProgressDialog({required this.service});
-
-  final HealthScaleService service;
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Поиск весов'),
-      content: StreamBuilder<HealthScaleStatus>(
-        stream: service.statusStream,
-        initialData: service.status,
-        builder: (context, snapshot) {
-          final s = snapshot.data ?? service.status;
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const LinearProgressIndicator(),
-              const SizedBox(height: 16),
-              Text(s.message ?? 'Сканирование…'),
-              const SizedBox(height: 8),
-              Text(
-                'Встаньте на платформу весов, чтобы они включили Bluetooth.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-              ),
-              if (s.discoveredDevices.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text('Найдено: ${s.discoveredDevices.length}'),
-              ],
-            ],
-          );
-        },
-      ),
     );
   }
 }

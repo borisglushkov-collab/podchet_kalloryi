@@ -158,7 +158,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Профиль сохранён')),
       );
-      Navigator.pop(context);
+      if (!widget.embedded) {
+        Navigator.pop(context);
+      }
     }
   }
 
