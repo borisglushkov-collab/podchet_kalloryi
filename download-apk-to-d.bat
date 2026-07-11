@@ -3,12 +3,12 @@ chcp 65001 >nul
 setlocal EnableDelayedExpansion
 
 set "PROJECT=D:\ucheba\podchet_kalloriy"
-set "APK_NAME=podchet_kalloriy-1.2.4-health-scale.apk"
+set "APK_NAME=podchet_kalloriy-1.2.5-health-scale.apk"
 set "LOCAL_APK=%PROJECT%\работа с весами\install\%APK_NAME%"
 set "DST=D:\%APK_NAME%"
 set "INSTALL_DIR=%PROJECT%\работа с весами\install"
 set "BRANCH=cursor/chat-podchet-kalloryi-a36d"
-set "URL=https://github.com/borisglushkov-collab/podchet_kalloryi/releases/download/v1.2.4-health-scale/%APK_NAME%"
+set "URL=https://github.com/borisglushkov-collab/podchet_kalloryi/releases/download/v1.2.5-health-scale/%APK_NAME%"
 
 echo.
 echo === Установка APK v1.2.4 (Health Scale) ===
@@ -65,7 +65,7 @@ echo        git pull origin %BRANCH%
 echo      Затем скопировать:
 echo        %LOCAL_APK%
 echo   3. Открыть в браузере (страница Releases, не прямая ссылка):
-echo        https://github.com/borisglushkov-collab/podchet_kalloryi/releases/tag/v1.2.4-health-scale
+echo        https://github.com/borisglushkov-collab/podchet_kalloryi/releases/tag/v1.2.5-health-scale
 echo   4. Собрать локально: build-apk-to-d.bat
 echo.
 pause
