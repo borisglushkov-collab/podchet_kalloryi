@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:pp_bluetooth_kit_flutter/ble/pp_bluetooth_kit_manager.dart';
 import 'package:pp_bluetooth_kit_flutter/enums/pp_scale_enums.dart';
@@ -19,19 +21,47 @@ enum HealthScaleConnectionState {
 }
 
 class ScannedScaleDevice {
-  final PPDeviceModel model;
+  final PPDeviceModel? model;
   final int matchScore;
+  final String label;
+  final String mac;
+  final String? deviceType;
+  final bool isPreferred;
+  final bool fromLeFu;
 
-  const ScannedScaleDevice(this.model, this.matchScore);
+  const ScannedScaleDevice({
+    this.model,
+    required this.matchScore,
+    required this.label,
+    required this.mac,
+    this.deviceType,
+    this.isPreferred = false,
+    this.fromLeFu = true,
+  });
 
-  String get label =>
-      '${model.deviceName ?? "Без имени"} · ${model.deviceMac ?? "?"} · RSSI ${model.rssi ?? 0}';
+  factory ScannedScaleDevice.fromLeFu(PPDeviceModel device, int score) {
+    return ScannedScaleDevice(
+      model: device,
+      matchScore: score,
+      label:
+          '${device.deviceName ?? "Без имени"} · ${device.deviceMac ?? "?"} · RSSI ${device.rssi ?? 0}',
+      mac: device.deviceMac ?? '',
+      deviceType: device.deviceType?.name,
+      isPreferred: score >= 80,
+      fromLeFu: true,
+    );
+  }
 
-  String get mac => model.deviceMac ?? '';
-
-  String? get deviceType => model.deviceType?.name;
-
-  bool get isPreferred => matchScore >= 80;
+  factory ScannedScaleDevice.fromBle(String name, String mac, int rssi, int score) {
+    return ScannedScaleDevice(
+      model: null,
+      matchScore: score,
+      label: '$name · $mac · RSSI $rssi',
+      mac: mac,
+      isPreferred: score >= 80,
+      fromLeFu: false,
+    );
+  }
 }
 
 class HealthScaleStatus {
@@ -41,6 +71,7 @@ class HealthScaleStatus {
   final String? deviceMac;
   final String? deviceName;
   final List<ScannedScaleDevice> discoveredDevices;
+  final int rawBleCount;
 
   const HealthScaleStatus({
     this.state = HealthScaleConnectionState.idle,
@@ -49,6 +80,7 @@ class HealthScaleStatus {
     this.deviceMac,
     this.deviceName,
     this.discoveredDevices = const [],
+    this.rawBleCount = 0,
   });
 
   HealthScaleStatus copyWith({
@@ -58,6 +90,7 @@ class HealthScaleStatus {
     String? deviceMac,
     String? deviceName,
     List<ScannedScaleDevice>? discoveredDevices,
+    int? rawBleCount,
   }) =>
       HealthScaleStatus(
         state: state ?? this.state,
@@ -66,6 +99,7 @@ class HealthScaleStatus {
         deviceMac: deviceMac ?? this.deviceMac,
         deviceName: deviceName ?? this.deviceName,
         discoveredDevices: discoveredDevices ?? this.discoveredDevices,
+        rawBleCount: rawBleCount ?? this.rawBleCount,
       );
 }
 
@@ -86,6 +120,7 @@ class HealthScaleService {
   bool _listenerRegistered = false;
   Completer<double>? _weightCompleter;
   final Map<String, PPDeviceModel> _lastScan = {};
+  int _rawBleCount = 0;
 
   Future<void> initialize() async {
     if (_sdkReady) return;
@@ -106,6 +141,7 @@ class HealthScaleService {
 
       final config = await rootBundle.loadString('assets/lefu.config');
       PPBluetoothKitManager.initSDK(appKey, appSecret, config);
+      _registerSdkListeners();
       _registerMeasurementListener();
       _sdkReady = true;
 
@@ -113,7 +149,7 @@ class HealthScaleService {
       _emit(_status.copyWith(
         state: HealthScaleConnectionState.idle,
         deviceMac: mac,
-        message: 'SDK готов. Нажмите «Найти весы».',
+        message: 'SDK готов. Встаньте на весы и нажмите «Найти весы».',
       ));
     } catch (e) {
       _emit(_status.copyWith(
@@ -124,10 +160,22 @@ class HealthScaleService {
     }
   }
 
-  void _registerMeasurementListener() {
+  void _registerSdkListeners() {
     if (_listenerRegistered) return;
     _listenerRegistered = true;
 
+    PPBluetoothKitManager.addBlePermissionListener(callBack: (state) {
+      _emit(_status.copyWith(message: 'Bluetooth: $state'));
+    });
+
+    PPBluetoothKitManager.addScanStateListener(callBack: (scanning) {
+      if (scanning) {
+        _emit(_status.copyWith(state: HealthScaleConnectionState.scanning));
+      }
+    });
+  }
+
+  void _registerMeasurementListener() {
     PPBluetoothKitManager.addMeasurementListener(
       callBack: (measurementState, dataModel, device) {
         final weightKg = dataModel.weight / 100.0;
@@ -142,7 +190,7 @@ class HealthScaleService {
           deviceName: device.deviceName ?? _status.deviceName,
           message: measurementState == PPMeasurementDataState.completed
               ? 'Вес получен: ${weightKg.toStringAsFixed(1)} кг'
-              : 'Измерение...',
+              : 'Измерение…',
         ));
 
         if (measurementState == PPMeasurementDataState.completed &&
@@ -183,137 +231,267 @@ class HealthScaleService {
     return _normalizeMac(mac).replaceAll(':', '');
   }
 
-  int _matchScore(PPDeviceModel device, String targetMac) {
-    final name = (device.deviceName ?? '').toLowerCase();
+  String _deviceKey(PPDeviceModel device) {
     final mac = _macKey(device.deviceMac ?? '');
+    if (mac.isNotEmpty) return mac;
+    return '${device.deviceName ?? "unknown"}-${device.rssi ?? 0}';
+  }
+
+  int _matchScore(String name, String mac, int? rssi, String? deviceTypeName, String targetMac) {
+    final lowerName = name.toLowerCase();
+    final key = _macKey(mac);
     final target = _macKey(targetMac);
     var score = 0;
 
-    if (mac.isNotEmpty && target.isNotEmpty) {
-      if (mac == target) score += 100;
-      if (mac.endsWith(target.substring(target.length > 6 ? target.length - 6 : 0))) {
+    if (key.isNotEmpty && target.isNotEmpty) {
+      if (key == target) score += 100;
+      if (key.endsWith(target.substring(target.length > 6 ? target.length - 6 : 0))) {
         score += 40;
       }
     }
-    if (name.contains('health')) score += 80;
-    if (name.contains('scale')) score += 30;
-    if (name.contains('futula') || name.contains('lefu')) score += 20;
-    if (device.deviceType == PPDeviceType.cf || device.deviceType == PPDeviceType.ce) {
-      score += 25;
-    }
-    score += ((device.rssi ?? -100) + 100).clamp(0, 30);
+    if (lowerName.contains('health')) score += 80;
+    if (lowerName.contains('scale')) score += 30;
+    if (lowerName.contains('futula') || lowerName.contains('lefu')) score += 20;
+    if (deviceTypeName == 'cf' || deviceTypeName == 'ce') score += 25;
+    score += ((rssi ?? -100) + 100).clamp(0, 30);
     return score;
   }
 
-  bool _looksLikeScale(PPDeviceModel device) {
-    final name = (device.deviceName ?? '').toLowerCase();
-    return name.contains('health') ||
-        name.contains('scale') ||
-        name.contains('futula') ||
-        name.contains('lefu') ||
-        device.deviceType == PPDeviceType.cf ||
-        device.deviceType == PPDeviceType.ce;
+  int _matchScoreDevice(PPDeviceModel device, String targetMac) {
+    return _matchScore(
+      device.deviceName ?? '',
+      device.deviceMac ?? '',
+      device.rssi,
+      device.deviceType?.name,
+      targetMac,
+    );
   }
 
-  Future<bool> _ensurePermissions() async {
-    final scan = await Permission.bluetoothScan.request();
-    final connect = await Permission.bluetoothConnect.request();
-    var locationOk = true;
-    if (await Permission.locationWhenInUse.isDenied ||
-        await Permission.locationWhenInUse.isPermanentlyDenied) {
-      locationOk = (await Permission.locationWhenInUse.request()).isGranted;
+  bool _looksLikeScaleName(String name) {
+    final lower = name.toLowerCase();
+    return lower.contains('health') ||
+        lower.contains('scale') ||
+        lower.contains('futula') ||
+        lower.contains('lefu');
+  }
+
+  Future<void> _ensureBluetoothReady() async {
+    if (!await FlutterBluePlus.isSupported) {
+      throw StateError('Bluetooth не поддерживается на этом устройстве.');
     }
-    if (!scan.isGranted || !connect.isGranted) {
-      throw StateError(
-        'Разрешите Bluetooth в настройках Android для «Подсчёт калорий».',
-      );
+
+    var adapterState = FlutterBluePlus.adapterStateNow;
+    if (adapterState != BluetoothAdapterState.on) {
+      adapterState = await FlutterBluePlus.adapterState
+          .where((s) => s == BluetoothAdapterState.on)
+          .first
+          .timeout(
+            const Duration(seconds: 3),
+            onTimeout: () => adapterState,
+          );
     }
-    return locationOk || scan.isGranted;
+    if (adapterState != BluetoothAdapterState.on) {
+      throw StateError('Включите Bluetooth в настройках телефона.');
+    }
+  }
+
+  Future<void> _ensurePermissions() async {
+    await _ensureBluetoothReady();
+
+    if (Platform.isAndroid) {
+      final scan = await Permission.bluetoothScan.request();
+      final connect = await Permission.bluetoothConnect.request();
+      final location = await Permission.locationWhenInUse.request();
+
+      if (!scan.isGranted || !connect.isGranted) {
+        throw StateError(
+          'Разрешите Bluetooth в настройках Android для «Подсчёт калорий».',
+        );
+      }
+      if (!location.isGranted) {
+        throw StateError(
+          'Разрешите геолокацию — Android требует её для поиска Bluetooth-устройств.',
+        );
+      }
+    }
   }
 
   Future<List<ScannedScaleDevice>> scanDevices({
     String? preferredMac,
-    Duration timeout = const Duration(seconds: 25),
+    Duration timeout = const Duration(seconds: 30),
   }) async {
     await initialize();
     if (!_sdkReady) return [];
 
     await _ensurePermissions();
-    PPBluetoothKitManager.disconnect();
-    await PPBluetoothKitManager.stopScan();
 
     final targetMac = _normalizeMac(preferredMac ?? await getSavedMac());
     _lastScan.clear();
+    _rawBleCount = 0;
 
     _emit(_status.copyWith(
       state: HealthScaleConnectionState.scanning,
-      message: 'Ищем весы 25 с… Закройте Futula Scale.',
+      message: 'Ищем весы ${timeout.inSeconds} с… Встаньте на платформу. Закройте Futula Scale.',
       discoveredDevices: const [],
+      rawBleCount: 0,
     ));
 
-    final completer = Completer<void>();
-    Timer? timer;
+    final lefuFound = <String, ScannedScaleDevice>{};
+    final bleFound = <String, ScannedScaleDevice>{};
+    StreamSubscription<List<ScanResult>>? bleSub;
+
+    try {
+      bleSub = FlutterBluePlus.onScanResults.listen((results) {
+        for (final result in results) {
+          _rawBleCount++;
+          final mac = result.device.remoteId.str;
+          final name = result.advertisementData.advName.isNotEmpty
+              ? result.advertisementData.advName
+              : (result.device.platformName.isNotEmpty
+                  ? result.device.platformName
+                  : 'BLE');
+          final score = _matchScore(name, mac, result.rssi, null, targetMac);
+          bleFound[mac] = ScannedScaleDevice.fromBle(name, mac, result.rssi, score);
+        }
+        _emitScanProgress(lefuFound, bleFound, targetMac);
+      });
+      await FlutterBluePlus.startScan(timeout: timeout);
+
+      await PPBluetoothKitManager.startScan((device) {
+        final key = _deviceKey(device);
+        final prev = _lastScan[key];
+        if (prev == null || (device.rssi ?? -999) > (prev.rssi ?? -999)) {
+          _lastScan[key] = device;
+        }
+
+        final mac = device.deviceMac ?? '';
+        if (mac.isNotEmpty) {
+          lefuFound[mac] = ScannedScaleDevice.fromLeFu(device, _matchScoreDevice(device, targetMac));
+        }
+        _emitScanProgress(lefuFound, bleFound, targetMac);
+      });
+
+      await Future<void>.delayed(timeout);
+    } finally {
+      await FlutterBluePlus.stopScan();
+      await bleSub?.cancel();
+      await PPBluetoothKitManager.stopScan();
+    }
+
+    return _mergeScanResults(lefuFound, bleFound, targetMac);
+  }
+
+  void _emitScanProgress(
+    Map<String, ScannedScaleDevice> lefuFound,
+    Map<String, ScannedScaleDevice> bleFound,
+    String targetMac,
+  ) {
+    final merged = _mergeScanResults(lefuFound, bleFound, targetMac);
+    _emit(_status.copyWith(
+      discoveredDevices: merged,
+      rawBleCount: _rawBleCount,
+      message: merged.isEmpty
+          ? 'Поиск… BLE-устройств: $_rawBleCount, LeFu: ${lefuFound.length}. Встаньте на весы.'
+          : 'Найдено: ${merged.first.label}',
+    ));
+  }
+
+  List<ScannedScaleDevice> _mergeScanResults(
+    Map<String, ScannedScaleDevice> lefuFound,
+    Map<String, ScannedScaleDevice> bleFound,
+    String targetMac,
+  ) {
+    final merged = <String, ScannedScaleDevice>{...lefuFound};
+
+    for (final entry in bleFound.entries) {
+      if (merged.containsKey(entry.key)) continue;
+      final name = entry.value.label.split(' · ').first;
+      if (_looksLikeScaleName(name) || _macKey(entry.key) == _macKey(targetMac)) {
+        merged[entry.key] = entry.value;
+      }
+    }
+
+    if (merged.isEmpty && lefuFound.isEmpty) {
+      for (final entry in bleFound.entries) {
+        merged[entry.key] = entry.value;
+      }
+    }
+
+    final items = merged.values.toList()
+      ..sort((a, b) => b.matchScore.compareTo(a.matchScore));
+    return items;
+  }
+
+  List<ScannedScaleDevice> _rankDevices(String targetMac) {
+    return _lastScan.values
+        .map((d) => ScannedScaleDevice.fromLeFu(d, _matchScoreDevice(d, targetMac)))
+        .toList()
+      ..sort((a, b) => b.matchScore.compareTo(a.matchScore));
+  }
+
+  Future<PPDeviceModel?> _waitForLeFuDevice(
+    String targetMac, {
+    Duration timeout = const Duration(seconds: 40),
+  }) async {
+    PPDeviceModel? found;
+    final completer = Completer<PPDeviceModel?>();
+
+    _emit(_status.copyWith(
+      state: HealthScaleConnectionState.scanning,
+      message: 'Ждём сигнал весов… Встаньте на платформу босиком.',
+    ));
 
     await PPBluetoothKitManager.startScan((device) {
       final mac = device.deviceMac ?? '';
       if (mac.isEmpty) return;
-      final key = _macKey(mac);
-      final prev = _lastScan[key];
-      if (prev == null || (device.rssi ?? -999) > (prev.rssi ?? -999)) {
-        _lastScan[key] = device;
+
+      _lastScan[_deviceKey(device)] = device;
+
+      final matches = _macKey(mac) == _macKey(targetMac) ||
+          (device.deviceName ?? '').toLowerCase().contains('health');
+
+      if (matches && !completer.isCompleted) {
+        found = device;
+        completer.complete(device);
       }
 
-      final ranked = _rankDevices(targetMac);
       _emit(_status.copyWith(
-        discoveredDevices: ranked,
-        message: ranked.isEmpty
-            ? 'Поиск… найдено устройств: ${_lastScan.length}'
-            : 'Найдено: ${ranked.first.label}',
+        discoveredDevices: _rankDevices(targetMac),
+        message: 'LeFu видит: ${device.deviceName ?? mac}',
       ));
     });
 
-    timer = Timer(timeout, () async {
-      await PPBluetoothKitManager.stopScan();
-      if (!completer.isCompleted) completer.complete();
-    });
-
-    await completer.future;
-    timer.cancel();
-    await PPBluetoothKitManager.stopScan();
-
-    return _rankDevices(targetMac);
-  }
-
-  List<ScannedScaleDevice> _rankDevices(String targetMac) {
-    final items = _lastScan.values
-        .where(_looksLikeScale)
-        .map((d) => ScannedScaleDevice(d, _matchScore(d, targetMac)))
-        .toList()
-      ..sort((a, b) => b.matchScore.compareTo(a.matchScore));
-
-    if (items.isEmpty) {
-      return _lastScan.values
-          .map((d) => ScannedScaleDevice(d, _matchScore(d, targetMac)))
-          .toList()
-        ..sort((a, b) => b.matchScore.compareTo(a.matchScore));
+    try {
+      return await completer.future.timeout(timeout, onTimeout: () => null);
+    } finally {
+      if (found == null) {
+        await PPBluetoothKitManager.stopScan();
+      }
     }
-    return items;
   }
 
-  Future<PPDeviceModel?> _pickDevice(String targetMac) async {
-    final ranked = await scanDevices(preferredMac: targetMac);
-    if (ranked.isEmpty) return null;
-    return ranked.first.model;
-  }
-
-  Future<void> connect({String? macAddress, PPDeviceModel? device}) async {
+  Future<void> connect({
+    String? macAddress,
+    PPDeviceModel? device,
+    ScannedScaleDevice? picked,
+  }) async {
     await initialize();
     if (!_sdkReady) return;
 
     await _ensurePermissions();
 
-    PPDeviceModel? target = device;
-    final mac = _normalizeMac(macAddress ?? await getSavedMac());
+    PPDeviceModel? target = device ?? picked?.model;
+    final mac = _normalizeMac(macAddress ?? picked?.mac ?? await getSavedMac());
+
+    if (target == null) {
+      final key = _macKey(mac);
+      for (final candidate in _lastScan.values) {
+        if (_macKey(candidate.deviceMac ?? '') == key) {
+          target = candidate;
+          break;
+        }
+      }
+    }
 
     if (target == null) {
       final existing = await PPBluetoothKitManager.fetchConnectedDevice();
@@ -324,28 +502,14 @@ class HealthScaleService {
       }
     }
 
-    if (target == null) {
-      final key = _macKey(mac);
-      target = _lastScan[key];
-      if (target == null) {
-        for (final candidate in _lastScan.values) {
-          if (_macKey(candidate.deviceMac ?? '') == key) {
-            target = candidate;
-            break;
-          }
-        }
-      }
-    }
-
-    target ??= await _pickDevice(mac);
+    target ??= await _waitForLeFuDevice(mac);
 
     if (target == null) {
-      final found = _lastScan.values.map((d) => d.deviceName ?? d.deviceMac).join(', ');
-      throw StateError(
-        found.isEmpty
-            ? 'Весы не найдены. Включите их, встаньте на платформу, закройте Futula Scale и нажмите «Найти весы».'
-            : 'Health Scale не найдены. Найдены: $found. Выберите устройство из списка.',
-      );
+      final hint = _rawBleCount > 0
+          ? 'Bluetooth работает (найдено $_rawBleCount устройств), но весы Health Scale не видны. '
+              'Закройте Futula Scale, встаньте на платформу и нажмите «Найти весы».'
+          : 'Bluetooth не видит устройств. Включите геолокацию, Bluetooth и разрешения для приложения.';
+      throw StateError(hint);
     }
 
     await _saveDevice(target);
@@ -355,7 +519,7 @@ class HealthScaleService {
       state: HealthScaleConnectionState.connecting,
       deviceMac: deviceMac,
       deviceName: target.deviceName,
-      message: 'Подключение к ${target.deviceName ?? "Health Scale"}...',
+      message: 'Подключение к ${target.deviceName ?? "Health Scale"}…',
     ));
 
     final connected = Completer<void>();
@@ -384,9 +548,9 @@ class HealthScaleService {
     });
 
     await connected.future.timeout(
-      const Duration(seconds: 30),
+      const Duration(seconds: 35),
       onTimeout: () => throw StateError(
-        'Таймаут подключения. Закройте Futula Scale и попробуйте «Найти весы».',
+        'Таймаут подключения. Закройте Futula Scale и повторите «Найти весы».',
       ),
     );
   }
@@ -409,8 +573,12 @@ class HealthScaleService {
     }
   }
 
-  Future<double> syncWeightToProfile({String? macAddress, PPDeviceModel? device}) async {
-    await connect(macAddress: macAddress, device: device);
+  Future<double> syncWeightToProfile({
+    String? macAddress,
+    PPDeviceModel? device,
+    ScannedScaleDevice? picked,
+  }) async {
+    await connect(macAddress: macAddress, device: device, picked: picked);
     return waitForWeight();
   }
 

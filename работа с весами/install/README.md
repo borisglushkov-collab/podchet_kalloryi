@@ -1,36 +1,30 @@
 # Установка APK — Health Scale
 
-**Последняя версия:** 1.2.2+5  
-**Файл:** `podchet_kalloriy-1.2.2-health-scale.apk` (~59 MB)
+**Последняя версия:** 1.2.3+6  
+**Файл:** `podchet_kalloriy-1.2.3-health-scale.apk` (~62 MB)
 
-## Что нового в 1.2.2
+## Что нового в 1.2.3
 
-- Кнопка **«Найти весы»** — сканирование BLE и выбор устройства из списка
-- Поиск по имени **Health Scale**, не только по MAC
-- Повторное подключение без лишнего сканирования, если весы уже найдены
-- Подсказки при ошибках (закрыть Futula Scale, разрешения Bluetooth)
+- Двойной поиск: LeFu SDK + системный Bluetooth
+- Проверка включённого Bluetooth и разрешений (Bluetooth + геолокация)
+- Диалог поиска с подсказкой «встаньте на весы»
+- Подключение ждёт сигнал весов до 40 с (не нужно успеть за 25 с)
+- Диагностика: сколько BLE-устройств видит телефон
 
-## Скачать на Windows (D:)
+## Скачать
 
-```bat
-download-apk-to-d.bat
-```
+https://github.com/borisglushkov-collab/podchet_kalloryi/releases/download/v1.2.3-health-scale/podchet_kalloriy-1.2.3-health-scale.apk
 
-Или вручную:  
-https://github.com/borisglushkov-collab/podchet_kalloryi/releases/download/v1.2.2-health-scale/podchet_kalloriy-1.2.2-health-scale.apk
-
-## Установка на Android
-
-1. Включите **Установка из неизвестных источников**.
-2. Установите APK (USB + ADB или файл на телефоне):
-   ```bat
-   adb install -r D:\podchet_kalloriy-1.2.2-health-scale.apk
-   ```
+Windows: `download-apk-to-d.bat`
 
 ## Подключение весов
 
-1. **Закройте приложение Futula Scale** (оно держит Bluetooth).
-2. Включите Bluetooth и геолокацию, разрешите доступ для «Подсчёт калорий».
-3. Откройте **Профиль** → блок **Health Scale**.
-4. Нажмите **«Найти весы»** → выберите **Health Scale** (MAC `CF:E7:02:17:03:93`).
-5. Нажмите **«Взвеситься»** и встаньте на платформу босиком.
+1. **Закройте Futula Scale** полностью.
+2. **Настройки Android → Приложения → Подсчёт калорий** → разрешите **Bluetooth** и **Геолокацию**.
+3. Включите **Bluetooth** и **Геолокацию** (GPS) на телефоне.
+4. **Встаньте на весы босиком** — так они включают Bluetooth.
+5. Профиль → **Найти весы** → выберите **Health Scale**.
+6. **Взвеситься**.
+
+Если «Bluetooth-устройств в эфире: 0» — проблема в разрешениях или GPS.  
+Если число > 0, но весы не находятся — закройте Futula Scale и снова встаньте на платформу.

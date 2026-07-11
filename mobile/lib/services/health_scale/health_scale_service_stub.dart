@@ -14,12 +14,14 @@ class ScannedScaleDevice {
     required this.mac,
     this.deviceType,
     this.isPreferred = false,
+    this.fromLeFu = false,
   });
 
   final String label;
   final String mac;
   final String? deviceType;
   final bool isPreferred;
+  final bool fromLeFu;
 }
 
 class HealthScaleStatus {
@@ -27,11 +29,13 @@ class HealthScaleStatus {
     this.state = HealthScaleConnectionState.idle,
     this.message = 'Health Scale доступны только на Android и iOS.',
     this.discoveredDevices = const [],
+    this.rawBleCount = 0,
   });
 
   final HealthScaleConnectionState state;
   final String message;
   final List<ScannedScaleDevice> discoveredDevices;
+  final int rawBleCount;
 }
 
 class HealthScaleService {
@@ -49,7 +53,7 @@ class HealthScaleService {
 
   Future<List<ScannedScaleDevice>> scanDevices({Duration? timeout}) async => [];
 
-  Future<void> connect({String? macAddress}) async {
+  Future<void> connect({String? macAddress, ScannedScaleDevice? picked}) async {
     throw UnsupportedError('Health Scale недоступны на этой платформе.');
   }
 

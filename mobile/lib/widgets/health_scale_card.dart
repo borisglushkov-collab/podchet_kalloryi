@@ -21,22 +21,30 @@ class HealthScaleCard extends StatefulWidget {
 class _HealthScaleCardState extends State<HealthScaleCard> {
   final _service = HealthScaleService.instance;
   bool _busy = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _service.initialize();
-  }
+  ScannedScaleDevice? _lastPicked;
 
   Future<void> _scanAndPick() async {
     setState(() => _busy = true);
     try {
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => _ScanProgressDialog(service: _service),
+      );
+
       final devices = await _service.scanDevices();
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+
       if (!mounted) return;
       if (devices.isEmpty) {
+        final raw = _service.status.rawBleCount;
         _showSnack(
-          'Весы не найдены. Включите их, закройте Futula Scale, '
-          'разрешите Bluetooth и геолокацию.',
+          raw > 0
+              ? 'LeFu не видит весы, хотя Bluetooth находит $raw устройств. '
+                  'Закройте Futula Scale, встаньте на платформу и повторите.'
+              : 'Устройства не найдены. Включите Bluetooth и геолокацию, '
+                  'разрешите доступ приложению.',
         );
         return;
       }
@@ -48,18 +56,26 @@ class _HealthScaleCardState extends State<HealthScaleCard> {
       );
       if (picked == null || !mounted) return;
 
-      await _connectAndWeigh(mac: picked.mac);
+      _lastPicked = picked;
+      await _connectAndWeigh(picked: picked);
     } catch (e) {
-      if (mounted) _showSnack('Ошибка поиска: $e');
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).popUntil((r) => r is! DialogRoute);
+        _showSnack('Ошибка поиска: $e');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _connectAndWeigh({String? mac}) async {
+  Future<void> _connectAndWeigh({ScannedScaleDevice? picked}) async {
     setState(() => _busy = true);
     try {
-      await _service.connect(macAddress: mac);
+      final target = picked ?? _lastPicked;
+      await _service.connect(
+        macAddress: target?.mac,
+        picked: target,
+      );
       if (!mounted) return;
       _showSnack('Весы подключены. Встаньте на платформу…');
       final kg = await _service.waitForWeight();
@@ -149,12 +165,13 @@ class _HealthScaleCardState extends State<HealthScaleCard> {
                     ),
                 ],
               ),
-              if (s.discoveredDevices.isNotEmpty && !_busy) ...[
-                const SizedBox(height: 10),
+              if (s.rawBleCount > 0 && !_busy) ...[
+                const SizedBox(height: 8),
                 Text(
-                  'Найдено: ${s.discoveredDevices.map((d) => d.label).join(', ')}',
+                  'Bluetooth-устройств в эфире: ${s.rawBleCount}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.primary,
+                        color: AppColors.textSecondary,
+                        fontSize: 11,
                       ),
                 ),
               ],
@@ -180,17 +197,60 @@ class _HealthScaleCardState extends State<HealthScaleCard> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Перед подключением закройте Futula Scale. '
-                'Если не находит — нажмите «Найти весы» и выберите Health Scale из списка.',
+                '1. Закройте Futula Scale\n'
+                '2. Встаньте на весы босиком\n'
+                '3. Нажмите «Найти весы» → выберите Health Scale\n'
+                '4. Разрешите Bluetooth и геолокацию',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: AppColors.textSecondary,
                       fontSize: 11,
+                      height: 1.4,
                     ),
               ),
             ],
           ),
         );
       },
+    );
+  }
+}
+
+class _ScanProgressDialog extends StatelessWidget {
+  const _ScanProgressDialog({required this.service});
+
+  final HealthScaleService service;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Поиск весов'),
+      content: StreamBuilder<HealthScaleStatus>(
+        stream: service.statusStream,
+        initialData: service.status,
+        builder: (context, snapshot) {
+          final s = snapshot.data ?? service.status;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const LinearProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(s.message ?? 'Сканирование…'),
+              const SizedBox(height: 8),
+              Text(
+                'Встаньте на платформу весов, чтобы они включили Bluetooth.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+              ),
+              if (s.discoveredDevices.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text('Найдено: ${s.discoveredDevices.length}'),
+              ],
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -218,7 +278,8 @@ class _DevicePickerSheet extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 20),
             child: Text(
-              'Health Scale обычно отображается с именем «Health Scale» или MAC CF:E7:…',
+              'Выберите Health Scale (CF:E7:…). Устройства без метки LeFu '
+              'потребуют повторного поиска при подключении.',
               style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
           ),
@@ -234,7 +295,10 @@ class _DevicePickerSheet extends StatelessWidget {
                     color: d.isPreferred ? AppColors.streak : AppColors.textSecondary,
                   ),
                   title: Text(d.label),
-                  subtitle: Text('${d.mac}${d.deviceType != null ? ' · ${d.deviceType}' : ''}'),
+                  subtitle: Text(
+                    '${d.mac}${d.deviceType != null ? ' · ${d.deviceType}' : ''}'
+                    '${d.fromLeFu ? '' : ' · только BLE'}',
+                  ),
                   onTap: () => Navigator.pop(context, d),
                 );
               },
