@@ -1,21 +1,32 @@
 # Установка APK — Health Scale
 
-**Последняя версия:** 1.3.0+9  
-**Файл:** `podchet_kalloriy-1.3.0-9-health-scale.apk` (~66 MB)
+**Последняя версия:** 1.3.1+10  
+**Файл:** `podchet_kalloriy-1.3.1-10-health-scale.apk` (~63 MB)
 
-## v1.2.5 — исправлен краш при запуске / весах
+## v1.3.1 — исправлен чёрный экран после подключения весов
 
-В v1.2.4 приложение падало с `ClassCastException` (LeFu SDK + R8). В 1.2.5 обфускация отключена.
+После подключения весов при переключении на «Сегодня» мог появляться тёмный экран. Исправлена навигация в карточке весов.
 
-## Скачать без GitHub CDN (ERR_CONNECTION_RESET)
+## Скачать
+
+### Яндекс.Диск (рекомендуется)
 
 ```bat
 cd /d D:\ucheba\podchet_kalloriy
-git pull origin cursor/chat-podchet-kalloryi-a36d
-copy "работа с весами\install\podchet_kalloriy-1.2.5-health-scale.apk" D:\
+android-сборки\download-from-yandex-disk.bat
 ```
 
-Или **`pull-apk-from-git.bat`**
+### Git
+
+```bat
+android-сборки\pull-apk-from-git.bat
+```
+
+### Универсальный (локально → Git → GitHub)
+
+```bat
+android-сборки\download-apk-to-d.bat
+```
 
 ## Подключение весов
 

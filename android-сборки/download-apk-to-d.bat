@@ -3,15 +3,15 @@ chcp 65001 >nul
 setlocal EnableDelayedExpansion
 
 set "PROJECT=D:\ucheba\podchet_kalloriy"
-set "APK_NAME=podchet_kalloriy-1.3.0-9-health-scale.apk"
+set "APK_NAME=podchet_kalloriy-1.3.1-10-health-scale.apk"
 set "LOCAL_APK=%PROJECT%\android-сборки\install\%APK_NAME%"
 set "DST=D:\%APK_NAME%"
 set "INSTALL_DIR=%PROJECT%\android-сборки\install"
-set "BRANCH=cursor/android-builds-a36d"
-set "URL=https://github.com/borisglushkov-collab/podchet_kalloryi/releases/download/v1.2.5-health-scale/%APK_NAME%"
+set "BRANCH=cursor/chat-podchet-kalloryi-a36d"
+set "URL=https://github.com/borisglushkov-collab/podchet_kalloryi/raw/cursor/chat-podchet-kalloryi-a36d/android-%D1%81%D0%B1%D0%BE%D1%80%D0%BA%D0%B8/install/%APK_NAME%"
 
 echo.
-echo === Установка APK v1.2.5 (Health Scale) ===
+echo === Установка APK v1.3.1 (Health Scale, fix чёрного экрана) ===
 echo.
 
 if exist "%LOCAL_APK%" (

@@ -11,7 +11,7 @@ android-сборки/
 ├── README.md
 ├── worktree.json
 ├── install/                         # Готовые APK
-│   └── podchet_kalloriy-1.2.5-health-scale.apk
+│   └── podchet_kalloriy-1.3.1-10-health-scale.apk
 ├── scripts/
 │   ├── build-apk.bat                # Сборка release APK
 │   ├── post-build.sh                # Копирование + Яндекс.Диск
@@ -57,4 +57,4 @@ android-сборки\pull-apk-from-git.bat
 
 ## Последняя версия
 
-**1.2.5** — исправлен краш LeFu SDK (ClassCastException).
+**1.3.1+10** — исправлен чёрный экран после подключения весов; v1.2.5 — краш LeFu SDK (ClassCastException).
