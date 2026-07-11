@@ -85,6 +85,8 @@ SDK уже умеет парсить протокол LeFu — **не нужен
 
 ## План внедрения в Podchet Kalloriy
 
+### Health Scale (напольные) — реализовано
+
 1. [x] Подтвердить модель: **Health Scale** (напольные, MAC `CF:E7:02:17:03:93`).
 2. [x] SDK LeFu (`pp_bluetooth_kit_flutter`) + `lefu.config` + demo-ключи для теста.
 3. [x] Сервис `mobile/lib/services/health_scale/` — сканирование по MAC, синхронизация веса.
@@ -104,6 +106,12 @@ SDK уже умеет парсить протокол LeFu — **не нужен
 - `mobile/lib/widgets/health_scale_card.dart`
 - `mobile/lib/screens/profile_screen.dart`
 - `mobile/assets/lefu.config`, `mobile/assets/lefu_credentials.json`
+
+### Kitchen Scale (кухонные, граммы) — запланировано
+
+1. [ ] Подтвердить модель Kitchen Scale 3 / 5.
+2. [ ] Кнопка «Подключить Futula» на экране добавления продукта.
+3. [ ] Автоподстановка граммов + сохранение `deviceId` в `shared_preferences`.
 
 ## Связанные файлы проекта
 
