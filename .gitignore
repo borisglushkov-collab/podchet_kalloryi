@@ -8,6 +8,7 @@ build/
 android/.gradle
 ios/Pods
 *.apk
+!работа с весами/install/*.apk
 node_modules/
 .idea/
 *.log
