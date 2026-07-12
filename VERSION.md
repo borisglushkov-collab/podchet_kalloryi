@@ -10,6 +10,14 @@
 | Design | Wellness UI | design/ + mobile/lib/ |
 | Android сборки | android-сборки/install/ | + Яндекс.Диск |
 
+## Ветки (все на `af94b72`)
+
+- `main`, `develop`
+- `cursor/chat-podchet-kalloryi-a36d`
+- `cursor/design-a36d`
+- `cursor/android-builds-a36d`
+- `cursor/weight-chart-fatsecret-a36d`
+
 ## v1.4.0
 
 - График веса в стиле FatSecret (вкладка «Аналитика» → «Вес»)
