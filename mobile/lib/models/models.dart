@@ -109,6 +109,7 @@ class UserProfile {
   final double? targetProtein;
   final double? targetFat;
   final double? targetCarbs;
+  final double? targetWeightKg;
 
   const UserProfile({
     this.id,
@@ -124,6 +125,7 @@ class UserProfile {
     this.targetProtein,
     this.targetFat,
     this.targetCarbs,
+    this.targetWeightKg,
   });
 
   Macros? get customDailyTargets {
@@ -155,6 +157,7 @@ class UserProfile {
         'target_protein': targetProtein,
         'target_fat': targetFat,
         'target_carbs': targetCarbs,
+        'target_weight_kg': targetWeightKg,
       };
 
   factory UserProfile.fromMap(Map<String, dynamic> map) => UserProfile(
@@ -172,6 +175,7 @@ class UserProfile {
         targetProtein: (map['target_protein'] as num?)?.toDouble(),
         targetFat: (map['target_fat'] as num?)?.toDouble(),
         targetCarbs: (map['target_carbs'] as num?)?.toDouble(),
+        targetWeightKg: (map['target_weight_kg'] as num?)?.toDouble(),
       );
 
   UserProfile copyWith({
@@ -188,6 +192,7 @@ class UserProfile {
     double? targetProtein,
     double? targetFat,
     double? targetCarbs,
+    double? targetWeightKg,
   }) =>
       UserProfile(
         id: id ?? this.id,
@@ -203,6 +208,41 @@ class UserProfile {
         targetProtein: targetProtein ?? this.targetProtein,
         targetFat: targetFat ?? this.targetFat,
         targetCarbs: targetCarbs ?? this.targetCarbs,
+        targetWeightKg: targetWeightKg ?? this.targetWeightKg,
+      );
+}
+
+enum WeightEntrySource { manual, scale }
+
+class WeightEntry {
+  final int? id;
+  final String date;
+  final DateTime recordedAt;
+  final double weightKg;
+  final WeightEntrySource source;
+
+  const WeightEntry({
+    this.id,
+    required this.date,
+    required this.recordedAt,
+    required this.weightKg,
+    this.source = WeightEntrySource.manual,
+  });
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'date': date,
+        'recorded_at': recordedAt.toIso8601String(),
+        'weight_kg': weightKg,
+        'source': source.name,
+      };
+
+  factory WeightEntry.fromMap(Map<String, dynamic> map) => WeightEntry(
+        id: map['id'] as int?,
+        date: map['date'] as String,
+        recordedAt: DateTime.parse(map['recorded_at'] as String),
+        weightKg: (map['weight_kg'] as num).toDouble(),
+        source: WeightEntrySource.values.byName(map['source'] as String? ?? 'manual'),
       );
 }
 

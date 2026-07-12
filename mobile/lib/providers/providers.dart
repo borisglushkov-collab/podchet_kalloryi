@@ -6,6 +6,10 @@ import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/nutrition_calculator.dart';
 
+final weightEntriesProvider = FutureProvider<List<WeightEntry>>((ref) async {
+  return AppDatabase.getWeightEntries();
+});
+
 final apiServiceProvider = Provider((ref) => ApiService());
 final foodSearchServiceProvider = Provider((ref) => FoodSearchService());
 

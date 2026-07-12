@@ -7,6 +7,7 @@ import '../models/models.dart';
 class WebDatabase {
   static const _profileKey = 'user_profile';
   static const _entriesKey = 'food_entries';
+  static const _weightEntriesKey = 'weight_entries';
 
   static Future<SharedPreferences> get _prefs async =>
       SharedPreferences.getInstance();
@@ -88,5 +89,43 @@ class WebDatabase {
           );
     }
     return total;
+  }
+
+  static Future<List<WeightEntry>> getWeightEntries() async {
+    final prefs = await _prefs;
+    final raw = prefs.getString(_weightEntriesKey);
+    if (raw == null) return [];
+    final list = jsonDecode(raw) as List<dynamic>;
+    return list.map((e) => WeightEntry.fromMap(e as Map<String, dynamic>)).toList()
+      ..sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
+  }
+
+  static Future<void> _saveWeightEntries(List<WeightEntry> entries) async {
+    final prefs = await _prefs;
+    await prefs.setString(
+      _weightEntriesKey,
+      jsonEncode(entries.map((e) => e.toMap()).toList()),
+    );
+  }
+
+  static Future<void> addWeightEntry(WeightEntry entry) async {
+    final entries = await getWeightEntries();
+    final nextId = entries.isEmpty
+        ? 1
+        : entries.map((e) => e.id ?? 0).reduce((a, b) => a > b ? a : b) + 1;
+    entries.add(WeightEntry(
+      id: nextId,
+      date: entry.date,
+      recordedAt: entry.recordedAt,
+      weightKg: entry.weightKg,
+      source: entry.source,
+    ));
+    await _saveWeightEntries(entries);
+  }
+
+  static Future<void> deleteWeightEntry(int id) async {
+    final entries = await getWeightEntries();
+    entries.removeWhere((e) => e.id == id);
+    await _saveWeightEntries(entries);
   }
 }

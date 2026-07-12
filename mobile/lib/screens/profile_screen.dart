@@ -5,8 +5,10 @@ import '../db/database.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../services/nutrition_calculator.dart';
+import '../theme/app_theme.dart';
 import '../widgets/health_scale_card.dart';
 import '../widgets/widgets.dart';
+import 'weight_tracker_screen.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   final bool embedded;
@@ -25,6 +27,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _ageController = TextEditingController(text: '30');
   final _heightController = TextEditingController(text: '170');
   final _weightController = TextEditingController(text: '70');
+  final _targetWeightController = TextEditingController(text: '70');
   final _prefsController = TextEditingController();
   final _kcalController = TextEditingController();
   final _proteinController = TextEditingController();
@@ -50,6 +53,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         _ageController.text = profile.age.toString();
         _heightController.text = profile.heightCm.toStringAsFixed(0);
         _weightController.text = profile.weightKg.toStringAsFixed(1);
+        _targetWeightController.text = (profile.targetWeightKg ?? profile.weightKg)
+            .toStringAsFixed(1);
         _prefsController.text = profile.preferences;
         _useCustomTargets = profile.useCustomTargets;
         if (profile.useCustomTargets && profile.customDailyTargets != null) {
@@ -104,6 +109,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _ageController.dispose();
     _heightController.dispose();
     _weightController.dispose();
+    _targetWeightController.dispose();
     _prefsController.dispose();
     _kcalController.dispose();
     _proteinController.dispose();
@@ -113,14 +119,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Future<void> _applySyncedWeight(double weightKg) async {
-    final profile = await AppDatabase.getProfile();
-    if (profile == null) return;
-    final updated = profile.copyWith(weightKg: weightKg);
-    await AppDatabase.saveProfile(updated);
+    await AppDatabase.logWeight(weightKg, source: WeightEntrySource.scale);
     ref.invalidate(profileProvider);
     ref.invalidate(dailyTargetsProvider);
-    if (!_useCustomTargets) _fillAutoTargets(updated);
-    setState(() {});
+    ref.invalidate(weightEntriesProvider);
+    final profile = await AppDatabase.getProfile();
+    if (profile != null && !_useCustomTargets) _fillAutoTargets(profile);
+    if (mounted) {
+      _weightController.text = weightKg.toStringAsFixed(1);
+      setState(() {});
+    }
   }
 
   Future<void> _save() async {
@@ -136,11 +144,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           : NutritionCalculator.carbsFromMacros(kcal, protein, fat);
     }
 
+    final weightKg = double.parse(_weightController.text);
+    final targetWeightKg = double.tryParse(_targetWeightController.text.replaceAll(',', '.'));
+
+    final existing = await AppDatabase.getProfile();
     final profile = UserProfile(
       gender: _gender,
       age: int.parse(_ageController.text),
       heightCm: double.parse(_heightController.text),
-      weightKg: double.parse(_weightController.text),
+      weightKg: weightKg,
       activity: _activity,
       goal: _goal,
       preferences: _prefsController.text,
@@ -149,10 +161,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       targetProtein: _useCustomTargets ? double.parse(_proteinController.text) : null,
       targetFat: _useCustomTargets ? double.parse(_fatController.text) : null,
       targetCarbs: _useCustomTargets ? targetCarbs : null,
+      targetWeightKg: targetWeightKg,
     );
     await AppDatabase.saveProfile(profile);
+    if (existing == null ||
+        (existing.weightKg - weightKg).abs() >= 0.05) {
+      await AppDatabase.logWeight(weightKg, source: WeightEntrySource.manual);
+    }
     ref.invalidate(profileProvider);
     ref.invalidate(dailyTargetsProvider);
+    ref.invalidate(weightEntriesProvider);
     ref.invalidate(mealSuggestionProvider);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -230,7 +248,29 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 if (!_useCustomTargets) _fillAutoTargets(_draftProfile());
               },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _targetWeightController,
+              decoration: const InputDecoration(labelText: 'Желаемый вес (кг)'),
+              keyboardType: TextInputType.number,
+              validator: (v) =>
+                  v == null || double.tryParse(v.replaceAll(',', '.')) == null
+                      ? 'Введите желаемый вес'
+                      : null,
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.show_chart, color: AppColors.primary),
+              title: const Text('График и история веса'),
+              subtitle: const Text('Как в FatSecret — прогресс и записи'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const WeightTrackerScreen()),
+              ),
+            ),
+            const SizedBox(height: 8),
             HealthScaleCard(
               weightController: _weightController,
               onWeightSynced: _applySyncedWeight,
