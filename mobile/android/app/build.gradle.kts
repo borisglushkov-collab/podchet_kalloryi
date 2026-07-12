@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.podchet.podchet_kalloriy"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
