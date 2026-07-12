@@ -14,6 +14,12 @@ subprojects {
             compileSdk = 36
         }
     }
+    // LeFu SDK pins compileSdk 33; force 36 after evaluation for AAR metadata.
+    afterEvaluate {
+        extensions.findByType(LibraryExtension::class.java)?.apply {
+            compileSdk = 36
+        }
+    }
 }
 
 val newBuildDir: Directory =
