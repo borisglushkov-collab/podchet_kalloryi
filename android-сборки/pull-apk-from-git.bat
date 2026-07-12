@@ -3,7 +3,7 @@ chcp 65001 >nul
 setlocal
 
 set "PROJECT=D:\ucheba\podchet_kalloriy"
-set "APK_NAME=podchet_kalloriy-1.4.2-13-health-scale.apk"
+set "APK_NAME=podchet_kalloriy-1.4.3-14-health-scale.apk"
 set "APK_SRC=%PROJECT%\android-сборки\install\%APK_NAME%"
 set "APK_DST=D:\%APK_NAME%"
 set "BRANCH=cursor/chat-podchet-kalloryi-a36d"
