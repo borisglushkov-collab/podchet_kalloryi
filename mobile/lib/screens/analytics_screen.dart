@@ -18,6 +18,7 @@ class AnalyticsScreen extends ConsumerStatefulWidget {
 }
 
 class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
+  /// 0 = Калории (дизайн A), 1 = Вес
   int _tab = 0;
 
   @override
@@ -32,13 +33,13 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               segments: const [
                 ButtonSegment(
                   value: 0,
-                  label: Text('Вес'),
-                  icon: Icon(Icons.monitor_weight_outlined, size: 18),
+                  label: Text('Калории'),
+                  icon: Icon(Icons.local_fire_department_outlined, size: 18),
                 ),
                 ButtonSegment(
                   value: 1,
-                  label: Text('Калории'),
-                  icon: Icon(Icons.local_fire_department_outlined, size: 18),
+                  label: Text('Вес'),
+                  icon: Icon(Icons.monitor_weight_outlined, size: 18),
                 ),
               ],
               selected: {_tab},
@@ -47,8 +48,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           ),
           Expanded(
             child: _tab == 0
-                ? const WeightTrackerScreen(embedded: true)
-                : const _CaloriesTab(),
+                ? const _CaloriesTab()
+                : const WeightTrackerScreen(embedded: true),
           ),
         ],
       ),
