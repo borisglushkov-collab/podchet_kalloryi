@@ -118,10 +118,12 @@ class _WeightTrackerScreenState extends ConsumerState<WeightTrackerScreen> {
             final lost = start - current;
             final remaining = (current - target).abs();
 
-            return RefreshIndicator(
-              onRefresh: _reload,
-              child: CustomScrollView(
-                slivers: [
+            return ColoredBox(
+              color: AppColors.background,
+              child: RefreshIndicator(
+                onRefresh: _reload,
+                child: CustomScrollView(
+                  slivers: [
                   SliverToBoxAdapter(
                     child: _WeightHeader(
                       currentWeight: current,
@@ -167,6 +169,7 @@ class _WeightTrackerScreenState extends ConsumerState<WeightTrackerScreen> {
                   const SliverToBoxAdapter(child: SizedBox(height: 24)),
                 ],
               ),
+            ),
             );
           },
         );
@@ -436,97 +439,123 @@ class _HistoryList extends StatelessWidget {
       grouped.putIfAbsent(e.recordedAt.year, () => []).add(e);
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: grouped.entries.map((yearGroup) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-              child: Text(
-                '${yearGroup.key}',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
+    return ColoredBox(
+      color: AppColors.background,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: grouped.entries.map((yearGroup) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                child: Text(
+                  '${yearGroup.key}',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                ),
               ),
-            ),
-            ...yearGroup.value.asMap().entries.map((i) {
-              final entry = i.value;
-              final prev = i.key + 1 < yearGroup.value.length
-                  ? yearGroup.value[i.key + 1]
-                  : null;
-              final delta = prev != null ? entry.weightKg - prev.weightKg : null;
-
-              return Dismissible(
-                key: ValueKey(entry.id),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  color: Colors.red.shade300,
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 20),
-                  child: const Icon(Icons.delete_outline, color: Colors.white),
-                ),
-                confirmDismiss: (_) async {
-                  return await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: const Text('Удалить запись?'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              child: const Text('Отмена'),
-                            ),
-                            FilledButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text('Удалить'),
-                            ),
-                          ],
-                        ),
-                      ) ??
-                      false;
-                },
-                onDismissed: (_) {
-                  if (entry.id != null) onDelete(entry.id!);
-                },
-                child: Container(
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
                   color: AppColors.surface,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 72,
-                        child: Text(
-                          DateFormat('MMM dd', 'ru').format(entry.recordedAt),
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: AppColors.textSecondary,
-                              ),
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          '${entry.weightKg.toStringAsFixed(1).replaceAll('.', ',')} кг',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
-                      ),
-                      if (delta != null && delta.abs() >= 0.05)
-                        Icon(
-                          delta > 0 ? Icons.arrow_upward : Icons.arrow_downward,
-                          size: 18,
-                          color: delta > 0
-                              ? const Color(0xFFE57373)
-                              : AppColors.water,
-                        ),
-                    ],
-                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.surfaceMuted),
                 ),
-              );
-            }),
-          ],
-        );
-      }).toList(),
+                child: Column(
+                  children: yearGroup.value.asMap().entries.map((i) {
+                    final entry = i.value;
+                    final prev = i.key + 1 < yearGroup.value.length
+                        ? yearGroup.value[i.key + 1]
+                        : null;
+                    final delta = prev != null ? entry.weightKg - prev.weightKg : null;
+                    final isLast = i.key == yearGroup.value.length - 1;
+
+                    return Dismissible(
+                      key: ValueKey(entry.id),
+                      direction: DismissDirection.endToStart,
+                      background: Container(
+                        color: Colors.red.shade300,
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.only(right: 20),
+                        child: const Icon(Icons.delete_outline, color: Colors.white),
+                      ),
+                      confirmDismiss: (_) async {
+                        return await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('Удалить запись?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: const Text('Отмена'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () => Navigator.pop(ctx, true),
+                                    child: const Text('Удалить'),
+                                  ),
+                                ],
+                              ),
+                            ) ??
+                            false;
+                      },
+                      onDismissed: (_) {
+                        if (entry.id != null) onDelete(entry.id!);
+                      },
+                      child: Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: 72,
+                                  child: Text(
+                                    DateFormat('MMM dd', 'ru').format(entry.recordedAt),
+                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                          color: AppColors.textSecondary,
+                                        ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    '${entry.weightKg.toStringAsFixed(1).replaceAll('.', ',')} кг',
+                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                  ),
+                                ),
+                                if (delta != null && delta.abs() >= 0.05)
+                                  Icon(
+                                    delta > 0 ? Icons.arrow_upward : Icons.arrow_downward,
+                                    size: 18,
+                                    color: delta > 0
+                                        ? const Color(0xFFE57373)
+                                        : AppColors.water,
+                                  ),
+                              ],
+                            ),
+                          ),
+                          if (!isLast)
+                            Divider(
+                              height: 1,
+                              indent: 16,
+                              endIndent: 16,
+                              color: AppColors.surfaceMuted,
+                            ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          );
+        }).toList(),
+      ),
     );
   }
 }

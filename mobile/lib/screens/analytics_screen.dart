@@ -19,11 +19,13 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: SegmentedButton<int>(
+    return ColoredBox(
+      color: AppColors.background,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: SegmentedButton<int>(
             segments: const [
               ButtonSegment(value: 0, label: Text('Вес'), icon: Icon(Icons.monitor_weight_outlined, size: 18)),
               ButtonSegment(value: 1, label: Text('Калории'), icon: Icon(Icons.local_fire_department_outlined, size: 18)),
@@ -38,6 +40,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               : const _CaloriesTab(),
         ),
       ],
+      ),
     );
   }
 }

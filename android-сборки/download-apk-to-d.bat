@@ -3,7 +3,7 @@ chcp 65001 >nul
 setlocal EnableDelayedExpansion
 
 set "PROJECT=D:\ucheba\podchet_kalloriy"
-set "APK_NAME=podchet_kalloriy-1.4.0-11-health-scale.apk"
+set "APK_NAME=podchet_kalloriy-1.4.1-12-health-scale.apk"
 set "LOCAL_APK=%PROJECT%\android-сборки\install\%APK_NAME%"
 set "DST=D:\%APK_NAME%"
 set "INSTALL_DIR=%PROJECT%\android-сборки\install"
