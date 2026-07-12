@@ -78,6 +78,11 @@ class ApiService {
     );
     return MealSuggestion.fromJson(response.data as Map<String, dynamic>);
   }
+
+  Future<void> resetAiSession() async {
+    final baseUrl = await SettingsService.getBackendUrl();
+    await _dio.post('$baseUrl/api/reset-session');
+  }
 }
 
 class FoodSearchService {

@@ -5,8 +5,11 @@ import 'package:url_launcher/url_launcher.dart';
 import '../db/database.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../services/api_service.dart';
 import '../services/nutrition_calculator.dart';
+import '../utils/api_error_utils.dart';
 import '../widgets/widgets.dart';
+import 'settings_screen.dart';
 
 class SuggestionsScreen extends ConsumerStatefulWidget {
   final String date;
@@ -20,6 +23,40 @@ class SuggestionsScreen extends ConsumerStatefulWidget {
 
 class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
   MealType _mealType = MealType.dinner;
+  MealSuggestion? _offlineSuggestion;
+  bool _resettingSession = false;
+
+  Future<void> _retrySuggestion({bool resetSession = false}) async {
+    setState(() => _offlineSuggestion = null);
+    if (resetSession) {
+      setState(() => _resettingSession = true);
+      try {
+        await ref.read(apiServiceProvider).resetAiSession();
+      } catch (_) {
+        // ignore — всё равно пробуем заново
+      } finally {
+        if (mounted) setState(() => _resettingSession = false);
+      }
+    }
+    ref.invalidate(mealSuggestionProvider(_mealType));
+  }
+
+  Future<void> _showOfflinePlan() async {
+    final profile = await ref.read(profileProvider.future);
+    final targets = await ref.read(dailyTargetsProvider.future);
+    final consumed = await ref.read(dailyTotalsProvider(widget.date).future);
+    final entries = await ref.read(dailyEntriesProvider(widget.date).future);
+    if (!mounted || profile == null || targets == null) return;
+
+    setState(() {
+      _offlineSuggestion = NutritionCalculator.offlineMealSuggestion(
+        mealType: _mealType,
+        consumed: consumed,
+        targets: targets,
+        mealsConsumed: NutritionCalculator.consumedByMeal(entries),
+      );
+    });
+  }
 
   Future<void> _openUrl(String url) async {
     final uri = Uri.tryParse(url);
@@ -87,13 +124,18 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
                   .map((m) => DropdownMenuItem(value: m, child: Text(m.label)))
                   .toList(),
               onChanged: (v) {
-                setState(() => _mealType = v!);
+                setState(() {
+                  _mealType = v!;
+                  _offlineSuggestion = null;
+                });
                 ref.invalidate(mealSuggestionProvider(_mealType));
               },
             ),
           ),
           Expanded(
-            child: suggestionAsync.when(
+            child: _offlineSuggestion != null
+                ? _buildSuggestionBody(_offlineSuggestion!)
+                : suggestionAsync.when(
               loading: () => const Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -112,134 +154,176 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
                     children: [
                       const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
                       const SizedBox(height: 16),
-                      Text('$e', textAlign: TextAlign.center),
-                      const SizedBox(height: 16),
+                      Text(
+                        formatApiError(e),
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Сервер: ${SettingsService.defaultBackendUrl}',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.grey,
+                            ),
+                      ),
+                      const SizedBox(height: 20),
                       FilledButton(
-                        onPressed: () => ref.invalidate(mealSuggestionProvider(_mealType)),
-                        child: const Text('Повторить'),
+                        onPressed: _resettingSession
+                            ? null
+                            : () => _retrySuggestion(resetSession: false),
+                        child: Text(_resettingSession ? 'Сброс…' : 'Повторить'),
+                      ),
+                      if (isAiBusyError(e)) ...[
+                        const SizedBox(height: 8),
+                        OutlinedButton(
+                          onPressed: _resettingSession
+                              ? null
+                              : () => _retrySuggestion(resetSession: true),
+                          child: const Text('Сбросить сессию ИИ'),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      OutlinedButton(
+                        onPressed: _showOfflinePlan,
+                        child: const Text('Показать без ИИ'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                        ),
+                        child: const Text('Настройки сервера'),
                       ),
                     ],
                   ),
                 ),
               ),
-              data: (suggestion) => ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  Card(
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Чтобы добить норму на ${_mealType.label.toLowerCase()}',
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                          Text(
-                            NutritionCalculator.mealShareLabel(_mealType),
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          if (suggestion.rolloverIn.calories > 0) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              'Перенос с предыдущих приёмов: '
-                              '${suggestion.rolloverIn.calories.toStringAsFixed(0)} ккал · '
-                              'Б ${suggestion.rolloverIn.protein.toStringAsFixed(0)}г · '
-                              'Ж ${suggestion.rolloverIn.fat.toStringAsFixed(0)}г · '
-                              'У ${suggestion.rolloverIn.carbs.toStringAsFixed(0)}г',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                          if (_mealType == MealType.snack &&
-                              suggestion.deficit.calories > 0) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              'Последний приём — закройте весь остаток дня',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                            ),
-                          ],
-                          const SizedBox(height: 4),
-                          Text(
-                            'Цель с переносом: '
-                            '${suggestion.effectiveTarget.calories.toStringAsFixed(0)} ккал · '
-                            'Б ${suggestion.effectiveTarget.protein.toStringAsFixed(0)}г · '
-                            'Ж ${suggestion.effectiveTarget.fat.toStringAsFixed(0)}г · '
-                            'У ${suggestion.effectiveTarget.carbs.toStringAsFixed(0)}г',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          if (suggestion.topUpSummary.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Text(suggestion.topUpSummary),
-                          ],
-                          if (suggestion.priorityMacros.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: suggestion.priorityMacros
-                                  .map(
-                                    (macro) => Chip(
-                                      label: Text('Нужно: $macro'),
-                                      visualDensity: VisualDensity.compact,
-                                    ),
-                                  )
-                                  .toList(),
-                            ),
-                          ],
-                          const SizedBox(height: 8),
-                          Text(
-                            'Осталось: '
-                            '${suggestion.deficit.calories.toStringAsFixed(0)} ккал · '
-                            'Б ${suggestion.deficit.protein.toStringAsFixed(0)}г · '
-                            'Ж ${suggestion.deficit.fat.toStringAsFixed(0)}г · '
-                            'У ${suggestion.deficit.carbs.toStringAsFixed(0)}г',
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'За день осталось: '
-                            '${suggestion.dailyDeficit.calories.toStringAsFixed(0)} ккал · '
-                            'Б ${suggestion.dailyDeficit.protein.toStringAsFixed(0)}г · '
-                            'Ж ${suggestion.dailyDeficit.fat.toStringAsFixed(0)}г · '
-                            'У ${suggestion.dailyDeficit.carbs.toStringAsFixed(0)}г',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text('Рецепты', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  ...suggestion.recipes.map(
-                    (r) => _RecipeCard(
-                      recipe: r,
-                      mealType: _mealType,
-                      onAdd: () => _addRecipeToDiary(r),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text('Продукты', style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  ...suggestion.products.map(
-                    (p) => _ProductCard(product: p, onOpen: () => _openUrl(p.url)),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    suggestion.disclaimer,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey,
-                          fontStyle: FontStyle.italic,
-                        ),
-                  ),
-                ],
-              ),
+              data: (suggestion) => _buildSuggestionBody(suggestion),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSuggestionBody(MealSuggestion suggestion) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          color: Theme.of(context).colorScheme.primaryContainer,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Чтобы добить норму на ${_mealType.label.toLowerCase()}',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                Text(
+                  NutritionCalculator.mealShareLabel(_mealType),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                if (suggestion.rolloverIn.calories > 0) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Перенос с предыдущих приёмов: '
+                    '${suggestion.rolloverIn.calories.toStringAsFixed(0)} ккал · '
+                    'Б ${suggestion.rolloverIn.protein.toStringAsFixed(0)}г · '
+                    'Ж ${suggestion.rolloverIn.fat.toStringAsFixed(0)}г · '
+                    'У ${suggestion.rolloverIn.carbs.toStringAsFixed(0)}г',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+                if (_mealType == MealType.snack && suggestion.deficit.calories > 0) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Последний приём — закройте весь остаток дня',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ],
+                const SizedBox(height: 4),
+                Text(
+                  'Цель с переносом: '
+                  '${suggestion.effectiveTarget.calories.toStringAsFixed(0)} ккал · '
+                  'Б ${suggestion.effectiveTarget.protein.toStringAsFixed(0)}г · '
+                  'Ж ${suggestion.effectiveTarget.fat.toStringAsFixed(0)}г · '
+                  'У ${suggestion.effectiveTarget.carbs.toStringAsFixed(0)}г',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                if (suggestion.topUpSummary.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(suggestion.topUpSummary),
+                ],
+                if (suggestion.priorityMacros.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: suggestion.priorityMacros
+                        .map(
+                          (macro) => Chip(
+                            label: Text('Нужно: $macro'),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Text(
+                  'Осталось: '
+                  '${suggestion.deficit.calories.toStringAsFixed(0)} ккал · '
+                  'Б ${suggestion.deficit.protein.toStringAsFixed(0)}г · '
+                  'Ж ${suggestion.deficit.fat.toStringAsFixed(0)}г · '
+                  'У ${suggestion.deficit.carbs.toStringAsFixed(0)}г',
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'За день осталось: '
+                  '${suggestion.dailyDeficit.calories.toStringAsFixed(0)} ккал · '
+                  'Б ${suggestion.dailyDeficit.protein.toStringAsFixed(0)}г · '
+                  'Ж ${suggestion.dailyDeficit.fat.toStringAsFixed(0)}г · '
+                  'У ${suggestion.dailyDeficit.carbs.toStringAsFixed(0)}г',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (suggestion.recipes.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Text('Рецепты', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          ...suggestion.recipes.map(
+            (r) => _RecipeCard(
+              recipe: r,
+              mealType: _mealType,
+              onAdd: () => _addRecipeToDiary(r),
+            ),
+          ),
+        ],
+        if (suggestion.products.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Text('Продукты', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          ...suggestion.products.map(
+            (p) => _ProductCard(product: p, onOpen: () => _openUrl(p.url)),
+          ),
+        ],
+        const SizedBox(height: 16),
+        Text(
+          suggestion.disclaimer,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.grey,
+                fontStyle: FontStyle.italic,
+              ),
+        ),
+      ],
     );
   }
 }

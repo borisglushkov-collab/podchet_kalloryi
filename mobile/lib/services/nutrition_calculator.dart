@@ -167,6 +167,52 @@ class NutritionCalculator {
     }
     return text;
   }
+
+  /// Базовые рекомендации без ИИ, когда backend недоступен.
+  static MealSuggestion offlineMealSuggestion({
+    required MealType mealType,
+    required Macros consumed,
+    required Macros targets,
+    required Map<MealType, Macros> mealsConsumed,
+  }) {
+    final plan = computeMealPlan(targets, mealsConsumed)[mealType]!;
+    final dailyDeficit = Macros(
+      calories: (targets.calories - consumed.calories).clamp(0, double.infinity),
+      protein: (targets.protein - consumed.protein).clamp(0, double.infinity),
+      fat: (targets.fat - consumed.fat).clamp(0, double.infinity),
+      carbs: (targets.carbs - consumed.carbs).clamp(0, double.infinity),
+    );
+    final priorities = <String>[];
+    if (plan.deficit.protein >= 10) priorities.add('белок');
+    if (plan.deficit.calories >= 100) priorities.add('калории');
+    if (plan.deficit.carbs >= 15) priorities.add('углеводы');
+    if (plan.deficit.fat >= 5) priorities.add('жиры');
+
+    var summary = 'ИИ временно недоступен. ';
+    if (plan.deficit.calories <= 0) {
+      summary += 'Норма на ${mealType.label.toLowerCase()} уже закрыта.';
+    } else {
+      summary +=
+          'Добавьте ~${plan.deficit.calories.toStringAsFixed(0)} ккал '
+          'в ${mealType.label.toLowerCase()}';
+      if (priorities.isNotEmpty) {
+        summary += ', упор на ${priorities.first}';
+      }
+      summary += '.';
+    }
+
+    return MealSuggestion(
+      deficit: plan.deficit,
+      dailyDeficit: dailyDeficit,
+      effectiveTarget: plan.effectiveTarget,
+      rolloverIn: plan.rolloverIn,
+      topUpSummary: summary,
+      priorityMacros: priorities,
+      disclaimer: 'Расчёт по вашей норме КБЖУ без ИИ. Рецепты появятся, когда сервер восстановится.',
+      recipes: const [],
+      products: const [],
+    );
+  }
 }
 
 class MealPlanInfo {

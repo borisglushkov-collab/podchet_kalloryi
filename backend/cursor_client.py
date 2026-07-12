@@ -86,7 +86,7 @@ class CursorClient:
     async def _create_run(
         self, client: httpx.AsyncClient, agent_id: str, prompt: str
     ) -> str:
-        for attempt in range(3):
+        for attempt in range(5):
             response = await client.post(
                 f"{CURSOR_BASE_URL}/v1/agents/{agent_id}/runs",
                 headers=self._headers(),
@@ -94,11 +94,15 @@ class CursorClient:
             )
             if response.status_code == 409:
                 await self._cancel_active_run(client, agent_id)
-                await asyncio.sleep(POLL_INTERVAL_SEC * (attempt + 1))
+                await asyncio.sleep(POLL_INTERVAL_SEC * (attempt + 2))
                 continue
             response.raise_for_status()
             return self._parse_run_id(response.json())
-        raise RuntimeError("Cursor API: agent is busy (409), try again later")
+        # Последняя попытка — новый агент
+        self._agent_id = None
+        new_agent_id, run_id = await self._create_agent(client, prompt)
+        self._agent_id = new_agent_id
+        return run_id
 
     async def _cancel_active_run(self, client: httpx.AsyncClient, agent_id: str) -> None:
         response = await client.get(
