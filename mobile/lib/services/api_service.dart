@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../utils/search_query_utils.dart';
 import 'local_food_fallback.dart';
+import 'weight_analysis.dart';
 
 class SettingsService {
   static const _backendUrlKey = 'backend_url';
@@ -58,6 +59,8 @@ class ApiService {
     required Map<MealType, Macros> mealsConsumed,
     List<String> preferences = const [],
     String? city,
+    UserProfile? profile,
+    WeightAnalysis? weightAnalysis,
   }) async {
     final baseUrl = await SettingsService.getBackendUrl();
     final resolvedCity = city ?? await SettingsService.getCity();
@@ -74,6 +77,9 @@ class ApiService {
         },
         'preferences': preferences,
         'city': resolvedCity,
+        if (profile != null) 'profile_context': profile.toCoachApiJson(),
+        if (weightAnalysis != null && weightAnalysis.hasData)
+          'weight_context': weightAnalysis.toApiJson(),
       },
     );
     return MealSuggestion.fromJson(response.data as Map<String, dynamic>);

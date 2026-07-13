@@ -14,11 +14,13 @@ from cursor_client import CursorClient
 from food_search_service import search_food
 from nutrition_prompt import (
     SYSTEM_PROMPT,
+    analyze_weight_context,
     build_top_up_summary_fallback,
     build_user_prompt,
     meal_plan_for_type,
     parse_ai_response,
     priority_macros,
+    profile_insight_short,
 )
 from perekrestok_service import enrich_products
 
@@ -56,6 +58,17 @@ class Macros(BaseModel):
     carbs: float = 0
 
 
+class ProfileContext(BaseModel):
+    gender: str = "male"
+    age: int = 30
+    height_cm: float = 170
+    weight_kg: float = 70
+    activity: str = "moderate"
+    goal: str = "maintain"
+    use_custom_targets: bool = False
+    target_weight_kg: float | None = None
+
+
 class SuggestMealRequest(BaseModel):
     meal_type: str = Field(description="breakfast, lunch, dinner, snack")
     consumed: Macros
@@ -64,6 +77,8 @@ class SuggestMealRequest(BaseModel):
     meals_consumed: dict[str, Macros] = Field(default_factory=dict)
     preferences: list[str] = Field(default_factory=list)
     city: str = "Москва"
+    profile_context: ProfileContext | None = None
+    weight_context: dict | None = None
 
 
 class SuggestMealResponse(BaseModel):
@@ -74,6 +89,7 @@ class SuggestMealResponse(BaseModel):
     top_up_summary: str = ""
     priority_macros: list[str] = Field(default_factory=list)
     disclaimer: str = ""
+    weight_insight: str = ""
     recipes: list[dict] = Field(default_factory=list)
     products: list[dict] = Field(default_factory=list)
 
@@ -158,6 +174,10 @@ async def suggest_meal(request: SuggestMealRequest):
         preferences=request.preferences,
         city=request.city,
         meals_consumed=meals_consumed,
+        weight_context=request.weight_context,
+        profile_context=(
+            request.profile_context.model_dump() if request.profile_context else None
+        ),
     )
 
     try:
@@ -200,6 +220,16 @@ async def suggest_meal(request: SuggestMealRequest):
         is_last=plan["is_last"],
     )
 
+    weight_insight_parts = []
+    if request.profile_context:
+        profile_note = profile_insight_short(request.profile_context.model_dump())
+        if profile_note:
+            weight_insight_parts.append(profile_note)
+    weight_note = analyze_weight_context(request.weight_context)
+    if weight_note:
+        weight_insight_parts.append(weight_note)
+    weight_insight = " ".join(weight_insight_parts)
+
     return SuggestMealResponse(
         deficit=meal_deficit,
         daily_deficit=daily_deficit,
@@ -208,6 +238,7 @@ async def suggest_meal(request: SuggestMealRequest):
         top_up_summary=top_up_summary,
         priority_macros=priority_macros(meal_deficit.model_dump()),
         disclaimer=parsed.get("disclaimer", "Рекомендации носят информационный характер."),
+        weight_insight=weight_insight,
         recipes=parsed.get("recipes", []),
         products=enriched_products,
     )

@@ -160,6 +160,18 @@ class UserProfile {
         'target_weight_kg': targetWeightKg,
       };
 
+  /// Профиль для коуча / API (возраст, пол, активность и т.д.).
+  Map<String, dynamic> toCoachApiJson() => {
+        'gender': gender.name,
+        'age': age,
+        'height_cm': heightCm,
+        'weight_kg': weightKg,
+        'activity': activity.name,
+        'goal': goal.name,
+        'use_custom_targets': useCustomTargets,
+        if (targetWeightKg != null) 'target_weight_kg': targetWeightKg,
+      };
+
   factory UserProfile.fromMap(Map<String, dynamic> map) => UserProfile(
         id: map['id'] as int?,
         gender: Gender.values.byName(map['gender'] as String),
@@ -330,6 +342,7 @@ class MealSuggestion {
   final String topUpSummary;
   final List<String> priorityMacros;
   final String disclaimer;
+  final String weightInsight;
   final List<RecipeSuggestion> recipes;
   final List<ProductSuggestion> products;
 
@@ -341,6 +354,7 @@ class MealSuggestion {
     required this.topUpSummary,
     required this.priorityMacros,
     required this.disclaimer,
+    this.weightInsight = '',
     required this.recipes,
     required this.products,
   });
@@ -361,6 +375,7 @@ class MealSuggestion {
             .map((e) => e.toString())
             .toList(),
         disclaimer: json['disclaimer'] as String? ?? '',
+        weightInsight: json['weight_insight'] as String? ?? '',
         recipes: (json['recipes'] as List<dynamic>? ?? [])
             .map((e) => RecipeSuggestion.fromJson(e as Map<String, dynamic>))
             .toList(),

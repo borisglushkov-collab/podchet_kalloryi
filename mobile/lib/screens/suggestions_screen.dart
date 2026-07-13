@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../providers/providers.dart';
 import '../services/api_service.dart';
 import '../services/nutrition_calculator.dart';
+import '../services/weight_analysis.dart';
 import '../theme/app_theme.dart';
 import '../utils/api_error_utils.dart';
 import '../widgets/widgets.dart';
@@ -47,7 +48,11 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
     final targets = await ref.read(dailyTargetsProvider.future);
     final consumed = await ref.read(dailyTotalsProvider(widget.date).future);
     final entries = await ref.read(dailyEntriesProvider(widget.date).future);
+    final weightEntries = await ref.read(weightEntriesProvider.future);
     if (!mounted || profile == null || targets == null) return;
+
+    final weightAnalysis =
+        WeightAnalysis.fromProfileAndEntries(profile, weightEntries);
 
     setState(() {
       _offlineSuggestion = NutritionCalculator.offlineMealSuggestion(
@@ -55,6 +60,8 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
         consumed: consumed,
         targets: targets,
         mealsConsumed: NutritionCalculator.consumedByMeal(entries),
+        profile: profile,
+        weightAnalysis: weightAnalysis,
       );
     });
   }
@@ -216,6 +223,38 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
           isSnackCloseDay: _mealType == MealType.snack && suggestion.deficit.calories > 0,
           dailyDeficit: suggestion.dailyDeficit,
         ),
+        if (suggestion.weightInsight.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Card(
+            color: Theme.of(context).colorScheme.secondaryContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.monitor_weight_outlined,
+                    color: Theme.of(context).colorScheme.onSecondaryContainer,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Профиль и вес',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(suggestion.weightInsight),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
         if (suggestion.recipes.isNotEmpty) ...[
           const SizedBox(height: 12),
           Card(

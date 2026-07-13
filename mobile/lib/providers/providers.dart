@@ -5,6 +5,7 @@ import '../db/database.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/nutrition_calculator.dart';
+import '../services/weight_analysis.dart';
 
 final weightEntriesProvider = FutureProvider<List<WeightEntry>>((ref) async {
   return AppDatabase.getWeightEntries();
@@ -46,11 +47,13 @@ final mealSuggestionProvider =
   final targets = await ref.watch(dailyTargetsProvider.future);
   final consumed = await ref.watch(dailyTotalsProvider(date).future);
   final entries = await ref.watch(dailyEntriesProvider(date).future);
+  final weightEntries = await ref.watch(weightEntriesProvider.future);
   if (profile == null || targets == null) {
     throw Exception('Заполните профиль');
   }
   final mealConsumed = NutritionCalculator.consumedForMeal(entries, mealType);
   final mealsConsumed = NutritionCalculator.consumedByMeal(entries);
+  final weightAnalysis = WeightAnalysis.fromProfileAndEntries(profile, weightEntries);
   final prefs = profile.preferences
       .split(',')
       .map((e) => e.trim())
@@ -63,5 +66,7 @@ final mealSuggestionProvider =
         mealConsumed: mealConsumed,
         mealsConsumed: mealsConsumed,
         preferences: prefs,
+        profile: profile,
+        weightAnalysis: weightAnalysis,
       );
 });

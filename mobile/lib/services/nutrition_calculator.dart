@@ -1,4 +1,5 @@
 import '../models/models.dart';
+import 'weight_analysis.dart';
 
 class NutritionCalculator {
   static double bmr(UserProfile profile) {
@@ -174,6 +175,8 @@ class NutritionCalculator {
     required Macros consumed,
     required Macros targets,
     required Map<MealType, Macros> mealsConsumed,
+    UserProfile? profile,
+    WeightAnalysis? weightAnalysis,
   }) {
     final plan = computeMealPlan(targets, mealsConsumed)[mealType]!;
     final dailyDeficit = Macros(
@@ -200,6 +203,25 @@ class NutritionCalculator {
       }
       summary += '.';
     }
+    if (profile != null) {
+      summary += ' ${_offlineGoalPracticeNote(profile)}';
+    }
+
+    final weightInsight = [
+      if (profile != null) _offlineProfileNote(profile),
+      if (weightAnalysis != null) weightAnalysis.offlineInsight(),
+    ].where((s) => s.isNotEmpty).join(' · ');
+
+    final products = <ProductSuggestion>[];
+    final seen = <String>{};
+    void addProducts(List<ProductSuggestion> items) {
+      for (final item in items) {
+        final key = item.name.toLowerCase();
+        if (seen.add(key)) products.add(item);
+      }
+    }
+    if (profile != null) addProducts(_offlineProfileProducts(profile));
+    if (weightAnalysis != null) addProducts(weightAnalysis.offlineProducts());
 
     return MealSuggestion(
       deficit: plan.deficit,
@@ -208,10 +230,93 @@ class NutritionCalculator {
       rolloverIn: plan.rolloverIn,
       topUpSummary: summary,
       priorityMacros: priorities,
-      disclaimer: 'Расчёт по вашей норме КБЖУ без ИИ. Рецепты появятся, когда сервер восстановится.',
+      weightInsight: weightInsight,
+      disclaimer: 'Расчёт по вашей норме КБЖУ и динамике веса без ИИ. Рецепты появятся, когда сервер восстановится.',
       recipes: const [],
-      products: const [],
+      products: products,
     );
+  }
+
+  static String _offlineGoalPracticeNote(UserProfile profile) {
+    switch (profile.goal) {
+      case Goal.lose:
+        return 'Для похудения: белок, клетчатка, контроль порций — без экстремальных ограничений.';
+      case Goal.maintain:
+        return 'Для поддержания: стабильные калории, белок и клетчатка в каждом приёме.';
+      case Goal.gain:
+        return 'Для набора: калорийные перекусы с белком и сложными углеводами.';
+    }
+  }
+
+  static List<ProductSuggestion> _offlineProfileProducts(UserProfile profile) {
+    switch (profile.goal) {
+      case Goal.lose:
+        return const [
+          ProductSuggestion(
+            name: 'Творог 0-2%',
+            store: 'Перекрёсток',
+            reason: 'Цель похудение: белок и сытость без лишних калорий',
+            url: '',
+          ),
+          ProductSuggestion(
+            name: 'Овощной салат',
+            store: 'Перекрёсток',
+            reason: 'Цель похудение: клетчатка и объём, контроль порций',
+            url: '',
+          ),
+        ];
+      case Goal.maintain:
+        return const [
+          ProductSuggestion(
+            name: 'Гречка',
+            store: 'Перекрёсток',
+            reason: 'Цель поддержание: сложные углеводы и клетчатка',
+            url: '',
+          ),
+          ProductSuggestion(
+            name: 'Куриная грудка',
+            store: 'Перекрёсток',
+            reason: 'Цель поддержание: стабильный белок в рационе',
+            url: '',
+          ),
+        ];
+      case Goal.gain:
+        return const [
+          ProductSuggestion(
+            name: 'Греческий йогурт',
+            store: 'Перекрёсток',
+            reason: 'Цель набор: калории и белок для роста массы',
+            url: '',
+          ),
+          ProductSuggestion(
+            name: 'Орехи (миндаль)',
+            store: 'Перекрёсток',
+            reason: 'Цель набор: плотные калории и полезные жиры',
+            url: '',
+          ),
+        ];
+    }
+  }
+
+  static String _offlineProfileNote(UserProfile profile) {
+    final gender = profile.gender == Gender.male ? 'мужчина' : 'женщина';
+    final activity = switch (profile.activity) {
+      ActivityLevel.sedentary => 'низкая активность',
+      ActivityLevel.light => 'лёгкая активность',
+      ActivityLevel.moderate => 'умеренная активность',
+      ActivityLevel.active => 'высокая активность',
+      ActivityLevel.veryActive => 'очень высокая активность',
+    };
+    final goal = switch (profile.goal) {
+      Goal.lose => 'похудение',
+      Goal.maintain => 'поддержание',
+      Goal.gain => 'набор',
+    };
+    var note = '$gender, ${profile.age} лет, $activity, цель: $goal';
+    if (profile.age >= 50) {
+      note += ' — больше белка и клетчатки';
+    }
+    return note;
   }
 }
 
