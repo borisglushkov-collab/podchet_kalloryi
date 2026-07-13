@@ -160,6 +160,18 @@ class UserProfile {
         'target_weight_kg': targetWeightKg,
       };
 
+  /// Профиль для коуча / API (возраст, пол, активность и т.д.).
+  Map<String, dynamic> toCoachApiJson() => {
+        'gender': gender.name,
+        'age': age,
+        'height_cm': heightCm,
+        'weight_kg': weightKg,
+        'activity': activity.name,
+        'goal': goal.name,
+        'use_custom_targets': useCustomTargets,
+        if (targetWeightKg != null) 'target_weight_kg': targetWeightKg,
+      };
+
   factory UserProfile.fromMap(Map<String, dynamic> map) => UserProfile(
         id: map['id'] as int?,
         gender: Gender.values.byName(map['gender'] as String),

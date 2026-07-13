@@ -59,6 +59,7 @@ class ApiService {
     required Map<MealType, Macros> mealsConsumed,
     List<String> preferences = const [],
     String? city,
+    UserProfile? profile,
     WeightAnalysis? weightAnalysis,
   }) async {
     final baseUrl = await SettingsService.getBackendUrl();
@@ -76,6 +77,7 @@ class ApiService {
         },
         'preferences': preferences,
         'city': resolvedCity,
+        if (profile != null) 'profile_context': profile.toCoachApiJson(),
         if (weightAnalysis != null && weightAnalysis.hasData)
           'weight_context': weightAnalysis.toApiJson(),
       },

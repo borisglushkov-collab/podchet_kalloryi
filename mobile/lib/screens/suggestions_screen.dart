@@ -59,6 +59,7 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
         consumed: consumed,
         targets: targets,
         mealsConsumed: NutritionCalculator.consumedByMeal(entries),
+        profile: profile,
         weightAnalysis: weightAnalysis,
       );
     });
@@ -320,7 +321,7 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Анализ веса',
+                          'Профиль и вес',
                           style: Theme.of(context).textTheme.titleSmall,
                         ),
                         const SizedBox(height: 4),

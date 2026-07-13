@@ -20,6 +20,7 @@ from nutrition_prompt import (
     meal_plan_for_type,
     parse_ai_response,
     priority_macros,
+    profile_insight_short,
 )
 from perekrestok_service import enrich_products
 
@@ -57,6 +58,17 @@ class Macros(BaseModel):
     carbs: float = 0
 
 
+class ProfileContext(BaseModel):
+    gender: str = "male"
+    age: int = 30
+    height_cm: float = 170
+    weight_kg: float = 70
+    activity: str = "moderate"
+    goal: str = "maintain"
+    use_custom_targets: bool = False
+    target_weight_kg: float | None = None
+
+
 class SuggestMealRequest(BaseModel):
     meal_type: str = Field(description="breakfast, lunch, dinner, snack")
     consumed: Macros
@@ -65,6 +77,7 @@ class SuggestMealRequest(BaseModel):
     meals_consumed: dict[str, Macros] = Field(default_factory=dict)
     preferences: list[str] = Field(default_factory=list)
     city: str = "Москва"
+    profile_context: ProfileContext | None = None
     weight_context: dict | None = None
 
 
@@ -162,6 +175,9 @@ async def suggest_meal(request: SuggestMealRequest):
         city=request.city,
         meals_consumed=meals_consumed,
         weight_context=request.weight_context,
+        profile_context=(
+            request.profile_context.model_dump() if request.profile_context else None
+        ),
     )
 
     try:
@@ -204,7 +220,15 @@ async def suggest_meal(request: SuggestMealRequest):
         is_last=plan["is_last"],
     )
 
-    weight_insight = analyze_weight_context(request.weight_context) or ""
+    weight_insight_parts = []
+    if request.profile_context:
+        profile_note = profile_insight_short(request.profile_context.model_dump())
+        if profile_note:
+            weight_insight_parts.append(profile_note)
+    weight_note = analyze_weight_context(request.weight_context)
+    if weight_note:
+        weight_insight_parts.append(weight_note)
+    weight_insight = " ".join(weight_insight_parts)
 
     return SuggestMealResponse(
         deficit=meal_deficit,

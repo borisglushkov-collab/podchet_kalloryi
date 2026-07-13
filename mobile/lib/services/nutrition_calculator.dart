@@ -175,6 +175,7 @@ class NutritionCalculator {
     required Macros consumed,
     required Macros targets,
     required Map<MealType, Macros> mealsConsumed,
+    UserProfile? profile,
     WeightAnalysis? weightAnalysis,
   }) {
     final plan = computeMealPlan(targets, mealsConsumed)[mealType]!;
@@ -203,7 +204,10 @@ class NutritionCalculator {
       summary += '.';
     }
 
-    final weightInsight = weightAnalysis?.offlineInsight() ?? '';
+    final weightInsight = [
+      if (profile != null) _offlineProfileNote(profile),
+      if (weightAnalysis != null) weightAnalysis.offlineInsight(),
+    ].where((s) => s.isNotEmpty).join(' · ');
     final weightProducts = weightAnalysis?.offlineProducts() ?? const [];
 
     return MealSuggestion(
@@ -218,6 +222,27 @@ class NutritionCalculator {
       recipes: const [],
       products: weightProducts,
     );
+  }
+
+  static String _offlineProfileNote(UserProfile profile) {
+    final gender = profile.gender == Gender.male ? 'мужчина' : 'женщина';
+    final activity = switch (profile.activity) {
+      ActivityLevel.sedentary => 'низкая активность',
+      ActivityLevel.light => 'лёгкая активность',
+      ActivityLevel.moderate => 'умеренная активность',
+      ActivityLevel.active => 'высокая активность',
+      ActivityLevel.veryActive => 'очень высокая активность',
+    };
+    final goal = switch (profile.goal) {
+      Goal.lose => 'похудение',
+      Goal.maintain => 'поддержание',
+      Goal.gain => 'набор',
+    };
+    var note = '$gender, ${profile.age} лет, $activity, цель: $goal';
+    if (profile.age >= 50) {
+      note += ' — больше белка и клетчатки';
+    }
+    return note;
   }
 }
 

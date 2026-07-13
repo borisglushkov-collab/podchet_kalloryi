@@ -7,6 +7,7 @@ from nutrition_prompt import (
     build_top_up_summary_fallback,
     build_user_prompt,
     compute_meal_plan,
+    format_profile_context,
     parse_ai_response,
     priority_macros,
 )
@@ -111,6 +112,45 @@ def test_analyze_weight_context_plateau():
     )
     assert insight is not None
     assert "плато" in insight.lower()
+
+
+def test_format_profile_context():
+    block = format_profile_context(
+        {
+            "gender": "female",
+            "age": 52,
+            "height_cm": 165,
+            "weight_kg": 72,
+            "activity": "moderate",
+            "goal": "lose",
+            "use_custom_targets": False,
+        }
+    )
+    assert "52" in block
+    assert "женщина" in block
+    assert "50+" in block or "белок" in block.lower()
+
+
+def test_build_user_prompt_with_profile():
+    prompt = build_user_prompt(
+        "dinner",
+        {"calories": 1200, "protein": 45, "fat": 40, "carbs": 130},
+        {"calories": 2000, "protein": 120, "fat": 65, "carbs": 250},
+        {"calories": 200, "protein": 10, "fat": 8, "carbs": 20},
+        [],
+        "Москва",
+        profile_context={
+            "gender": "male",
+            "age": 28,
+            "height_cm": 180,
+            "weight_kg": 82,
+            "activity": "active",
+            "goal": "lose",
+        },
+    )
+    assert "профиль пользователя" in prompt.lower()
+    assert "28" in prompt
+    assert "мужчина" in prompt
 
 
 def test_analyze_weight_context_empty():

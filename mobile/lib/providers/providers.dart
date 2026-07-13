@@ -66,6 +66,7 @@ final mealSuggestionProvider =
         mealConsumed: mealConsumed,
         mealsConsumed: mealsConsumed,
         preferences: prefs,
+        profile: profile,
         weightAnalysis: weightAnalysis,
       );
 });
