@@ -11,7 +11,7 @@ set "BRANCH=cursor/chat-podchet-kalloryi-a36d"
 set "URL=https://github.com/borisglushkov-collab/podchet_kalloryi/raw/cursor/chat-podchet-kalloryi-a36d/android-%D1%81%D0%B1%D0%BE%D1%80%D0%BA%D0%B8/install/%APK_NAME%"
 
 echo.
-echo === Установка APK v1.4.12 (Weight design A)
+echo === Установка APK v1.4.12 (Weight design A) ===
 echo.
 
 if exist "%LOCAL_APK%" (
