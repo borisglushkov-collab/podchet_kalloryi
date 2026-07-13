@@ -1,10 +1,10 @@
-# Podchet Kalloriy — единая версия 1.4.0
+# Podchet Kalloriy — единая версия 1.4.5
 
 Синхронизировано: **2026-07-12**
 
 | Компонент | Версия | Ветки |
 |-----------|--------|-------|
-| Mobile APK | 1.4.0+11 | все `cursor/*`, `main`, `develop` |
+| Mobile APK | 1.4.5+16 | все `cursor/*`, `main`, `develop` |
 | Backend ИИ | v1.2 (develop) | calorizator, top-up suggestions |
 | Health Scale | LeFu SDK 1.2.5+ | mobile/lib/services/health_scale/ |
 | Design | Wellness UI | design/ + mobile/lib/ |
@@ -18,7 +18,7 @@
 - `cursor/android-builds-a36d`
 - `cursor/weight-chart-fatsecret-a36d`
 
-## v1.4.0
+## v1.4.5
 
 - График веса в стиле FatSecret (вкладка «Аналитика» → «Вес»)
 - История взвешиваний с стрелками вверх/вниз
