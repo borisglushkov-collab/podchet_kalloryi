@@ -203,12 +203,25 @@ class NutritionCalculator {
       }
       summary += '.';
     }
+    if (profile != null) {
+      summary += ' ${_offlineGoalPracticeNote(profile)}';
+    }
 
     final weightInsight = [
       if (profile != null) _offlineProfileNote(profile),
       if (weightAnalysis != null) weightAnalysis.offlineInsight(),
     ].where((s) => s.isNotEmpty).join(' · ');
-    final weightProducts = weightAnalysis?.offlineProducts() ?? const [];
+
+    final products = <ProductSuggestion>[];
+    final seen = <String>{};
+    void addProducts(List<ProductSuggestion> items) {
+      for (final item in items) {
+        final key = item.name.toLowerCase();
+        if (seen.add(key)) products.add(item);
+      }
+    }
+    if (profile != null) addProducts(_offlineProfileProducts(profile));
+    if (weightAnalysis != null) addProducts(weightAnalysis.offlineProducts());
 
     return MealSuggestion(
       deficit: plan.deficit,
@@ -220,8 +233,69 @@ class NutritionCalculator {
       weightInsight: weightInsight,
       disclaimer: 'Расчёт по вашей норме КБЖУ и динамике веса без ИИ. Рецепты появятся, когда сервер восстановится.',
       recipes: const [],
-      products: weightProducts,
+      products: products,
     );
+  }
+
+  static String _offlineGoalPracticeNote(UserProfile profile) {
+    switch (profile.goal) {
+      case Goal.lose:
+        return 'Для похудения: белок, клетчатка, контроль порций — без экстремальных ограничений.';
+      case Goal.maintain:
+        return 'Для поддержания: стабильные калории, белок и клетчатка в каждом приёме.';
+      case Goal.gain:
+        return 'Для набора: калорийные перекусы с белком и сложными углеводами.';
+    }
+  }
+
+  static List<ProductSuggestion> _offlineProfileProducts(UserProfile profile) {
+    switch (profile.goal) {
+      case Goal.lose:
+        return const [
+          ProductSuggestion(
+            name: 'Творог 0-2%',
+            store: 'Перекрёсток',
+            reason: 'Цель похудение: белок и сытость без лишних калорий',
+            url: '',
+          ),
+          ProductSuggestion(
+            name: 'Овощной салат',
+            store: 'Перекрёсток',
+            reason: 'Цель похудение: клетчатка и объём, контроль порций',
+            url: '',
+          ),
+        ];
+      case Goal.maintain:
+        return const [
+          ProductSuggestion(
+            name: 'Гречка',
+            store: 'Перекрёсток',
+            reason: 'Цель поддержание: сложные углеводы и клетчатка',
+            url: '',
+          ),
+          ProductSuggestion(
+            name: 'Куриная грудка',
+            store: 'Перекрёсток',
+            reason: 'Цель поддержание: стабильный белок в рационе',
+            url: '',
+          ),
+        ];
+      case Goal.gain:
+        return const [
+          ProductSuggestion(
+            name: 'Греческий йогурт',
+            store: 'Перекрёсток',
+            reason: 'Цель набор: калории и белок для роста массы',
+            url: '',
+          ),
+          ProductSuggestion(
+            name: 'Орехи (миндаль)',
+            store: 'Перекрёсток',
+            reason: 'Цель набор: плотные калории и полезные жиры',
+            url: '',
+          ),
+        ];
+    }
   }
 
   static String _offlineProfileNote(UserProfile profile) {

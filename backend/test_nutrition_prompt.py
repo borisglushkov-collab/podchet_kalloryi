@@ -153,6 +153,44 @@ def test_build_user_prompt_with_profile():
     assert "мужчина" in prompt
 
 
+def test_goal_practices_in_profile_block():
+    block = format_profile_context(
+        {
+            "gender": "male",
+            "age": 40,
+            "height_cm": 175,
+            "weight_kg": 85,
+            "activity": "moderate",
+            "goal": "lose",
+        }
+    )
+    assert "рабочие практики" in block.lower()
+    assert "белок" in block.lower()
+    assert "похудение" in block.lower()
+
+
+def test_build_user_prompt_requires_goal_linked_fields():
+    prompt = build_user_prompt(
+        "lunch",
+        {"calories": 800, "protein": 40, "fat": 30, "carbs": 80},
+        {"calories": 2000, "protein": 120, "fat": 65, "carbs": 250},
+        {"calories": 0, "protein": 0, "fat": 0, "carbs": 0},
+        [],
+        "Москва",
+        profile_context={
+            "gender": "female",
+            "age": 35,
+            "height_cm": 165,
+            "weight_kg": 68,
+            "activity": "light",
+            "goal": "maintain",
+        },
+    )
+    assert "why_fits" in prompt
+    assert "reason" in prompt
+    assert "цели из профиля" in prompt.lower()
+
+
 def test_analyze_weight_context_empty():
     assert analyze_weight_context(None) is None
     assert analyze_weight_context({"entry_count": 0}) is None

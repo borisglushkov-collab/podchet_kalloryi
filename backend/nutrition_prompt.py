@@ -265,6 +265,24 @@ def _age_nutrition_hint(age: int, gender: str) -> str:
     return ""
 
 
+def _goal_practices_hint(goal: str) -> str:
+    hints = {
+        "lose": (
+            "Похудение: умеренный дефицит калорий, белок в каждом приёме, овощи и клетчатка, "
+            "контроль порций — без голодовок и экстремальных диет."
+        ),
+        "maintain": (
+            "Поддержание: стабильные калории, баланс БЖУ, регулярные приёмы, "
+            "белок и клетчатка для сытости."
+        ),
+        "gain": (
+            "Набор массы: профицит калорий, белок и сложные углеводы, плотные перекусы — "
+            "без избытка фастфуда."
+        ),
+    }
+    return hints.get(goal, "")
+
+
 def format_profile_context(profile: dict[str, Any] | None) -> str:
     """Human-readable profile block for the AI prompt."""
     if not profile:
@@ -296,6 +314,8 @@ def format_profile_context(profile: dict[str, Any] | None) -> str:
     custom_line = "\n- Норма КБЖУ задана вручную в профиле" if custom else ""
 
     hint_line = f"\n- Учти при подборе: {age_hint}" if age_hint else ""
+    practices = _goal_practices_hint(goal)
+    practices_line = f"\n- Рабочие практики для цели: {practices}" if practices else ""
 
     return f"""
 Профиль пользователя:
@@ -304,8 +324,8 @@ def format_profile_context(profile: dict[str, Any] | None) -> str:
 - Рост: {height} см
 - Вес: {weight} кг{bmi_line}{target_line}
 - Активность: {activity_ru}
-- Цель: {goal_ru}{custom_line}{hint_line}
-Подбирай продукты и порции с учётом возраста, пола и уровня активности."""
+- Цель: {goal_ru}{custom_line}{hint_line}{practices_line}
+Строй рекомендации от этого профиля: возраст, пол, вес, активность и цель."""
 
 
 def profile_insight_short(profile: dict[str, Any] | None) -> str:
@@ -433,7 +453,11 @@ def build_user_prompt(
 
 Предпочтения и ограничения: {prefs}{weight_block}
 
-Верни JSON по схеме из системного промпта. В top_up_summary объясни, как добить норму на {meal_ru}."""
+Верни JSON по схеме из системного промпта.
+Обязательно:
+- top_up_summary — совет с привязкой к цели из профиля и остатку КБЖУ на {meal_ru}
+- why_fits в каждом рецепте — как блюдо помогает цели из профиля и добивает норму
+- reason у каждого продукта — что добивает по макросам и как связано с целью из профиля"""
 
 
 def parse_ai_response(text: str) -> dict[str, Any]:
