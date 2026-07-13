@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 abstract final class AppColors {
@@ -63,6 +64,12 @@ ThemeData buildAppTheme() {
       elevation: 0,
       centerTitle: false,
       titleTextStyle: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+      systemOverlayStyle: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        systemNavigationBarColor: AppColors.surface,
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
     ),
   );
 }
