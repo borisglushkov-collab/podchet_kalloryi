@@ -1,22 +1,19 @@
-# Podchet Kalloriy — единая версия 1.4.5
+# Podchet Kalloriy — единая версия 1.4.6
 
-Синхронизировано: **2026-07-12**
+Синхронизировано: **2026-07-13**
 
 | Компонент | Версия | Ветки |
 |-----------|--------|-------|
-| Mobile APK | 1.4.5+16 | все `cursor/*`, `main`, `develop` |
+| Mobile APK | 1.4.6+17 | `cursor/coach-profile-a-a3bf` |
 | Backend ИИ | v1.2 (develop) | calorizator, top-up suggestions |
 | Health Scale | LeFu SDK 1.2.5+ | mobile/lib/services/health_scale/ |
-| Design | Wellness UI | design/ + mobile/lib/ |
+| Design | Wellness UI A | Analytics / Coach / Profile |
 | Android сборки | android-сборки/install/ | + Яндекс.Диск |
 
-## Ветки (все на `af94b72`)
+## v1.4.6
 
-- `main`, `develop`
-- `cursor/chat-podchet-kalloryi-a36d`
-- `cursor/design-a36d`
-- `cursor/android-builds-a36d`
-- `cursor/weight-chart-fatsecret-a36d`
+- Коуч A (Yazio Friendly Coach): чипы приёмов, совет ИИ, компактные рецепты
+- Профиль A (Yazio Wellness Profile): герой веса, норма КБЖУ, мягкие строки
 
 ## v1.4.5
 
@@ -24,6 +21,7 @@
 - История взвешиваний с стрелками вверх/вниз
 - Желаемый вес в профиле
 - Автозапись веса с весов Health Scale
+- Аналитика A (вкладка «Калории»)
 
 ## v1.3.1
 

@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../providers/providers.dart';
 import '../services/api_service.dart';
 import '../services/nutrition_calculator.dart';
+import '../theme/app_theme.dart';
 import '../utils/api_error_utils.dart';
 import '../widgets/widgets.dart';
 import 'settings_screen.dart';
@@ -107,284 +108,710 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
     );
   }
 
+  void _selectMeal(MealType meal) {
+    if (meal == _mealType) return;
+    setState(() {
+      _mealType = meal;
+      _offlineSuggestion = null;
+    });
+    ref.invalidate(mealSuggestionProvider(_mealType));
+  }
+
   @override
   Widget build(BuildContext context) {
     final suggestionAsync = ref.watch(mealSuggestionProvider(_mealType));
+    final totalsAsync = ref.watch(dailyTotalsProvider(widget.date));
+    final targetsAsync = ref.watch(dailyTargetsProvider);
+
+    final remainingKcal = () {
+      final totals = totalsAsync.valueOrNull;
+      final targets = targetsAsync.valueOrNull;
+      if (totals == null || targets == null) return null;
+      return (targets.calories - totals.calories).clamp(0, double.infinity);
+    }();
 
     return Scaffold(
-      appBar: AppBar(title: Text(widget.embedded ? 'Коуч' : 'ИИ-рекомендации')),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: DropdownButtonFormField<MealType>(
-              value: _mealType,
-              decoration: const InputDecoration(labelText: 'Приём пищи'),
-              items: MealType.values
-                  .map((m) => DropdownMenuItem(value: m, child: Text(m.label)))
-                  .toList(),
-              onChanged: (v) {
-                setState(() {
-                  _mealType = v!;
-                  _offlineSuggestion = null;
-                });
-                ref.invalidate(mealSuggestionProvider(_mealType));
-              },
+      backgroundColor: AppColors.background,
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: const Text('Коуч'),
+              backgroundColor: AppColors.background,
             ),
-          ),
-          Expanded(
-            child: _offlineSuggestion != null
-                ? _buildSuggestionBody(_offlineSuggestion!)
-                : suggestionAsync.when(
-              loading: () => const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 16),
-                    Text('ИИ анализирует ваш дневник...\nЭто может занять до 2 минут'),
-                  ],
-                ),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(16, widget.embedded ? 12 : 0, 16, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Коуч',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                  ),
+                  if (remainingKcal != null)
+                    _SoftChip(
+                      label: 'осталось ${remainingKcal.toStringAsFixed(0)} ккал',
+                      background: AppColors.primary.withValues(alpha: 0.15),
+                      foreground: AppColors.primaryDark,
+                    ),
+                ],
               ),
-              error: (e, _) => Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
-                      const SizedBox(height: 16),
-                      Text(
-                        formatApiError(e),
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyLarge,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Сервер: ${SettingsService.defaultBackendUrl}',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.grey,
-                            ),
-                      ),
-                      const SizedBox(height: 20),
-                      FilledButton(
-                        onPressed: _resettingSession
-                            ? null
-                            : () => _retrySuggestion(resetSession: false),
-                        child: Text(_resettingSession ? 'Сброс…' : 'Повторить'),
-                      ),
-                      if (isAiBusyError(e)) ...[
-                        const SizedBox(height: 8),
-                        OutlinedButton(
-                          onPressed: _resettingSession
-                              ? null
-                              : () => _retrySuggestion(resetSession: true),
-                          child: const Text('Сбросить сессию ИИ'),
-                        ),
-                      ],
-                      const SizedBox(height: 8),
-                      OutlinedButton(
-                        onPressed: _showOfflinePlan,
-                        child: const Text('Показать без ИИ'),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.push(
+            ),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _MealChips(
+                selected: _mealType,
+                onSelected: _selectMeal,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: _offlineSuggestion != null
+                  ? _buildSuggestionBody(_offlineSuggestion!)
+                  : suggestionAsync.when(
+                      loading: () => const _CoachLoading(),
+                      error: (e, _) => _CoachError(
+                        error: e,
+                        resettingSession: _resettingSession,
+                        onRetry: () => _retrySuggestion(resetSession: false),
+                        onResetSession: () => _retrySuggestion(resetSession: true),
+                        onOffline: _showOfflinePlan,
+                        onSettings: () => Navigator.push(
                           context,
                           MaterialPageRoute(builder: (_) => const SettingsScreen()),
                         ),
-                        child: const Text('Настройки сервера'),
                       ),
-                    ],
-                  ),
-                ),
-              ),
-              data: (suggestion) => _buildSuggestionBody(suggestion),
+                      data: (suggestion) => _buildSuggestionBody(suggestion),
+                    ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildSuggestionBody(MealSuggestion suggestion) {
+    final tipText = suggestion.topUpSummary.isNotEmpty
+        ? suggestion.topUpSummary
+        : _fallbackTip(suggestion);
+
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
-        Card(
-          color: Theme.of(context).colorScheme.primaryContainer,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Чтобы добить норму на ${_mealType.label.toLowerCase()}',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                Text(
-                  NutritionCalculator.mealShareLabel(_mealType),
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                if (suggestion.rolloverIn.calories > 0) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Перенос с предыдущих приёмов: '
-                    '${suggestion.rolloverIn.calories.toStringAsFixed(0)} ккал · '
-                    'Б ${suggestion.rolloverIn.protein.toStringAsFixed(0)}г · '
-                    'Ж ${suggestion.rolloverIn.fat.toStringAsFixed(0)}г · '
-                    'У ${suggestion.rolloverIn.carbs.toStringAsFixed(0)}г',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-                if (_mealType == MealType.snack && suggestion.deficit.calories > 0) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Последний приём — закройте весь остаток дня',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                ],
-                const SizedBox(height: 4),
-                Text(
-                  'Цель с переносом: '
-                  '${suggestion.effectiveTarget.calories.toStringAsFixed(0)} ккал · '
-                  'Б ${suggestion.effectiveTarget.protein.toStringAsFixed(0)}г · '
-                  'Ж ${suggestion.effectiveTarget.fat.toStringAsFixed(0)}г · '
-                  'У ${suggestion.effectiveTarget.carbs.toStringAsFixed(0)}г',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                if (suggestion.topUpSummary.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(suggestion.topUpSummary),
-                ],
-                if (suggestion.priorityMacros.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: suggestion.priorityMacros
-                        .map(
-                          (macro) => Chip(
-                            label: Text('Нужно: $macro'),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ],
-                const SizedBox(height: 8),
-                Text(
-                  'Осталось: '
-                  '${suggestion.deficit.calories.toStringAsFixed(0)} ккал · '
-                  'Б ${suggestion.deficit.protein.toStringAsFixed(0)}г · '
-                  'Ж ${suggestion.deficit.fat.toStringAsFixed(0)}г · '
-                  'У ${suggestion.deficit.carbs.toStringAsFixed(0)}г',
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'За день осталось: '
-                  '${suggestion.dailyDeficit.calories.toStringAsFixed(0)} ккал · '
-                  'Б ${suggestion.dailyDeficit.protein.toStringAsFixed(0)}г · '
-                  'Ж ${suggestion.dailyDeficit.fat.toStringAsFixed(0)}г · '
-                  'У ${suggestion.dailyDeficit.carbs.toStringAsFixed(0)}г',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
+        _TipCard(
+          mealLabel: _mealType.label.toLowerCase(),
+          tipText: tipText,
+          deficit: suggestion.deficit,
+          priorityMacros: suggestion.priorityMacros,
+          rolloverIn: suggestion.rolloverIn,
+          mealShare: NutritionCalculator.mealShareLabel(_mealType),
+          isSnackCloseDay: _mealType == MealType.snack && suggestion.deficit.calories > 0,
+          dailyDeficit: suggestion.dailyDeficit,
         ),
         if (suggestion.recipes.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Text('Рецепты', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          ...suggestion.recipes.map(
-            (r) => _RecipeCard(
-              recipe: r,
-              mealType: _mealType,
-              onAdd: () => _addRecipeToDiary(r),
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Рецепты',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...suggestion.recipes.map(
+                    (r) => _CompactRecipeTile(
+                      recipe: r,
+                      onAdd: () => _addRecipeToDiary(r),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
         if (suggestion.products.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Text('Продукты', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          ...suggestion.products.map(
-            (p) => _ProductCard(product: p, onOpen: () => _openUrl(p.url)),
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Продукты',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  ...suggestion.products.map(
+                    (p) => _ProductTile(product: p, onOpen: () => _openUrl(p.url)),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
+        const SizedBox(height: 16),
+        FilledButton(
+          onPressed: _resettingSession
+              ? null
+              : () => _retrySuggestion(resetSession: false),
+          child: Text(_resettingSession ? 'Обновляем…' : 'Ещё идеи'),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton(
+          onPressed: _showOfflinePlan,
+          child: const Text('Показать без ИИ'),
+        ),
         const SizedBox(height: 16),
         Text(
           suggestion.disclaimer,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Colors.grey,
+                color: AppColors.textSecondary,
                 fontStyle: FontStyle.italic,
               ),
         ),
       ],
     );
   }
+
+  String _fallbackTip(MealSuggestion suggestion) {
+    if (suggestion.priorityMacros.isNotEmpty) {
+      final focus = suggestion.priorityMacros.first;
+      return 'До цели не хватает по макросу «$focus». '
+          'Выберите блюдо, которое закроет норму на ${_mealType.label.toLowerCase()} '
+          'без лишнего перебора.';
+    }
+    final kcal = suggestion.deficit.calories.toStringAsFixed(0);
+    return 'На ${_mealType.label.toLowerCase()} осталось около $kcal ккал. '
+        'Подберите рецепт под свой дефицит.';
+  }
 }
 
-class _RecipeCard extends StatelessWidget {
-  final RecipeSuggestion recipe;
-  final MealType mealType;
-  final VoidCallback onAdd;
+class _MealChips extends StatelessWidget {
+  final MealType selected;
+  final ValueChanged<MealType> onSelected;
 
-  const _RecipeCard({
-    required this.recipe,
-    required this.mealType,
-    required this.onAdd,
+  const _MealChips({required this.selected, required this.onSelected});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: MealType.values.map((meal) {
+          final on = meal == selected;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: GestureDetector(
+              onTap: () => onSelected(meal),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: on ? AppColors.primary : AppColors.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: on
+                        ? AppColors.primary
+                        : Colors.black.withValues(alpha: 0.06),
+                  ),
+                ),
+                child: Text(
+                  meal.label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: on ? Colors.white : AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class _SoftChip extends StatelessWidget {
+  final String label;
+  final Color background;
+  final Color foreground;
+
+  const _SoftChip({
+    required this.label,
+    required this.background,
+    required this.foreground,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: foreground,
+        ),
+      ),
+    );
+  }
+}
+
+class _TipCard extends StatelessWidget {
+  final String mealLabel;
+  final String tipText;
+  final Macros deficit;
+  final List<String> priorityMacros;
+  final Macros rolloverIn;
+  final String mealShare;
+  final bool isSnackCloseDay;
+  final Macros dailyDeficit;
+
+  const _TipCard({
+    required this.mealLabel,
+    required this.tipText,
+    required this.deficit,
+    required this.priorityMacros,
+    required this.rolloverIn,
+    required this.mealShare,
+    required this.isSnackCloseDay,
+    required this.dailyDeficit,
   });
 
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      color: AppColors.surfaceMuted,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(recipe.name, style: Theme.of(context).textTheme.titleSmall),
-            Text('${recipe.cookingTimeMin} мин · ${recipe.difficulty}'),
-            if (recipe.whyFits.isNotEmpty) ...[
-              const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Совет на $mealLabel',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                ),
+                _SoftChip(
+                  label: 'ИИ',
+                  background: AppColors.protein.withValues(alpha: 0.15),
+                  foreground: AppColors.protein,
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              mealShare,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+            ),
+            if (rolloverIn.calories > 0) ...[
+              const SizedBox(height: 4),
               Text(
-                recipe.whyFits,
+                'Перенос с предыдущих приёмов: '
+                '${rolloverIn.calories.toStringAsFixed(0)} ккал',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontStyle: FontStyle.italic,
+                      color: AppColors.textSecondary,
                     ),
               ),
             ],
+            if (isSnackCloseDay) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Последний приём — закройте весь остаток дня',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            Text(
+              tipText,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    height: 1.4,
+                  ),
+            ),
+            if (priorityMacros.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: priorityMacros
+                    .map(
+                      (macro) => _SoftChip(
+                        label: 'Нужно: $macro',
+                        background: AppColors.primary.withValues(alpha: 0.12),
+                        foreground: AppColors.primaryDark,
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                _SoftChip(
+                  label: '${deficit.calories.toStringAsFixed(0)} ккал',
+                  background: AppColors.primary.withValues(alpha: 0.15),
+                  foreground: AppColors.primaryDark,
+                ),
+                _SoftChip(
+                  label: 'Б ${deficit.protein.toStringAsFixed(0)}г',
+                  background: AppColors.protein.withValues(alpha: 0.15),
+                  foreground: AppColors.protein,
+                ),
+                _SoftChip(
+                  label: 'Ж ${deficit.fat.toStringAsFixed(0)}г',
+                  background: AppColors.fat.withValues(alpha: 0.18),
+                  foreground: AppColors.fat,
+                ),
+                _SoftChip(
+                  label: 'У ${deficit.carbs.toStringAsFixed(0)}г',
+                  background: AppColors.carbs.withValues(alpha: 0.15),
+                  foreground: AppColors.carbs,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'За день осталось: '
+              '${dailyDeficit.calories.toStringAsFixed(0)} ккал · '
+              'Б ${dailyDeficit.protein.toStringAsFixed(0)}г · '
+              'Ж ${dailyDeficit.fat.toStringAsFixed(0)}г · '
+              'У ${dailyDeficit.carbs.toStringAsFixed(0)}г',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactRecipeTile extends StatefulWidget {
+  final RecipeSuggestion recipe;
+  final VoidCallback onAdd;
+
+  const _CompactRecipeTile({required this.recipe, required this.onAdd});
+
+  @override
+  State<_CompactRecipeTile> createState() => _CompactRecipeTileState();
+}
+
+class _CompactRecipeTileState extends State<_CompactRecipeTile> {
+  bool _expanded = false;
+
+  IconData get _icon {
+    final name = widget.recipe.name.toLowerCase();
+    if (name.contains('рыб') || name.contains('лос') || name.contains('тунец')) {
+      return Icons.set_meal_outlined;
+    }
+    if (name.contains('салат') || name.contains('овощ')) {
+      return Icons.eco_outlined;
+    }
+    if (name.contains('творог') || name.contains('яйц')) {
+      return Icons.egg_outlined;
+    }
+    return Icons.restaurant_outlined;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final r = widget.recipe;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: AppColors.surfaceMuted.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(_icon, color: AppColors.primaryDark),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            r.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '~${r.nutrition.calories.toStringAsFixed(0)} ккал · '
+                            'Б ${r.nutrition.protein.toStringAsFixed(0)}г · '
+                            '${r.cookingTimeMin} мин',
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          OutlinedButton(
+                            onPressed: widget.onAdd,
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              foregroundColor: AppColors.primaryDark,
+                              side: BorderSide(
+                                color: AppColors.primary.withValues(alpha: 0.45),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                            ),
+                            child: const Text('В дневник'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      _expanded ? Icons.expand_less : Icons.expand_more,
+                      color: AppColors.textSecondary,
+                    ),
+                  ],
+                ),
+                if (_expanded) ...[
+                  if (r.whyFits.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      r.whyFits,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            fontStyle: FontStyle.italic,
+                            color: AppColors.textSecondary,
+                          ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Text(
+                    'Ингредиенты',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  ...r.ingredients.map(
+                    (i) => Text(
+                      '• ${i['name'] ?? ''} ${i['amount'] ?? ''}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Шаги',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  ...r.steps.asMap().entries.map(
+                        (e) => Text(
+                          '${e.key + 1}. ${e.value}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProductTile extends StatelessWidget {
+  final ProductSuggestion product;
+  final VoidCallback onOpen;
+
+  const _ProductTile({required this.product, required this.onOpen});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: product.imageUrl != null
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(
+                product.imageUrl!,
+                width: 44,
+                height: 44,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const Icon(Icons.shopping_basket_outlined),
+              ),
+            )
+          : Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceMuted,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.shopping_basket_outlined, color: AppColors.textSecondary),
+            ),
+      title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+      subtitle: Text(
+        [
+          if (product.reason.isNotEmpty) product.reason,
+          if (product.priceRub != null) '${product.priceRub} ₽',
+          product.store,
+        ].join(' · '),
+        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+      ),
+      trailing: const Icon(Icons.open_in_new, size: 18, color: AppColors.textSecondary),
+      onTap: onOpen,
+    );
+  }
+}
+
+class _CoachLoading extends StatelessWidget {
+  const _CoachLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(color: AppColors.primary),
+            const SizedBox(height: 16),
+            Text(
+              'ИИ анализирует ваш дневник…',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Это может занять до 2 минут',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CoachError extends StatelessWidget {
+  final Object error;
+  final bool resettingSession;
+  final VoidCallback onRetry;
+  final VoidCallback onResetSession;
+  final VoidCallback onOffline;
+  final VoidCallback onSettings;
+
+  const _CoachError({
+    required this.error,
+    required this.resettingSession,
+    required this.onRetry,
+    required this.onResetSession,
+    required this.onOffline,
+    required this.onSettings,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceMuted,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(Icons.cloud_off_outlined, size: 32, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              formatApiError(error),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
             const SizedBox(height: 8),
             Text(
-              '~${recipe.nutrition.calories.toStringAsFixed(0)} ккал · '
-              'Б ${recipe.nutrition.protein.toStringAsFixed(0)} · '
-              'Ж ${recipe.nutrition.fat.toStringAsFixed(0)} · '
-              'У ${recipe.nutrition.carbs.toStringAsFixed(0)}',
-              style: Theme.of(context).textTheme.bodySmall,
+              'Сервер: ${SettingsService.defaultBackendUrl}',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
             ),
-            const SizedBox(height: 8),
-            const Text('Ингредиенты:', style: TextStyle(fontWeight: FontWeight.bold)),
-            ...recipe.ingredients.map(
-              (i) => Text('• ${i['name'] ?? ''} ${i['amount'] ?? ''}'),
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed: resettingSession ? null : onRetry,
+              child: Text(resettingSession ? 'Сброс…' : 'Повторить'),
             ),
-            const SizedBox(height: 8),
-            const Text('Шаги:', style: TextStyle(fontWeight: FontWeight.bold)),
-            ...recipe.steps.asMap().entries.map(
-              (e) => Text('${e.key + 1}. ${e.value}'),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: onAdd,
-                icon: const Icon(Icons.add),
-                label: Text('Добавить в ${mealType.label.toLowerCase()}'),
+            if (isAiBusyError(error)) ...[
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: resettingSession ? null : onResetSession,
+                child: const Text('Сбросить сессию ИИ'),
               ),
+            ],
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: onOffline,
+              child: const Text('Показать без ИИ'),
+            ),
+            TextButton(
+              onPressed: onSettings,
+              child: const Text('Настройки сервера'),
             ),
           ],
         ),
@@ -448,35 +875,6 @@ class _PortionDialogState extends State<_PortionDialog> {
           child: const Text('Добавить'),
         ),
       ],
-    );
-  }
-}
-
-class _ProductCard extends StatelessWidget {
-  final ProductSuggestion product;
-  final VoidCallback onOpen;
-
-  const _ProductCard({required this.product, required this.onOpen});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: product.imageUrl != null
-            ? Image.network(product.imageUrl!, width: 48, height: 48, fit: BoxFit.cover)
-            : const Icon(Icons.shopping_basket),
-        title: Text(product.name),
-        subtitle: Text(
-          [
-            if (product.reason.isNotEmpty) product.reason,
-            if (product.priceRub != null) '${product.priceRub} ₽',
-            product.store,
-          ].join(' · '),
-        ),
-        trailing: const Icon(Icons.open_in_new),
-        onTap: onOpen,
-      ),
     );
   }
 }
