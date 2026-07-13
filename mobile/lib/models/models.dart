@@ -330,6 +330,7 @@ class MealSuggestion {
   final String topUpSummary;
   final List<String> priorityMacros;
   final String disclaimer;
+  final String weightInsight;
   final List<RecipeSuggestion> recipes;
   final List<ProductSuggestion> products;
 
@@ -341,6 +342,7 @@ class MealSuggestion {
     required this.topUpSummary,
     required this.priorityMacros,
     required this.disclaimer,
+    this.weightInsight = '',
     required this.recipes,
     required this.products,
   });
@@ -361,6 +363,7 @@ class MealSuggestion {
             .map((e) => e.toString())
             .toList(),
         disclaimer: json['disclaimer'] as String? ?? '',
+        weightInsight: json['weight_insight'] as String? ?? '',
         recipes: (json['recipes'] as List<dynamic>? ?? [])
             .map((e) => RecipeSuggestion.fromJson(e as Map<String, dynamic>))
             .toList(),

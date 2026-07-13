@@ -1,4 +1,5 @@
 import '../models/models.dart';
+import 'weight_analysis.dart';
 
 class NutritionCalculator {
   static double bmr(UserProfile profile) {
@@ -174,6 +175,7 @@ class NutritionCalculator {
     required Macros consumed,
     required Macros targets,
     required Map<MealType, Macros> mealsConsumed,
+    WeightAnalysis? weightAnalysis,
   }) {
     final plan = computeMealPlan(targets, mealsConsumed)[mealType]!;
     final dailyDeficit = Macros(
@@ -201,6 +203,9 @@ class NutritionCalculator {
       summary += '.';
     }
 
+    final weightInsight = weightAnalysis?.offlineInsight() ?? '';
+    final weightProducts = weightAnalysis?.offlineProducts() ?? const [];
+
     return MealSuggestion(
       deficit: plan.deficit,
       dailyDeficit: dailyDeficit,
@@ -208,9 +213,10 @@ class NutritionCalculator {
       rolloverIn: plan.rolloverIn,
       topUpSummary: summary,
       priorityMacros: priorities,
-      disclaimer: 'Расчёт по вашей норме КБЖУ без ИИ. Рецепты появятся, когда сервер восстановится.',
+      weightInsight: weightInsight,
+      disclaimer: 'Расчёт по вашей норме КБЖУ и динамике веса без ИИ. Рецепты появятся, когда сервер восстановится.',
       recipes: const [],
-      products: const [],
+      products: weightProducts,
     );
   }
 }

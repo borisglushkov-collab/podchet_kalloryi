@@ -3,6 +3,7 @@
 import json
 
 from nutrition_prompt import (
+    analyze_weight_context,
     build_top_up_summary_fallback,
     build_user_prompt,
     compute_meal_plan,
@@ -69,6 +70,52 @@ def test_parse_ai_response_plain_json():
     data = {"recipes": [], "products": [], "disclaimer": "test"}
     result = parse_ai_response(json.dumps(data))
     assert result["disclaimer"] == "test"
+
+
+def test_build_user_prompt_with_weight():
+    prompt = build_user_prompt(
+        "lunch",
+        {"calories": 800, "protein": 40, "fat": 30, "carbs": 80},
+        {"calories": 2000, "protein": 120, "fat": 65, "carbs": 250},
+        {"calories": 0, "protein": 0, "fat": 0, "carbs": 0},
+        [],
+        "Москва",
+        weight_context={
+            "current_kg": 78.5,
+            "target_kg": 72.0,
+            "goal": "lose",
+            "entry_count": 5,
+            "change_7d_kg": -0.4,
+            "trend": "losing",
+            "remaining_kg": 6.5,
+            "recent_entries": [
+                {"date": "2026-07-01", "weight_kg": 79.0},
+                {"date": "2026-07-08", "weight_kg": 78.5},
+            ],
+        },
+    )
+    assert "график веса" in prompt.lower()
+    assert "снижение" in prompt.lower() or "losing" in prompt.lower()
+
+
+def test_analyze_weight_context_plateau():
+    insight = analyze_weight_context(
+        {
+            "current_kg": 80,
+            "target_kg": 75,
+            "goal": "lose",
+            "entry_count": 4,
+            "trend": "plateau",
+            "change_7d_kg": 0.1,
+        }
+    )
+    assert insight is not None
+    assert "плато" in insight.lower()
+
+
+def test_analyze_weight_context_empty():
+    assert analyze_weight_context(None) is None
+    assert analyze_weight_context({"entry_count": 0}) is None
 
 
 def test_parse_ai_response_markdown():

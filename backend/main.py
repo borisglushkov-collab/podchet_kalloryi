@@ -14,6 +14,7 @@ from cursor_client import CursorClient
 from food_search_service import search_food
 from nutrition_prompt import (
     SYSTEM_PROMPT,
+    analyze_weight_context,
     build_top_up_summary_fallback,
     build_user_prompt,
     meal_plan_for_type,
@@ -64,6 +65,7 @@ class SuggestMealRequest(BaseModel):
     meals_consumed: dict[str, Macros] = Field(default_factory=dict)
     preferences: list[str] = Field(default_factory=list)
     city: str = "Москва"
+    weight_context: dict | None = None
 
 
 class SuggestMealResponse(BaseModel):
@@ -74,6 +76,7 @@ class SuggestMealResponse(BaseModel):
     top_up_summary: str = ""
     priority_macros: list[str] = Field(default_factory=list)
     disclaimer: str = ""
+    weight_insight: str = ""
     recipes: list[dict] = Field(default_factory=list)
     products: list[dict] = Field(default_factory=list)
 
@@ -158,6 +161,7 @@ async def suggest_meal(request: SuggestMealRequest):
         preferences=request.preferences,
         city=request.city,
         meals_consumed=meals_consumed,
+        weight_context=request.weight_context,
     )
 
     try:
@@ -200,6 +204,8 @@ async def suggest_meal(request: SuggestMealRequest):
         is_last=plan["is_last"],
     )
 
+    weight_insight = analyze_weight_context(request.weight_context) or ""
+
     return SuggestMealResponse(
         deficit=meal_deficit,
         daily_deficit=daily_deficit,
@@ -208,6 +214,7 @@ async def suggest_meal(request: SuggestMealRequest):
         top_up_summary=top_up_summary,
         priority_macros=priority_macros(meal_deficit.model_dump()),
         disclaimer=parsed.get("disclaimer", "Рекомендации носят информационный характер."),
+        weight_insight=weight_insight,
         recipes=parsed.get("recipes", []),
         products=enriched_products,
     )
