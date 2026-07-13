@@ -1,12 +1,13 @@
-"""Food photo analysis via Gemini or OpenAI vision APIs."""
+"""Food photo analysis via Cursor, Gemini or OpenAI vision APIs."""
 
-import base64
 import logging
 import os
+from functools import lru_cache
 from typing import Any
 
 import httpx
 
+from cursor_client import CursorClient
 from food_vision_prompt import FOOD_VISION_PROMPT, parse_food_vision_response
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,27 @@ class FoodVisionNotConfiguredError(RuntimeError):
     pass
 
 
+@lru_cache(maxsize=1)
+def _vision_cursor_client() -> CursorClient:
+    model = os.getenv("CURSOR_VISION_MODEL") or os.getenv("CURSOR_MODEL", "composer-2.5")
+    return CursorClient(model=model)
+
+
+async def _analyze_with_cursor(image_bytes: bytes, mime_type: str) -> str:
+    if not os.getenv("CURSOR_API_KEY", "").strip():
+        raise FoodVisionNotConfiguredError("CURSOR_API_KEY не настроен")
+
+    client = _vision_cursor_client()
+    return await client.prompt_with_images(
+        FOOD_VISION_PROMPT,
+        "Проанализируй фото еды и верни JSON по схеме из системного промпта.",
+        [(image_bytes, mime_type)],
+    )
+
+
 async def _analyze_with_gemini(image_bytes: bytes, mime_type: str) -> str:
+    import base64
+
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     if not api_key:
         raise FoodVisionNotConfiguredError("GEMINI_API_KEY не настроен")
@@ -59,6 +80,8 @@ async def _analyze_with_gemini(image_bytes: bytes, mime_type: str) -> str:
 
 
 async def _analyze_with_openai(image_bytes: bytes, mime_type: str) -> str:
+    import base64
+
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise FoodVisionNotConfiguredError("OPENAI_API_KEY не настроен")
@@ -100,22 +123,31 @@ async def _analyze_with_openai(image_bytes: bytes, mime_type: str) -> str:
     return content
 
 
+def _provider_chain() -> list[str]:
+    provider = os.getenv("FOOD_VISION_PROVIDER", "auto").lower()
+    if provider == "cursor":
+        return ["cursor"]
+    if provider == "gemini":
+        return ["gemini"]
+    if provider == "openai":
+        return ["openai"]
+
+    chain: list[str] = []
+    if os.getenv("CURSOR_API_KEY", "").strip():
+        chain.append("cursor")
+    chain.extend(["gemini", "openai"])
+    return chain
+
+
 async def analyze_food_image(image_bytes: bytes, mime_type: str) -> dict[str, Any]:
     mime_type = mime_type or "image/jpeg"
-    provider = os.getenv("FOOD_VISION_PROVIDER", "auto").lower()
     errors: list[str] = []
 
-    providers: list[str]
-    if provider == "gemini":
-        providers = ["gemini"]
-    elif provider == "openai":
-        providers = ["openai"]
-    else:
-        providers = ["gemini", "openai"]
-
-    for name in providers:
+    for name in _provider_chain():
         try:
-            if name == "gemini":
+            if name == "cursor":
+                raw = await _analyze_with_cursor(image_bytes, mime_type)
+            elif name == "gemini":
                 raw = await _analyze_with_gemini(image_bytes, mime_type)
             else:
                 raw = await _analyze_with_openai(image_bytes, mime_type)
@@ -130,7 +162,8 @@ async def analyze_food_image(image_bytes: bytes, mime_type: str) -> dict[str, An
 
     if errors:
         raise FoodVisionNotConfiguredError(
-            "Анализ фото недоступен. Настройте GEMINI_API_KEY или OPENAI_API_KEY на сервере. "
+            "Анализ фото недоступен. Настройте CURSOR_API_KEY (рекомендуется), "
+            "GEMINI_API_KEY или OPENAI_API_KEY на сервере. "
             + "; ".join(errors)
         )
     raise FoodVisionNotConfiguredError("Анализ фото не настроен")

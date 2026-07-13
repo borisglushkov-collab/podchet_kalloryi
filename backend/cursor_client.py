@@ -1,6 +1,7 @@
 """Cursor Cloud Agents API client."""
 
 import asyncio
+import base64
 import os
 import time
 from typing import Optional
@@ -12,6 +13,14 @@ POLL_INTERVAL_SEC = 2.0
 MAX_WAIT_SEC = 180.0
 
 TERMINAL_STATUSES = {"FINISHED", "FAILED", "CANCELLED", "ERROR"}
+
+_SUPPORTED_IMAGE_MIME = {
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "image/gif",
+    "image/webp",
+}
 
 
 class CursorClient:
@@ -26,34 +35,82 @@ class CursorClient:
             "Content-Type": "application/json",
         }
 
+    @staticmethod
+    def _normalize_mime(mime_type: str) -> str:
+        mime = (mime_type or "image/jpeg").lower()
+        if mime == "image/jpg":
+            return "image/jpeg"
+        if mime in _SUPPORTED_IMAGE_MIME:
+            return mime
+        return "image/jpeg"
+
+    def _build_prompt_payload(
+        self,
+        text: str,
+        images: list[tuple[bytes, str]] | None = None,
+    ) -> dict:
+        payload: dict = {"text": text}
+        if not images:
+            return payload
+        image_entries = []
+        for image_bytes, mime_type in images[:5]:
+            image_entries.append(
+                {
+                    "data": base64.b64encode(image_bytes).decode("ascii"),
+                    "mimeType": self._normalize_mime(mime_type),
+                }
+            )
+        if image_entries:
+            payload["images"] = image_entries
+        return payload
+
     async def prompt(self, system_prompt: str, user_prompt: str) -> str:
         if not self.api_key:
             raise ValueError("CURSOR_API_KEY is not set")
 
         full_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
+        return await self._run_prompt(self._build_prompt_payload(full_prompt))
+
+    async def prompt_with_images(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        images: list[tuple[bytes, str]],
+    ) -> str:
+        if not self.api_key:
+            raise ValueError("CURSOR_API_KEY is not set")
+        if not images:
+            raise ValueError("At least one image is required")
+
+        full_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
+        return await self._run_prompt(self._build_prompt_payload(full_prompt, images))
+
+    async def _run_prompt(self, prompt_payload: dict) -> str:
         async with httpx.AsyncClient(timeout=60.0) as client:
             if self._agent_id:
                 try:
-                    run_id = await self._create_run(client, self._agent_id, full_prompt)
+                    run_id = await self._create_run(client, self._agent_id, prompt_payload)
                 except httpx.HTTPStatusError as exc:
                     if exc.response.status_code in {404, 410}:
                         self._agent_id = None
-                        agent_id, run_id = await self._create_agent(client, full_prompt)
+                        agent_id, run_id = await self._create_agent(client, prompt_payload)
                         self._agent_id = agent_id
                     elif exc.response.status_code == 409:
                         await self._cancel_active_run(client, self._agent_id)
-                        run_id = await self._create_run(client, self._agent_id, full_prompt)
+                        run_id = await self._create_run(client, self._agent_id, prompt_payload)
                     else:
                         raise
             else:
-                agent_id, run_id = await self._create_agent(client, full_prompt)
+                agent_id, run_id = await self._create_agent(client, prompt_payload)
                 self._agent_id = agent_id
 
             return await self._wait_for_result(client, self._agent_id, run_id)
 
-    async def _create_agent(self, client: httpx.AsyncClient, prompt: str) -> tuple[str, str]:
+    async def _create_agent(
+        self, client: httpx.AsyncClient, prompt_payload: dict
+    ) -> tuple[str, str]:
         payload = {
-            "prompt": {"text": prompt},
+            "prompt": prompt_payload,
             "model": {"id": self.model},
         }
         response = await client.post(
@@ -67,7 +124,7 @@ class CursorClient:
                 agent_id = await self._reuse_existing_agent(client)
                 if agent_id:
                     self._agent_id = agent_id
-                    run_id = await self._create_run(client, agent_id, prompt)
+                    run_id = await self._create_run(client, agent_id, prompt_payload)
                     return agent_id, run_id
         response.raise_for_status()
         data = response.json()
@@ -84,13 +141,13 @@ class CursorClient:
         raise RuntimeError(f"Cursor API: run id not found in response: {data}")
 
     async def _create_run(
-        self, client: httpx.AsyncClient, agent_id: str, prompt: str
+        self, client: httpx.AsyncClient, agent_id: str, prompt_payload: dict
     ) -> str:
         for attempt in range(5):
             response = await client.post(
                 f"{CURSOR_BASE_URL}/v1/agents/{agent_id}/runs",
                 headers=self._headers(),
-                json={"prompt": {"text": prompt}},
+                json={"prompt": prompt_payload},
             )
             if response.status_code == 409:
                 await self._cancel_active_run(client, agent_id)
@@ -100,7 +157,7 @@ class CursorClient:
             return self._parse_run_id(response.json())
         # Последняя попытка — новый агент
         self._agent_id = None
-        new_agent_id, run_id = await self._create_agent(client, prompt)
+        new_agent_id, run_id = await self._create_agent(client, prompt_payload)
         self._agent_id = new_agent_id
         return run_id
 

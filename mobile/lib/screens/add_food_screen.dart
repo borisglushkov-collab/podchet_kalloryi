@@ -395,7 +395,7 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
                 const LinearProgressIndicator(),
                 const SizedBox(height: 4),
                 const Text(
-                  'ИИ анализирует продукт…',
+                  'ИИ анализирует продукт… До 2 минут',
                   style: TextStyle(fontSize: 13),
                 ),
               ],
