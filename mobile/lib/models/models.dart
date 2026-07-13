@@ -313,6 +313,10 @@ class FoodSearchResult {
   final double proteinPer100g;
   final double fatPer100g;
   final double carbsPer100g;
+  final double? suggestedGrams;
+  final String? notes;
+  final double? confidence;
+  final String? source;
 
   const FoodSearchResult({
     required this.name,
@@ -321,7 +325,29 @@ class FoodSearchResult {
     required this.proteinPer100g,
     required this.fatPer100g,
     required this.carbsPer100g,
+    this.suggestedGrams,
+    this.notes,
+    this.confidence,
+    this.source,
   });
+
+  factory FoodSearchResult.fromApiItem(Map<String, dynamic> map) => FoodSearchResult(
+        name: map['name'] as String? ?? '',
+        brand: map['brand'] as String?,
+        kcalPer100g: _foodNum(map['kcal_per_100g']),
+        proteinPer100g: _foodNum(map['protein_per_100g'] ?? map['proteins_per_100g']),
+        fatPer100g: _foodNum(map['fat_per_100g']),
+        carbsPer100g: _foodNum(map['carbs_per_100g'] ?? map['carbohydrates_per_100g']),
+        suggestedGrams: (map['suggested_grams'] as num?)?.toDouble(),
+        notes: map['notes'] as String?,
+        confidence: (map['confidence'] as num?)?.toDouble(),
+        source: map['source'] as String?,
+      );
+
+  static double _foodNum(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse('$value') ?? 0;
+  }
 
   Macros macrosForGrams(double grams) {
     final factor = grams / 100;

@@ -1,14 +1,20 @@
-# Podchet Kalloriy — единая версия 1.4.12
+# Podchet Kalloriy — единая версия 1.4.13
 
-Синхронизировано: **2026-07-13** (сборка APK пересобрана)
+Синхронизировано: **2026-07-13**
 
 | Компонент | Версия | Ветки |
 |-----------|--------|-------|
-| Mobile APK | 1.4.12+23 | `cursor/weight-design-a-a3bf` |
+| Mobile APK | 1.4.13+24 | `cursor/food-photo-barcode-a36d` |
 | Backend ИИ | v1.2 (develop) | calorizator, top-up suggestions |
 | Health Scale | LeFu SDK 1.2.5+ | mobile/lib/services/health_scale/ |
 | Design | Wellness UI A | Analytics / Coach / Profile / Weight |
 | Android сборки | android-сборки/install/ | + Яндекс.Диск |
+
+## v1.4.13
+
+- Добавление продуктов по **штрихкоду** (Open Food Facts)
+- **Анализ фото** еды с оценкой БЖУ и порции (Gemini/OpenAI на сервере)
+- Кнопки «Штрихкод» и «Фото» на экране добавления продукта
 
 ## v1.4.12
 

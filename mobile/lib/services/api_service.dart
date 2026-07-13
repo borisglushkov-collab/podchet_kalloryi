@@ -109,27 +109,14 @@ class FoodSearchService {
         queryParameters: {'query': q},
       );
       final items = response.data['items'] as List<dynamic>? ?? [];
-      final remote = items.map((raw) {
-        final map = raw as Map<String, dynamic>;
-        return FoodSearchResult(
-          name: map['name'] as String,
-          brand: map['brand'] as String?,
-          kcalPer100g: _num(map['kcal_per_100g']),
-          proteinPer100g: _num(map['protein_per_100g'] ?? map['proteins_per_100g']),
-          fatPer100g: _num(map['fat_per_100g']),
-          carbsPer100g: _num(map['carbs_per_100g'] ?? map['carbohydrates_per_100g']),
-        );
-      }).toList();
+      final remote = items
+          .map((raw) => FoodSearchResult.fromApiItem(raw as Map<String, dynamic>))
+          .toList();
       return mergeSearchResults(remote: remote, query: q);
     } catch (_) {
       final local = searchLocalFallback(q);
       if (local.isNotEmpty) return local;
       rethrow;
     }
-  }
-
-  double _num(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse('$value') ?? 0;
   }
 }

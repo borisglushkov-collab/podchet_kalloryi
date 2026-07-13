@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../db/database.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/food_lookup_service.dart';
 import '../services/nutrition_calculator.dart';
 import '../services/weight_analysis.dart';
 
@@ -13,6 +14,7 @@ final weightEntriesProvider = FutureProvider<List<WeightEntry>>((ref) async {
 
 final apiServiceProvider = Provider((ref) => ApiService());
 final foodSearchServiceProvider = Provider((ref) => FoodSearchService());
+final foodLookupServiceProvider = Provider((ref) => FoodLookupService());
 
 final profileProvider = FutureProvider<UserProfile?>((ref) async {
   return AppDatabase.getProfile();

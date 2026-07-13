@@ -6,12 +6,14 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from barcode_service import lookup_barcode
 from cursor_client import CursorClient
 from food_search_service import search_food
+from food_vision_service import FoodVisionNotConfiguredError, analyze_food_image
 from nutrition_prompt import (
     SYSTEM_PROMPT,
     analyze_weight_context,
@@ -104,6 +106,8 @@ async def root():
         "endpoints": {
             "health": "GET /health",
             "search_food": "GET /api/search-food?query=...",
+            "search_barcode": "GET /api/search-barcode?barcode=...",
+            "analyze_food_image": "POST /api/analyze-food-image",
             "suggest_meal": "POST /api/suggest-meal",
             "reset_session": "POST /api/reset-session",
             "docs": "GET /docs",
@@ -127,6 +131,44 @@ async def search_food_endpoint(query: str):
     except Exception as e:
         logger.exception("Food search error")
         raise HTTPException(status_code=502, detail=f"Ошибка поиска продуктов: {e}") from e
+
+
+@app.get("/api/search-barcode")
+async def search_barcode_endpoint(barcode: str):
+    try:
+        item = await lookup_barcode(barcode)
+        if not item:
+            raise HTTPException(
+                status_code=404,
+                detail="Продукт по штрихкоду не найден в Open Food Facts",
+            )
+        return {"item": item, "source": "openfoodfacts"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Barcode search error")
+        raise HTTPException(status_code=502, detail=f"Ошибка поиска по штрихкоду: {e}") from e
+
+
+@app.post("/api/analyze-food-image")
+async def analyze_food_image_endpoint(file: UploadFile = File(...)):
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Загрузите файл изображения (JPEG/PNG)")
+
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Пустой файл")
+    if len(image_bytes) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Файл больше 8 МБ")
+
+    try:
+        item = await analyze_food_image(image_bytes, file.content_type)
+        return {"item": item, "source": item.get("source", "ai_vision")}
+    except FoodVisionNotConfiguredError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except Exception as e:
+        logger.exception("Food vision error")
+        raise HTTPException(status_code=502, detail=f"Ошибка анализа фото: {e}") from e
 
 
 @app.post("/api/suggest-meal", response_model=SuggestMealResponse)

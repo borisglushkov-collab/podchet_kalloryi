@@ -1,13 +1,15 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../db/database.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
-import '../services/api_service.dart';
-import '../utils/search_query_utils.dart';
 import '../services/local_food_fallback.dart';
+import '../utils/search_query_utils.dart';
 import '../widgets/widgets.dart';
+import 'barcode_scan_screen.dart';
 
 class AddFoodScreen extends ConsumerStatefulWidget {
   final String date;
@@ -35,6 +37,7 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
   final _carbsController = TextEditingController(text: '0');
   bool _manualMode = false;
   bool _searching = false;
+  bool _lookupBusy = false;
   List<FoodSearchResult> _results = [];
   FoodSearchResult? _selected;
 
@@ -105,7 +108,115 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
     setState(() {
       _selected = result;
       _nameController.text = result.name;
+      if (result.suggestedGrams != null && result.suggestedGrams! > 0) {
+        _gramsController.text = result.suggestedGrams!.round().toString();
+      }
     });
+  }
+
+  Future<void> _applyLookup(Future<FoodSearchResult> Function() loader) async {
+    setState(() {
+      _lookupBusy = true;
+      _manualMode = false;
+      _results = [];
+      _selected = null;
+    });
+    try {
+      final result = await loader();
+      if (!mounted) return;
+      setState(() {
+        _selected = result;
+        _results = [result];
+        _nameController.text = result.name;
+        if (result.suggestedGrams != null && result.suggestedGrams! > 0) {
+          _gramsController.text = result.suggestedGrams!.round().toString();
+        }
+      });
+      final notes = result.notes;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            notes != null && notes.isNotEmpty
+                ? '${result.name}\n$notes'
+                : 'Распознано: ${result.name}',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(ref.read(foodLookupServiceProvider).formatLookupError(e)),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _lookupBusy = false);
+    }
+  }
+
+  Future<void> _scanBarcode() async {
+    if (kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Сканер штрихкода доступен в мобильном приложении')),
+      );
+      return;
+    }
+    final code = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const BarcodeScanScreen()),
+    );
+    if (code == null || !mounted) return;
+    await _applyLookup(
+      () => ref.read(foodLookupServiceProvider).lookupBarcode(code),
+    );
+  }
+
+  Future<void> _pickPhoto(ImageSource source) async {
+    if (kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Анализ фото доступен в мобильном приложении')),
+      );
+      return;
+    }
+    final image = await ImagePicker().pickImage(
+      source: source,
+      maxWidth: 1600,
+      imageQuality: 85,
+    );
+    if (image == null || !mounted) return;
+    await _applyLookup(
+      () => ref.read(foodLookupServiceProvider).analyzePhoto(image.path),
+    );
+  }
+
+  Future<void> _showPhotoOptions() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Сделать фото'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickPhoto(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Выбрать из галереи'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickPhoto(ImageSource.gallery);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Macros? get _previewMacros {
@@ -259,6 +370,37 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
               keyboardType: TextInputType.number,
             ),
           ] else ...[
+            if (!kIsWeb) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _lookupBusy ? null : _scanBarcode,
+                      icon: const Icon(Icons.qr_code_scanner),
+                      label: const Text('Штрихкод'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _lookupBusy ? null : _showPhotoOptions,
+                      icon: const Icon(Icons.photo_camera_outlined),
+                      label: const Text('Фото'),
+                    ),
+                  ),
+                ],
+              ),
+              if (_lookupBusy) ...[
+                const SizedBox(height: 12),
+                const LinearProgressIndicator(),
+                const SizedBox(height: 4),
+                const Text(
+                  'ИИ анализирует продукт…',
+                  style: TextStyle(fontSize: 13),
+                ),
+              ],
+              const SizedBox(height: 16),
+            ],
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -313,12 +455,18 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
               (r) => ListTile(
                 title: Text(r.name),
                 subtitle: Text(
-                  '${formatMacrosPer100(
-                    kcal: r.kcalPer100g,
-                    protein: r.proteinPer100g,
-                    fat: r.fatPer100g,
-                    carbs: r.carbsPer100g,
-                  )}${r.brand != null ? ' · ${r.brand}' : ''}',
+                  [
+                    formatMacrosPer100(
+                      kcal: r.kcalPer100g,
+                      protein: r.proteinPer100g,
+                      fat: r.fatPer100g,
+                      carbs: r.carbsPer100g,
+                    ),
+                    if (r.brand != null) r.brand!,
+                    if (r.notes != null && r.notes!.isNotEmpty) r.notes!,
+                    if (r.source == 'ai_vision' && r.confidence != null)
+                      'уверенность ${(r.confidence! * 100).round()}%',
+                  ].join(' · '),
                 ),
                 selected: _selected?.name == r.name,
                 onTap: () => _selectResult(r),
