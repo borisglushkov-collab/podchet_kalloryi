@@ -5,24 +5,26 @@ import 'package:intl/intl.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
 
-/// Линейный график веса в стиле FatSecret: линия, заливка, целевые линии.
+/// Линейный график веса (дизайн A — мягкая зелёная линия).
 class WeightChart extends StatelessWidget {
   const WeightChart({
     super.key,
     required this.entries,
     required this.startWeight,
     required this.targetWeight,
+    this.compact = false,
   });
 
   final List<WeightEntry> entries;
   final double startWeight;
   final double targetWeight;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     if (entries.isEmpty) {
       return SizedBox(
-        height: 220,
+        height: compact ? 140 : 220,
         child: Center(
           child: Text(
             'Нет записей для графика',
@@ -82,9 +84,9 @@ class WeightChart extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-          height: 240,
+          height: compact ? 160 : 240,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(4, 16, 12, 8),
+            padding: EdgeInsets.fromLTRB(4, compact ? 8 : 16, 12, 8),
             child: LineChart(
               LineChartData(
                 minX: 0,
@@ -139,34 +141,34 @@ class WeightChart extends StatelessWidget {
                   horizontalLines: [
                     HorizontalLine(
                       y: startWeight,
-                      color: const Color(0xFFE57373),
-                      strokeWidth: 1.5,
+                      color: const Color(0xFFE25555).withValues(alpha: 0.55),
+                      strokeWidth: 1.2,
                       dashArray: [6, 4],
                       label: HorizontalLineLabel(
-                        show: true,
+                        show: !compact,
                         alignment: Alignment.topRight,
                         padding: const EdgeInsets.only(right: 4, bottom: 4),
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFFE57373),
+                          color: Color(0xFFE25555),
                         ),
                         labelResolver: (_) => startWeight.toStringAsFixed(0),
                       ),
                     ),
                     HorizontalLine(
                       y: targetWeight,
-                      color: AppColors.water,
-                      strokeWidth: 1.5,
+                      color: AppColors.primary.withValues(alpha: 0.55),
+                      strokeWidth: 1.2,
                       dashArray: [6, 4],
                       label: HorizontalLineLabel(
-                        show: true,
+                        show: !compact,
                         alignment: Alignment.bottomRight,
                         padding: const EdgeInsets.only(right: 4, top: 4),
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: AppColors.water,
+                          color: AppColors.primaryDark,
                         ),
                         labelResolver: (_) => targetWeight.toStringAsFixed(0),
                       ),
@@ -191,14 +193,14 @@ class WeightChart extends StatelessWidget {
                     spots: spots,
                     isCurved: sorted.length > 2,
                     curveSmoothness: 0.25,
-                    color: AppColors.streak,
+                    color: AppColors.primary,
                     barWidth: 3,
                     isStrokeCapRound: true,
                     dotData: FlDotData(
                       show: true,
                       getDotPainter: (_, __, ___, ____) => FlDotCirclePainter(
                         radius: sorted.length == 1 ? 6 : 4,
-                        color: AppColors.streak,
+                        color: AppColors.primary,
                         strokeWidth: 2,
                         strokeColor: Colors.white,
                       ),
@@ -209,8 +211,8 @@ class WeightChart extends StatelessWidget {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          AppColors.streak.withValues(alpha: 0.35),
-                          AppColors.streak.withValues(alpha: 0.02),
+                          AppColors.primary.withValues(alpha: 0.28),
+                          AppColors.primary.withValues(alpha: 0.02),
                         ],
                       ),
                     ),
@@ -222,7 +224,7 @@ class WeightChart extends StatelessWidget {
         ),
         if (sorted.length == 1)
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            padding: EdgeInsets.fromLTRB(compact ? 4 : 20, 0, compact ? 4 : 20, 8),
             child: Text(
               'Добавьте ещё записи веса — на графике появится линия прогресса',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(

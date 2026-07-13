@@ -3,7 +3,7 @@ chcp 65001 >nul
 setlocal
 
 set "PROJECT=D:\ucheba\podchet_kalloriy"
-set "APK_NAME=podchet_kalloriy-1.4.7-18-health-scale.apk"
+set "APK_NAME=podchet_kalloriy-1.4.12-23-health-scale.apk"
 set "DST=D:\%APK_NAME%"
 set "ENV=%PROJECT%\android-сборки\scripts\yandex-disk.env"
 
