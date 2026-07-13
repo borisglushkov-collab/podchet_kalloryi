@@ -33,9 +33,15 @@ class _MainShellState extends ConsumerState<MainShell> {
     ];
 
     return Scaffold(
-      body: IndexedStack(
-        index: _index == 2 ? 0 : _index,
-        children: pages,
+      backgroundColor: AppColors.background,
+      // Edge-to-edge: контент не уходит под статус-бар (время / батарея).
+      // Низ по-прежнему учитывается в _WellnessNavBar.
+      body: SafeArea(
+        bottom: false,
+        child: IndexedStack(
+          index: _index == 2 ? 0 : _index,
+          children: pages,
+        ),
       ),
       bottomNavigationBar: _WellnessNavBar(
         selectedIndex: _index == 2 ? 0 : _index,
