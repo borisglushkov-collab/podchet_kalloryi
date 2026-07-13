@@ -533,19 +533,55 @@ class _CompactRecipeTile extends StatefulWidget {
 class _CompactRecipeTileState extends State<_CompactRecipeTile> {
   bool _expanded = false;
 
-  IconData get _icon {
+  /// Emoji-бейдж блюда (как в макете Coach A) — Material Icons часто
+  /// не рисуются после tree-shake / на части устройств.
+  String get _dishEmoji {
     final name = widget.recipe.name.toLowerCase();
-    if (name.contains('рыб') || name.contains('лос') || name.contains('тунец')) {
-      return Icons.set_meal_outlined;
+    final hay = '$name ${widget.recipe.ingredients.map((i) => i['name'] ?? '').join(' ').toLowerCase()}';
+
+    if (_any(hay, ['лосос', 'семг', 'рыб', 'тунец', 'треск', 'форел', 'селед', 'кревет', 'морепроду'])) {
+      return '🐟';
     }
-    if (name.contains('салат') || name.contains('овощ')) {
-      return Icons.eco_outlined;
+    if (_any(hay, ['курин', 'куриц', 'индейк', 'цыпл'])) {
+      return '🍗';
     }
-    if (name.contains('творог') || name.contains('яйц')) {
-      return Icons.egg_outlined;
+    if (_any(hay, ['говяд', 'телят', 'стейк'])) {
+      return '🥩';
     }
-    return Icons.restaurant_outlined;
+    if (_any(hay, ['свинин', 'бекон'])) {
+      return '🥓';
+    }
+    if (_any(hay, ['салат', 'овощ', 'broccoli', 'броккол', 'шпинат', 'зелень'])) {
+      return '🥗';
+    }
+    if (_any(hay, ['творог', 'йогурт', 'кефир', 'сыр', 'молоч'])) {
+      return '🧀';
+    }
+    if (_any(hay, ['яйц', 'омлет', 'яичн'])) {
+      return '🥚';
+    }
+    if (_any(hay, ['каш', 'овсян', 'гречк', 'рис', 'киноа', 'пшён', 'пшен'])) {
+      return '🥣';
+    }
+    if (_any(hay, ['суп', 'борщ', 'бульон', 'похлёб', 'похлеб'])) {
+      return '🍲';
+    }
+    if (_any(hay, ['паст', 'спагет', 'лапш', 'макарон'])) {
+      return '🍝';
+    }
+    if (_any(hay, ['тост', 'хлеб', 'бутер', 'сэндвич', 'сендвич'])) {
+      return '🥪';
+    }
+    if (_any(hay, ['фрукт', 'яблок', 'банан', 'ягод', 'смузи'])) {
+      return '🍎';
+    }
+    if (_any(hay, ['орех', 'семеч', 'авокад'])) {
+      return '🥑';
+    }
+    return '🍽️';
   }
+
+  bool _any(String hay, List<String> keys) => keys.any(hay.contains);
 
   @override
   Widget build(BuildContext context) {
@@ -567,13 +603,17 @@ class _CompactRecipeTileState extends State<_CompactRecipeTile> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      width: 44,
-                      height: 44,
+                      width: 48,
+                      height: 48,
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: AppColors.primary.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(14),
                       ),
-                      child: Icon(_icon, color: AppColors.primaryDark),
+                      child: Text(
+                        _dishEmoji,
+                        style: const TextStyle(fontSize: 24, height: 1),
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
