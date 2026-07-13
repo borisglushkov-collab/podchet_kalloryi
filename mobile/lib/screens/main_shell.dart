@@ -79,41 +79,47 @@ class _WellnessNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border(top: BorderSide(color: Colors.black.withValues(alpha: 0.06))),
-      ),
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _NavItem(
-            label: 'Сегодня',
-            icon: Icons.wb_sunny_outlined,
-            selected: selectedIndex == 0,
-            onTap: () => onSelected(0),
-          ),
-          _NavItem(
-            label: 'Аналитика',
-            icon: Icons.insights_outlined,
-            selected: selectedIndex == 1,
-            onTap: () => onSelected(1),
-          ),
-          _FabNavItem(onTap: () => onSelected(2)),
-          _NavItem(
-            label: 'Коуч',
-            icon: Icons.psychology_outlined,
-            selected: selectedIndex == 3,
-            onTap: () => onSelected(3),
-          ),
-          _NavItem(
-            label: 'Профиль',
-            icon: Icons.person_outline,
-            selected: selectedIndex == 4,
-            onTap: () => onSelected(4),
-          ),
-        ],
+    // Edge-to-edge Android: системные кнопки Назад/Домой поверх контента,
+    // если не учесть viewPadding.bottom.
+    final systemBottom = MediaQuery.viewPaddingOf(context).bottom;
+    return Material(
+      color: AppColors.surface,
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          border: Border(top: BorderSide(color: Colors.black.withValues(alpha: 0.06))),
+        ),
+        padding: EdgeInsets.fromLTRB(8, 8, 8, 8 + systemBottom),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _NavItem(
+              label: 'Сегодня',
+              icon: Icons.wb_sunny_outlined,
+              selected: selectedIndex == 0,
+              onTap: () => onSelected(0),
+            ),
+            _NavItem(
+              label: 'Аналитика',
+              icon: Icons.insights_outlined,
+              selected: selectedIndex == 1,
+              onTap: () => onSelected(1),
+            ),
+            _FabNavItem(onTap: () => onSelected(2)),
+            _NavItem(
+              label: 'Коуч',
+              icon: Icons.psychology_outlined,
+              selected: selectedIndex == 3,
+              onTap: () => onSelected(3),
+            ),
+            _NavItem(
+              label: 'Профиль',
+              icon: Icons.person_outline,
+              selected: selectedIndex == 4,
+              onTap: () => onSelected(4),
+            ),
+          ],
+        ),
       ),
     );
   }
