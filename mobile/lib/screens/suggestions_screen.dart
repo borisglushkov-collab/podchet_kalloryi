@@ -137,6 +137,61 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
       return (targets.calories - totals.calories).clamp(0, double.infinity);
     }();
 
+    final body = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: EdgeInsets.fromLTRB(16, widget.embedded ? 8 : 0, 16, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Коуч',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+              ),
+              if (remainingKcal != null)
+                _SoftChip(
+                  label: 'осталось ${remainingKcal.toStringAsFixed(0)} ккал',
+                  background: AppColors.primary.withValues(alpha: 0.15),
+                  foreground: AppColors.primaryDark,
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _MealChips(
+            selected: _mealType,
+            onSelected: _selectMeal,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _offlineSuggestion != null
+              ? _buildSuggestionBody(_offlineSuggestion!)
+              : suggestionAsync.when(
+                  loading: () => const _CoachLoading(),
+                  error: (e, _) => _CoachError(
+                    error: e,
+                    resettingSession: _resettingSession,
+                    onRetry: () => _retrySuggestion(resetSession: false),
+                    onResetSession: () => _retrySuggestion(resetSession: true),
+                    onOffline: _showOfflinePlan,
+                    onSettings: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                    ),
+                  ),
+                  data: (suggestion) => _buildSuggestionBody(suggestion),
+                ),
+        ),
+      ],
+    );
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: widget.embedded
@@ -145,63 +200,9 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
               title: const Text('Коуч'),
               backgroundColor: AppColors.background,
             ),
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: EdgeInsets.fromLTRB(16, widget.embedded ? 12 : 0, 16, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Коуч',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                    ),
-                  ),
-                  if (remainingKcal != null)
-                    _SoftChip(
-                      label: 'осталось ${remainingKcal.toStringAsFixed(0)} ккал',
-                      background: AppColors.primary.withValues(alpha: 0.15),
-                      foreground: AppColors.primaryDark,
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _MealChips(
-                selected: _mealType,
-                onSelected: _selectMeal,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: _offlineSuggestion != null
-                  ? _buildSuggestionBody(_offlineSuggestion!)
-                  : suggestionAsync.when(
-                      loading: () => const _CoachLoading(),
-                      error: (e, _) => _CoachError(
-                        error: e,
-                        resettingSession: _resettingSession,
-                        onRetry: () => _retrySuggestion(resetSession: false),
-                        onResetSession: () => _retrySuggestion(resetSession: true),
-                        onOffline: _showOfflinePlan,
-                        onSettings: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                        ),
-                      ),
-                      data: (suggestion) => _buildSuggestionBody(suggestion),
-                    ),
-            ),
-          ],
-        ),
-      ),
+      // Вкладка: верх уже в MainShell SafeArea.
+      // Отдельный экран: AppBar закрывает статус-бар — без второго SafeArea.
+      body: body,
     );
   }
 
@@ -210,8 +211,11 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
         ? suggestion.topUpSummary
         : _fallbackTip(suggestion);
 
+    final bottom = widget.embedded
+        ? 24.0
+        : 24.0 + MediaQuery.viewPaddingOf(context).bottom;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      padding: EdgeInsets.fromLTRB(16, 8, 16, bottom),
       children: [
         _TipCard(
           mealLabel: _mealType.label.toLowerCase(),

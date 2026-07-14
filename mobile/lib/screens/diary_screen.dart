@@ -77,7 +77,11 @@ class _DiaryScreenState extends ConsumerState<DiaryScreen> {
     ref.listen(selectedDateProvider, (_, __) => _loadWellness());
 
     return Scaffold(
+      backgroundColor: AppColors.background,
+      // primary: false — статус-бар уже учтён SafeArea в MainShell.
       appBar: AppBar(
+        primary: false,
+        toolbarHeight: 56,
         title: const Text('Сегодня'),
         actions: [
           IconButton(

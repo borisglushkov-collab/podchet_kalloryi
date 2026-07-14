@@ -294,7 +294,12 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
       appBar: AppBar(title: const Text('Добавить продукт')),
       body: ListView(
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          16 + MediaQuery.viewPaddingOf(context).bottom,
+        ),
         children: [
           DropdownButtonFormField<MealType>(
             value: _mealType,

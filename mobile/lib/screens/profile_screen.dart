@@ -203,9 +203,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: AppColors.background,
-        body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        appBar: widget.embedded
+            ? null
+            : AppBar(
+                title: const Text('Профиль'),
+                backgroundColor: AppColors.background,
+              ),
+        body: const Center(child: CircularProgressIndicator(color: AppColors.primary)),
       );
     }
 
@@ -234,6 +240,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ? 'не указаны'
         : _prefsController.text.trim();
 
+    final bottomPad = widget.embedded
+        ? 28.0
+        : 28.0 + MediaQuery.viewPaddingOf(context).bottom;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: widget.embedded
@@ -242,13 +252,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               title: const Text('Профиль'),
               backgroundColor: AppColors.background,
             ),
-      body: SafeArea(
-        bottom: false,
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            padding: EdgeInsets.fromLTRB(16, widget.embedded ? 12 : 0, 16, 28),
-            children: [
+      // Вкладка: без SafeArea (верх уже в MainShell).
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(16, widget.embedded ? 8 : 16, 16, bottomPad),
+          children: [
               Row(
                 children: [
                   Expanded(
@@ -690,7 +699,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ],
           ),
         ),
-      ),
     );
   }
 }

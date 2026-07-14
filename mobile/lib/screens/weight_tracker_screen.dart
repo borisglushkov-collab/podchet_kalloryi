@@ -143,7 +143,11 @@ class _WeightTrackerScreenState extends ConsumerState<WeightTrackerScreen> {
             final remaining = (current - target).abs();
             final progress = _goalProgress(start, current, target);
 
-            return ColoredBox(
+            final bottomPad = widget.embedded
+                ? 28.0
+                : 28.0 + MediaQuery.viewPaddingOf(context).bottom;
+
+            final content = ColoredBox(
               color: AppColors.background,
               child: RefreshIndicator(
                 color: AppColors.primary,
@@ -151,16 +155,44 @@ class _WeightTrackerScreenState extends ConsumerState<WeightTrackerScreen> {
                 child: CustomScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(16, widget.embedded ? 12 : 8, 16, 0),
-                        child: _TopBar(
-                          targetKg: target,
-                          showBack: !widget.embedded,
-                          onBack: () => Navigator.pop(context),
+                    if (widget.embedded)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                          child: _TopBar(
+                            targetKg: target,
+                            showBack: false,
+                            onBack: () => Navigator.pop(context),
+                          ),
+                        ),
+                      )
+                    else
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Text(
+                                'цель · ${target.toStringAsFixed(0)} кг',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primaryDark,
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -229,7 +261,7 @@ class _WeightTrackerScreenState extends ConsumerState<WeightTrackerScreen> {
                     ),
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+                        padding: EdgeInsets.fromLTRB(16, 16, 16, bottomPad),
                         child: FilledButton(
                           onPressed: _addWeight,
                           child: const Text('+ Записать вес'),
@@ -239,6 +271,17 @@ class _WeightTrackerScreenState extends ConsumerState<WeightTrackerScreen> {
                   ],
                 ),
               ),
+            );
+
+            // Отдельный экран (из профиля): учитываем статус-бар.
+            if (widget.embedded) return content;
+            return Scaffold(
+              backgroundColor: AppColors.background,
+              appBar: AppBar(
+                title: const Text('Вес'),
+                backgroundColor: AppColors.background,
+              ),
+              body: content,
             );
           },
         );

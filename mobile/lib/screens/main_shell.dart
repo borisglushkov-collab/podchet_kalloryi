@@ -34,9 +34,15 @@ class _MainShellState extends ConsumerState<MainShell> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      // Edge-to-edge: контент не уходит под статус-бар (время / батарея).
-      // Низ по-прежнему учитывается в _WellnessNavBar.
+      resizeToAvoidBottomInset: true,
+      extendBody: false,
+      extendBodyBehindAppBar: false,
+      // Edge-to-edge: вкладки не уходят под статус-бар и боковые вырезы.
+      // Низ — в _WellnessNavBar (viewPadding.bottom).
       body: SafeArea(
+        top: true,
+        left: true,
+        right: true,
         bottom: false,
         child: IndexedStack(
           index: _index == 2 ? 0 : _index,
