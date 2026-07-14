@@ -339,95 +339,191 @@ class _MealTileGrid extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (ctx) => _MealDetailSheet(
-        mealType: meal,
+        initialMeal: meal,
         date: date,
-        plan: mealPlan[meal]!,
+        mealPlan: mealPlan,
         onRefresh: onRefresh,
       ),
     );
   }
 }
 
-class _MealDetailSheet extends ConsumerWidget {
-  final MealType mealType;
+class _MealDetailSheet extends ConsumerStatefulWidget {
+  final MealType initialMeal;
   final String date;
-  final MealPlanInfo plan;
+  final Map<MealType, MealPlanInfo> mealPlan;
   final VoidCallback onRefresh;
 
   const _MealDetailSheet({
-    required this.mealType,
+    required this.initialMeal,
     required this.date,
-    required this.plan,
+    required this.mealPlan,
     required this.onRefresh,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final entriesAsync = ref.watch(dailyEntriesProvider(date));
+  ConsumerState<_MealDetailSheet> createState() => _MealDetailSheetState();
+}
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(mealType.label, style: Theme.of(context).textTheme.titleMedium),
-          Text(
-            '${plan.consumed.calories.toStringAsFixed(0)} / '
-            '${plan.effectiveTarget.calories.toStringAsFixed(0)} ккал',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          if (plan.hasRollover)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                'Перенос: ${plan.rolloverIn.calories.toStringAsFixed(0)} ккал',
-                style: Theme.of(context).textTheme.bodySmall,
+class _MealDetailSheetState extends ConsumerState<_MealDetailSheet> {
+  late MealType _mealType;
+
+  @override
+  void initState() {
+    super.initState();
+    _mealType = widget.initialMeal;
+  }
+
+  MealPlanInfo get _plan => widget.mealPlan[_mealType]!;
+
+  Future<void> _addFood() async {
+    // Не закрываем sheet — вернёмся сюда после добавления.
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddFoodScreen(date: widget.date, mealType: _mealType),
+      ),
+    );
+    if (!mounted) return;
+    widget.onRefresh();
+    ref.invalidate(dailyEntriesProvider(widget.date));
+    ref.invalidate(dailyTotalsProvider(widget.date));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final entriesAsync = ref.watch(dailyEntriesProvider(widget.date));
+    final targetsAsync = ref.watch(dailyTargetsProvider);
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.85;
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+
+    // Живой план по текущим записям (после добавления/удаления).
+    final livePlan = () {
+      final entries = entriesAsync.valueOrNull;
+      final targets = targetsAsync.valueOrNull;
+      if (entries == null || targets == null) return _plan;
+      return NutritionCalculator.computeMealPlan(
+        targets,
+        NutritionCalculator.consumedByMeal(entries),
+      )[_mealType]!;
+    }();
+
+    return SizedBox(
+      height: maxHeight,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottomInset),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Приём пищи',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: MealType.values.map((meal) {
+                  final on = meal == _mealType;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(meal.label),
+                      selected: on,
+                      onSelected: (_) => setState(() => _mealType = meal),
+                      selectedColor: AppColors.primary.withValues(alpha: 0.25),
+                      labelStyle: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: on ? AppColors.primaryDark : AppColors.textPrimary,
+                      ),
+                      side: BorderSide(
+                        color: on
+                            ? AppColors.primary
+                            : Colors.black.withValues(alpha: 0.08),
+                      ),
+                    ),
+                  );
+                }).toList(),
               ),
             ),
-          const SizedBox(height: 12),
-          entriesAsync.when(
-            loading: () => const CircularProgressIndicator(),
-            error: (_, __) => const Text('Ошибка загрузки'),
-            data: (entries) {
-              final mealEntries =
-                  entries.where((e) => e.mealType == mealType).toList();
-              if (mealEntries.isEmpty) {
-                return const Text('Нет записей');
-              }
-              return Column(
-                children: mealEntries
-                    .map(
-                      (e) => FoodEntryTile(
+            const SizedBox(height: 10),
+            Text(
+              '${livePlan.consumed.calories.toStringAsFixed(0)} / '
+              '${livePlan.effectiveTarget.calories.toStringAsFixed(0)} ккал',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            if (livePlan.hasRollover)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  'Перенос: ${livePlan.rolloverIn.calories.toStringAsFixed(0)} ккал',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                ),
+              ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: entriesAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (_, __) => const Center(child: Text('Ошибка загрузки')),
+                data: (entries) {
+                  final mealEntries =
+                      entries.where((e) => e.mealType == _mealType).toList();
+                  if (mealEntries.isEmpty) {
+                    return Center(
+                      child: Text(
+                        'Нет записей.\nНажмите «+ Добавить», чтобы внести продукт.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                      ),
+                    );
+                  }
+                  return ListView.separated(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    itemCount: mealEntries.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, i) {
+                      final e = mealEntries[i];
+                      return FoodEntryTile(
                         entry: e,
                         onDelete: () async {
+                          if (e.id == null) return;
                           await AppDatabase.deleteEntry(e.id!);
-                          onRefresh();
-                          ref.invalidate(dailyEntriesProvider(date));
+                          widget.onRefresh();
+                          ref.invalidate(dailyEntriesProvider(widget.date));
+                          ref.invalidate(dailyTotalsProvider(widget.date));
                         },
-                      ),
-                    )
-                    .toList(),
-              );
-            },
-          ),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: () async {
-              Navigator.pop(context);
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => AddFoodScreen(date: date, mealType: mealType),
-                ),
-              );
-              onRefresh();
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('Добавить'),
-          ),
-        ],
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _addFood,
+                icon: const Icon(Icons.add),
+                label: Text('+ Добавить в ${_mealType.label.toLowerCase()}'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
