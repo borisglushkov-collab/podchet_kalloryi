@@ -53,14 +53,17 @@ class _BarcodeScanScreenState extends State<BarcodeScanScreen> {
           ),
           Align(
             alignment: Alignment.bottomCenter,
-            child: Container(
-              width: double.infinity,
-              color: Colors.black54,
-              padding: const EdgeInsets.all(16),
-              child: const Text(
-                'Наведите камеру на штрихкод упаковки',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white),
+            child: SafeArea(
+              top: false,
+              child: Container(
+                width: double.infinity,
+                color: Colors.black54,
+                padding: const EdgeInsets.all(16),
+                child: const Text(
+                  'Наведите камеру на штрихкод упаковки',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white),
+                ),
               ),
             ),
           ),
