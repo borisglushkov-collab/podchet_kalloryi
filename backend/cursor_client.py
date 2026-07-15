@@ -11,6 +11,8 @@ import httpx
 CURSOR_BASE_URL = "https://api.cursor.com"
 POLL_INTERVAL_SEC = 2.0
 MAX_WAIT_SEC = 180.0
+# Per-request httpx limits. Read must cover slow Cursor agent create/run calls.
+_HTTP_TIMEOUT = httpx.Timeout(connect=20.0, read=120.0, write=30.0, pool=20.0)
 
 TERMINAL_STATUSES = {"FINISHED", "FAILED", "CANCELLED", "ERROR"}
 
@@ -86,7 +88,7 @@ class CursorClient:
         return await self._run_prompt(self._build_prompt_payload(full_prompt, images))
 
     async def _run_prompt(self, prompt_payload: dict) -> str:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
             if self._agent_id:
                 try:
                     run_id = await self._create_run(client, self._agent_id, prompt_payload)

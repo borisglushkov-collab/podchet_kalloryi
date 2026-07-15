@@ -159,16 +159,21 @@ class FoodSearchService {
     if (query.trim().length < 2) return [];
     final q = normalizeSearchQuery(query);
     final baseUrl = await SettingsService.getBackendUrl();
-    final response = await _dio.post(
-      '$baseUrl/api/ai-search-food',
-      data: {'query': q},
-      options: Options(
-        receiveTimeout: const Duration(seconds: 180),
-      ),
-    );
-    final items = response.data['items'] as List<dynamic>? ?? [];
-    return items
-        .map((raw) => FoodSearchResult.fromApiItem(raw as Map<String, dynamic>))
-        .toList();
+    try {
+      final response = await _dio.post(
+        '$baseUrl/api/ai-search-food',
+        data: {'query': q},
+        options: Options(
+          receiveTimeout: const Duration(seconds: 180),
+        ),
+      );
+      final items = response.data['items'] as List<dynamic>? ?? [];
+      return items
+          .map((raw) => FoodSearchResult.fromApiItem(raw as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      // Align with FoodLookupService: degrade to regular search.
+      return search(q);
+    }
   }
 }

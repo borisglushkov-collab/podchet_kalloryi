@@ -185,9 +185,33 @@ async def ai_search_food_endpoint(request: AiSearchFoodRequest):
     except AiFoodSearchNotConfiguredError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except Exception as e:
-        logger.exception("AI food search error")
+        ai_err = format_ai_error(e)
+        logger.exception("AI food search error: %s", ai_err)
+        # Don't block the user: fall back to calorizator/local search.
+        try:
+            fallback = await search_food(query)
+            items = fallback.get("items") or []
+            if items:
+                src = fallback.get("source") or "local"
+                logger.warning(
+                    "AI search failed (%s); returning %d items from %s",
+                    ai_err,
+                    len(items),
+                    src,
+                )
+                return {
+                    "items": items,
+                    "source": f"fallback_{src}",
+                    "ai_error": ai_err,
+                    "warning": (
+                        "ИИ не ответил вовремя — показаны результаты обычного поиска. "
+                        f"({ai_err})"
+                    ),
+                }
+        except Exception as fallback_exc:
+            logger.warning("Fallback food search also failed: %s", fallback_exc)
         raise HTTPException(
-            status_code=502, detail=f"Ошибка ИИ-поиска: {format_ai_error(e)}"
+            status_code=502, detail=f"Ошибка ИИ-поиска: {ai_err}"
         ) from e
 
 

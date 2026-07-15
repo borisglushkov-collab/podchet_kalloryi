@@ -35,18 +35,64 @@ class FoodLookupService {
     return FoodSearchResult.fromApiItem(item);
   }
 
-  Future<List<FoodSearchResult>> searchWithAi(String query) async {
+  /// AI search result plus optional fallback warning from backend.
+  Future<AiFoodSearchOutcome> searchWithAi(String query) async {
     final baseUrl = await SettingsService.getBackendUrl();
-    final response = await _dio.post(
-      '$baseUrl/api/ai-search-food',
-      data: {'query': query},
-      options: Options(receiveTimeout: const Duration(seconds: 180)),
-    );
-    final items = response.data['items'] as List<dynamic>? ?? [];
-    return items
-        .map((raw) => FoodSearchResult.fromApiItem(raw as Map<String, dynamic>))
-        .toList();
+    try {
+      final response = await _dio.post(
+        '$baseUrl/api/ai-search-food',
+        data: {'query': query},
+        options: Options(receiveTimeout: const Duration(seconds: 180)),
+      );
+      final items = response.data['items'] as List<dynamic>? ?? [];
+      final source = response.data['source']?.toString() ?? 'ai_search';
+      final warning = response.data['warning']?.toString();
+      return AiFoodSearchOutcome(
+        items: items
+            .map((raw) => FoodSearchResult.fromApiItem(raw as Map<String, dynamic>))
+            .toList(),
+        source: source,
+        warning: warning,
+      );
+    } catch (e) {
+      // Client-side fallback if backend is old or AI hard-fails.
+      try {
+        final base = await SettingsService.getBackendUrl();
+        final response = await _dio.get(
+          '$base/api/search-food',
+          queryParameters: {'query': query},
+          options: Options(receiveTimeout: const Duration(seconds: 30)),
+        );
+        final items = response.data['items'] as List<dynamic>? ?? [];
+        if (items.isNotEmpty) {
+          return AiFoodSearchOutcome(
+            items: items
+                .map((raw) => FoodSearchResult.fromApiItem(raw as Map<String, dynamic>))
+                .toList(),
+            source: 'fallback_client',
+            warning:
+                'ИИ недоступен — показаны результаты обычного поиска. '
+                '${formatApiError(e)}',
+          );
+        }
+      } catch (_) {}
+      rethrow;
+    }
   }
 
   String formatLookupError(Object error) => formatApiError(error);
+}
+
+class AiFoodSearchOutcome {
+  final List<FoodSearchResult> items;
+  final String source;
+  final String? warning;
+
+  const AiFoodSearchOutcome({
+    required this.items,
+    required this.source,
+    this.warning,
+  });
+
+  bool get usedFallback => source.startsWith('fallback');
 }

@@ -62,8 +62,19 @@ String _localizeDetail(String detail) {
   if (detail.contains('CURSOR_API_KEY')) {
     return 'На сервере не настроен ключ Cursor API. Обратитесь к администратору.';
   }
+  if (detail.startsWith('Ошибка ИИ-поиска:')) {
+    final rest = detail.substring('Ошибка ИИ-поиска:'.length).trim();
+    if (rest.isEmpty || rest.toLowerCase().contains('таймаут')) {
+      return 'ИИ не ответил вовремя. Попробуйте обычный поиск или повторите через минуту.';
+    }
+    return 'Ошибка ИИ-поиска: $rest';
+  }
   if (detail.startsWith('Ошибка ИИ:')) {
-    return detail.replaceFirst('Ошибка ИИ:', 'Ошибка ИИ:').trim();
+    final rest = detail.substring('Ошибка ИИ:'.length).trim();
+    if (rest.isEmpty || rest.toLowerCase().contains('таймаут')) {
+      return 'ИИ не ответил вовремя. Подождите и нажмите «Повторить».';
+    }
+    return 'Ошибка ИИ: $rest';
   }
   if (detail.startsWith('Ошибка')) return detail;
   return detail;
