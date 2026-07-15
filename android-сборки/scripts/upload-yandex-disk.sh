@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Загрузка файла на Яндекс.Диск (REST API)
+# По умолчанию кладёт APK в обе папки:
+#   disk:/podchet_kalloriy/apk
+#   app:/podchet_kalloriy/apk  (= Приложения/Yandex Polygon/podchet_kalloriy/apk)
 set -euo pipefail
 
 APK_PATH="${1:?Usage: upload-yandex-disk.sh <file.apk>}"
@@ -19,12 +22,23 @@ if [[ -z "${YANDEX_DISK_TOKEN:-}" ]]; then
   exit 0
 fi
 
-FOLDER="${YANDEX_DISK_FOLDER:-disk:/podchet_kalloriy/apk}"
 FILENAME="$(basename "$APK_PATH")"
-REMOTE_PATH="${FOLDER}/${FILENAME}"
 
-# Создать вложенные папки для disk:/ или app:/
-python3 - "$FOLDER" "$YANDEX_DISK_TOKEN" <<'PY'
+# Primary folder from env + always mirror into the familiar app:/ path.
+PRIMARY="${YANDEX_DISK_FOLDER:-disk:/podchet_kalloriy/apk}"
+FOLDERS=("$PRIMARY")
+if [[ "$PRIMARY" != "app:/podchet_kalloriy/apk" ]]; then
+  FOLDERS+=("app:/podchet_kalloriy/apk")
+fi
+if [[ "$PRIMARY" != "disk:/podchet_kalloriy/apk" ]]; then
+  FOLDERS+=("disk:/podchet_kalloriy/apk")
+fi
+
+upload_one() {
+  local FOLDER="$1"
+  local REMOTE_PATH="${FOLDER}/${FILENAME}"
+
+  python3 - "$FOLDER" "$YANDEX_DISK_TOKEN" <<'PY'
 import sys
 import urllib.error
 import urllib.parse
@@ -55,24 +69,30 @@ for part in rest.split("/"):
         pass
 PY
 
-echo "[yandex] Получаю URL загрузки..."
-UPLOAD_JSON="$(curl -sf -G \
-  -H "Authorization: OAuth ${YANDEX_DISK_TOKEN}" \
-  --data-urlencode "path=${REMOTE_PATH}" \
-  --data-urlencode "overwrite=true" \
-  "https://cloud-api.yandex.net/v1/disk/resources/upload")"
+  echo "[yandex] Получаю URL загрузки → ${REMOTE_PATH}"
+  UPLOAD_JSON="$(curl -sf -G \
+    -H "Authorization: OAuth ${YANDEX_DISK_TOKEN}" \
+    --data-urlencode "path=${REMOTE_PATH}" \
+    --data-urlencode "overwrite=true" \
+    "https://cloud-api.yandex.net/v1/disk/resources/upload")"
 
-UPLOAD_URL="$(echo "$UPLOAD_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['href'])")"
+  UPLOAD_URL="$(echo "$UPLOAD_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['href'])")"
 
-echo "[yandex] Загружаю ${FILENAME}..."
-curl -sf -T "$APK_PATH" "$UPLOAD_URL"
+  echo "[yandex] Загружаю ${FILENAME}..."
+  curl -sf -T "$APK_PATH" "$UPLOAD_URL"
 
-echo "[yandex] Готово: ${REMOTE_PATH}"
-if [[ "$REMOTE_PATH" == disk:/* ]]; then
-  echo "[yandex] Открыть: https://disk.yandex.ru/client/disk/${REMOTE_PATH#disk:/}"
-elif [[ "$REMOTE_PATH" == app:/* ]]; then
-  echo "[yandex] Внимание: app:/ лежит в «Приложения / <OAuth-приложение>/...»"
-  echo "[yandex] Путь API: ${REMOTE_PATH}"
-else
-  echo "[yandex] Путь: ${REMOTE_PATH}"
-fi
+  echo "[yandex] Готово: ${REMOTE_PATH}"
+  if [[ "$REMOTE_PATH" == disk:/* ]]; then
+    echo "[yandex] Открыть: https://disk.yandex.ru/client/disk/${REMOTE_PATH#disk:/}"
+  elif [[ "$REMOTE_PATH" == app:/* ]]; then
+    echo "[yandex] Открыть: https://disk.yandex.ru/client/disk/Приложения/Yandex%20Polygon/podchet_kalloriy/apk"
+  fi
+}
+
+# unique folders
+declare -A SEEN=()
+for FOLDER in "${FOLDERS[@]}"; do
+  [[ -n "${SEEN[$FOLDER]:-}" ]] && continue
+  SEEN[$FOLDER]=1
+  upload_one "$FOLDER"
+done
