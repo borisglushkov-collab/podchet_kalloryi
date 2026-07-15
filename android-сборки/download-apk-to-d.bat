@@ -3,15 +3,15 @@ chcp 65001 >nul
 setlocal EnableDelayedExpansion
 
 set "PROJECT=D:\ucheba\podchet_kalloriy"
-set "APK_NAME=podchet_kalloriy-1.4.20-31-health-scale.apk"
+set "APK_NAME=podchet_kalloriy-1.4.21-32-health-scale.apk"
 set "LOCAL_APK=%PROJECT%\android-сборки\install\%APK_NAME%"
 set "DST=D:\%APK_NAME%"
 set "INSTALL_DIR=%PROJECT%\android-сборки\install"
-set "BRANCH=cursor/coach-chat-ai-search-a3bf"
-set "URL=https://github.com/borisglushkov-collab/podchet_kalloryi/raw/cursor/coach-chat-ai-search-a3bf/android-%D1%81%D0%B1%D0%BE%D1%80%D0%BA%D0%B8/install/%APK_NAME%"
+set "BRANCH=main"
+set "URL=https://github.com/borisglushkov-collab/podchet_kalloryi/raw/main/android-%D1%81%D0%B1%D0%BE%D1%80%D0%BA%D0%B8/install/%APK_NAME%"
 
 echo.
-echo === Установка APK v1.4.20 (coach client cap + backend deploy)
+echo === Установка APK v1.4.21 (coach chat + AI search)
 echo.
 
 if exist "%LOCAL_APK%" (

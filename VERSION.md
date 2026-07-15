@@ -1,17 +1,21 @@
-# Podchet Kalloriy — единая версия 1.4.20
+# Podchet Kalloriy — единая версия 1.4.21
 
 Синхронизировано: **2026-07-15**
 
 | Компонент | Версия | Ветки |
 |-----------|--------|-------|
-| Mobile APK | 1.4.20+31 | `cursor/coach-chat-ai-search-a3bf` |
-| Backend deploy | v1.4.19-backend | GitHub Release |
+| Mobile APK | 1.4.21+32 | `main` (+ все `cursor/*`, develop, master) |
+| Backend deploy | v1.4.20-backend | GitHub Release |
+
+## v1.4.21
+
+- Сборка для телефона после merge коуча: дневной лимит, чат, ИИ-поиск
+- Все ветки синхронизированы на tip `main`
 
 ## v1.4.20
 
-- Клиентский лимит коуча: даже со старым backend не показывает ужин выше дневного остатка
-- Понятная ошибка, если на VPS нет `/api/ai-search-food` и `/api/coach-chat`
-- Архив деплоя backend + скрипт `update-from-github.sh`
+- Клиентский лимит коуча при старом backend
+- Понятная ошибка Not Found / shared Cursor client для ИИ-поиска
 
 ## v1.4.19
 
