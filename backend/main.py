@@ -10,7 +10,11 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from ai_food_search_service import AiFoodSearchNotConfiguredError, ai_search_food
+from ai_food_search_service import (
+    AiFoodSearchNotConfiguredError,
+    ai_search_food,
+    format_ai_error,
+)
 from barcode_service import lookup_barcode
 from coach_chat_prompt import COACH_CHAT_SYSTEM_PROMPT, build_coach_chat_prompt
 from cursor_client import CursorClient
@@ -170,14 +174,21 @@ async def ai_search_food_endpoint(request: AiSearchFoodRequest):
     query = request.query.strip()
     if len(query) < 2:
         raise HTTPException(status_code=400, detail="Введите название продукта (минимум 2 символа)")
+    if not cursor_client or not os.getenv("CURSOR_API_KEY"):
+        raise HTTPException(
+            status_code=503,
+            detail="CURSOR_API_KEY не настроен. Создайте backend/.env из .env.example",
+        )
     try:
-        items = await ai_search_food(query)
+        items = await ai_search_food(query, client=cursor_client)
         return {"items": items, "source": "ai_search"}
     except AiFoodSearchNotConfiguredError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except Exception as e:
         logger.exception("AI food search error")
-        raise HTTPException(status_code=502, detail=f"Ошибка ИИ-поиска: {e}") from e
+        raise HTTPException(
+            status_code=502, detail=f"Ошибка ИИ-поиска: {format_ai_error(e)}"
+        ) from e
 
 
 @app.get("/api/search-barcode")
@@ -403,8 +414,9 @@ async def coach_chat(request: CoachChatRequest):
         reply = await cursor_client.prompt(COACH_CHAT_SYSTEM_PROMPT, user_prompt)
     except Exception as e:
         logger.exception("Coach chat error")
-        detail = str(e)
-        raise HTTPException(status_code=502, detail=f"Ошибка ИИ: {detail}") from e
+        raise HTTPException(
+            status_code=502, detail=f"Ошибка ИИ: {format_ai_error(e)}"
+        ) from e
 
     reply = (reply or "").strip()
     if not reply:
@@ -417,7 +429,7 @@ async def coach_chat(request: CoachChatRequest):
 async def reset_session():
     if cursor_client:
         cursor_client.reset_session()
-    return {"status": "ok"}
+    return {"status": "ok", "hint": "Сессия Cursor сброшена. Повторите запрос через несколько секунд."}
 
 
 if __name__ == "__main__":
