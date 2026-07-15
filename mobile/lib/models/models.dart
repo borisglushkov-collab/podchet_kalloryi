@@ -385,30 +385,65 @@ class MealSuggestion {
     required this.products,
   });
 
-  factory MealSuggestion.fromJson(Map<String, dynamic> json) => MealSuggestion(
-        deficit: Macros.fromJson(json['deficit'] as Map<String, dynamic>),
-        dailyDeficit: json['daily_deficit'] != null
-            ? Macros.fromJson(json['daily_deficit'] as Map<String, dynamic>)
-            : Macros.fromJson(json['deficit'] as Map<String, dynamic>),
-        effectiveTarget: json['effective_target'] != null
-            ? Macros.fromJson(json['effective_target'] as Map<String, dynamic>)
-            : Macros.fromJson(json['deficit'] as Map<String, dynamic>),
-        rolloverIn: json['rollover_in'] != null
-            ? Macros.fromJson(json['rollover_in'] as Map<String, dynamic>)
-            : const Macros(),
-        topUpSummary: json['top_up_summary'] as String? ?? '',
-        priorityMacros: (json['priority_macros'] as List<dynamic>? ?? [])
-            .map((e) => e.toString())
-            .toList(),
-        disclaimer: json['disclaimer'] as String? ?? '',
-        weightInsight: json['weight_insight'] as String? ?? '',
-        recipes: (json['recipes'] as List<dynamic>? ?? [])
-            .map((e) => RecipeSuggestion.fromJson(e as Map<String, dynamic>))
-            .toList(),
-        products: (json['products'] as List<dynamic>? ?? [])
-            .map((e) => ProductSuggestion.fromJson(e as Map<String, dynamic>))
-            .toList(),
-      );
+  factory MealSuggestion.fromJson(Map<String, dynamic> json) {
+    final rawDeficit = Macros.fromJson(json['deficit'] as Map<String, dynamic>);
+    final dailyDeficit = json['daily_deficit'] != null
+        ? Macros.fromJson(json['daily_deficit'] as Map<String, dynamic>)
+        : rawDeficit;
+    // Safety net if backend is outdated: never show meal target > day left.
+    final deficit = Macros(
+      calories: rawDeficit.calories < dailyDeficit.calories
+          ? rawDeficit.calories
+          : dailyDeficit.calories,
+      protein: rawDeficit.protein < dailyDeficit.protein
+          ? rawDeficit.protein
+          : dailyDeficit.protein,
+      fat: rawDeficit.fat < dailyDeficit.fat ? rawDeficit.fat : dailyDeficit.fat,
+      carbs: rawDeficit.carbs < dailyDeficit.carbs
+          ? rawDeficit.carbs
+          : dailyDeficit.carbs,
+    );
+    final dailyCal = dailyDeficit.calories;
+    final recipes = (json['recipes'] as List<dynamic>? ?? [])
+        .map((e) => RecipeSuggestion.fromJson(e as Map<String, dynamic>))
+        .where((r) {
+          if (dailyCal <= 0) return r.nutrition.calories <= 50;
+          // Drop recipes that clearly blow the daily remaining budget.
+          return r.nutrition.calories <= dailyCal * 1.15;
+        })
+        .toList();
+    var tip = json['top_up_summary'] as String? ?? '';
+    if (recipes.isEmpty &&
+        (json['recipes'] as List<dynamic>? ?? []).isNotEmpty &&
+        dailyCal > 0 &&
+        dailyCal < rawDeficit.calories) {
+      tip =
+          'За день осталось только ${dailyCal.toStringAsFixed(0)} ккал — '
+          'полноценный ужин по старой норме приёма не подходит. '
+          'Возьмите лёгкий белковый добор в пределах остатка '
+          '(или обновите backend коуча на сервере).';
+    }
+    return MealSuggestion(
+      deficit: deficit,
+      dailyDeficit: dailyDeficit,
+      effectiveTarget: json['effective_target'] != null
+          ? Macros.fromJson(json['effective_target'] as Map<String, dynamic>)
+          : deficit,
+      rolloverIn: json['rollover_in'] != null
+          ? Macros.fromJson(json['rollover_in'] as Map<String, dynamic>)
+          : const Macros(),
+      topUpSummary: tip,
+      priorityMacros: (json['priority_macros'] as List<dynamic>? ?? [])
+          .map((e) => e.toString())
+          .toList(),
+      disclaimer: json['disclaimer'] as String? ?? '',
+      weightInsight: json['weight_insight'] as String? ?? '',
+      recipes: recipes,
+      products: (json['products'] as List<dynamic>? ?? [])
+          .map((e) => ProductSuggestion.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
 }
 
 class RecipeSuggestion {

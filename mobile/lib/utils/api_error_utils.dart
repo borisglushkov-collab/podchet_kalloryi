@@ -16,6 +16,10 @@ String formatApiError(Object error) {
         return 'Не удалось подключиться к серверу. Проверьте интернет или адрес backend в настройках.';
       default:
         final code = error.response?.statusCode;
+        if (code == 404) {
+          return 'На сервере старая версия backend. Обновите API на VPS '
+              '(нужны /api/ai-search-food и /api/coach-chat), затем повторите.';
+        }
         if (code == 502 || code == 503) {
           return 'Сервис ИИ временно недоступен. Подождите минуту и нажмите «Повторить».';
         }
@@ -48,6 +52,10 @@ String? _extractDetail(DioException error) {
 }
 
 String _localizeDetail(String detail) {
+  if (detail == 'Not Found' || detail.toLowerCase() == 'not found') {
+    return 'На сервере старая версия backend. Обновите API на VPS '
+        '(нужны /api/ai-search-food и /api/coach-chat), затем повторите.';
+  }
   if (detail.contains('agent is busy') || detail.contains('409')) {
     return 'ИИ-агент занят. Подождите 10–20 секунд, нажмите «Сбросить сессию» или «Повторить».';
   }
