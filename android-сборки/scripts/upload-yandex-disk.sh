@@ -19,21 +19,41 @@ if [[ -z "${YANDEX_DISK_TOKEN:-}" ]]; then
   exit 0
 fi
 
-FOLDER="${YANDEX_DISK_FOLDER:-app:/podchet_kalloriy/apk}"
+FOLDER="${YANDEX_DISK_FOLDER:-disk:/podchet_kalloriy/apk}"
 FILENAME="$(basename "$APK_PATH")"
 REMOTE_PATH="${FOLDER}/${FILENAME}"
 
-# Создать вложенные папки (app:/a/b → app:/a, затем app:/a/b)
-IFS='/' read -ra PARTS <<< "${FOLDER#app:}"
-ACC="app:"
-for part in "${PARTS[@]}"; do
-  [[ -z "$part" ]] && continue
-  ACC="${ACC}/${part}"
-  curl -sf -X PUT \
-    -H "Authorization: OAuth ${YANDEX_DISK_TOKEN}" \
-    "https://cloud-api.yandex.net/v1/disk/resources?path=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${ACC}'))")" \
-    >/dev/null 2>&1 || true
-done
+# Создать вложенные папки для disk:/ или app:/
+python3 - "$FOLDER" "$YANDEX_DISK_TOKEN" <<'PY'
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+folder, token = sys.argv[1], sys.argv[2]
+if folder.startswith("app:"):
+    prefix, rest = "app:", folder[4:].lstrip("/")
+elif folder.startswith("disk:"):
+    prefix, rest = "disk:", folder[5:].lstrip("/")
+else:
+    prefix, rest = "disk:", folder.lstrip("/")
+
+acc = f"{prefix}/"
+for part in rest.split("/"):
+    if not part:
+        continue
+    acc = f"{acc}{part}" if acc.endswith("/") else f"{acc}/{part}"
+    req = urllib.request.Request(
+        "https://cloud-api.yandex.net/v1/disk/resources?path="
+        + urllib.parse.quote(acc),
+        method="PUT",
+        headers={"Authorization": f"OAuth {token}"},
+    )
+    try:
+        urllib.request.urlopen(req, timeout=20).read()
+    except urllib.error.HTTPError:
+        pass
+PY
 
 echo "[yandex] Получаю URL загрузки..."
 UPLOAD_JSON="$(curl -sf -G \
@@ -48,4 +68,11 @@ echo "[yandex] Загружаю ${FILENAME}..."
 curl -sf -T "$APK_PATH" "$UPLOAD_URL"
 
 echo "[yandex] Готово: ${REMOTE_PATH}"
-echo "[yandex] Открыть: https://disk.yandex.ru/client/disk${REMOTE_PATH#app:}"
+if [[ "$REMOTE_PATH" == disk:/* ]]; then
+  echo "[yandex] Открыть: https://disk.yandex.ru/client/disk/${REMOTE_PATH#disk:/}"
+elif [[ "$REMOTE_PATH" == app:/* ]]; then
+  echo "[yandex] Внимание: app:/ лежит в «Приложения / <OAuth-приложение>/...»"
+  echo "[yandex] Путь API: ${REMOTE_PATH}"
+else
+  echo "[yandex] Путь: ${REMOTE_PATH}"
+fi
