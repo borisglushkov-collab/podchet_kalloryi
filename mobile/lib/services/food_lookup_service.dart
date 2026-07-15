@@ -35,5 +35,18 @@ class FoodLookupService {
     return FoodSearchResult.fromApiItem(item);
   }
 
+  Future<List<FoodSearchResult>> searchWithAi(String query) async {
+    final baseUrl = await SettingsService.getBackendUrl();
+    final response = await _dio.post(
+      '$baseUrl/api/ai-search-food',
+      data: {'query': query},
+      options: Options(receiveTimeout: const Duration(seconds: 180)),
+    );
+    final items = response.data['items'] as List<dynamic>? ?? [];
+    return items
+        .map((raw) => FoodSearchResult.fromApiItem(raw as Map<String, dynamic>))
+        .toList();
+  }
+
   String formatLookupError(Object error) => formatApiError(error);
 }

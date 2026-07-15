@@ -104,6 +104,69 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
     }
   }
 
+  Future<void> _searchWithAi() async {
+    final query = normalizeSearchQuery(_searchController.text);
+    if (query.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Введите название или описание продукта')),
+      );
+      return;
+    }
+    if (query != _searchController.text) {
+      _searchController.text = query;
+      _searchController.selection = TextSelection.collapsed(offset: query.length);
+    }
+    setState(() {
+      _lookupBusy = true;
+      _searching = false;
+      _manualMode = false;
+      _results = [];
+      _selected = null;
+    });
+    try {
+      final results =
+          await ref.read(foodLookupServiceProvider).searchWithAi(query);
+      if (!mounted) return;
+      setState(() {
+        _results = results;
+        if (results.isNotEmpty) {
+          _selected = results.first;
+          _nameController.text = results.first.name;
+          final grams = results.first.suggestedGrams;
+          if (grams != null && grams > 0) {
+            _gramsController.text = grams.round().toString();
+          }
+        }
+      });
+      if (results.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('ИИ ничего не нашёл. Уточните запрос или введите вручную.'),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'ИИ нашёл ${results.length} вариант${results.length == 1 ? '' : 'а'}. '
+              'Проверьте КБЖУ перед добавлением.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(ref.read(foodLookupServiceProvider).formatLookupError(e)),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _lookupBusy = false);
+    }
+  }
+
   void _selectResult(FoodSearchResult result) {
     setState(() {
       _selected = result;
@@ -395,16 +458,16 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
                   ),
                 ],
               ),
-              if (_lookupBusy) ...[
-                const SizedBox(height: 12),
-                const LinearProgressIndicator(),
-                const SizedBox(height: 4),
-                const Text(
-                  'ИИ анализирует продукт… До 2 минут',
-                  style: TextStyle(fontSize: 13),
-                ),
-              ],
               const SizedBox(height: 16),
+            ],
+            if (_lookupBusy) ...[
+              const LinearProgressIndicator(),
+              const SizedBox(height: 4),
+              const Text(
+                'ИИ ищет продукт… До 2 минут',
+                style: TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 12),
             ],
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -419,9 +482,9 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
                     enableInteractiveSelection: true,
                     decoration: const InputDecoration(
                       labelText: 'Поиск продукта',
-                      hintText: 'омлет, гречка...',
+                      hintText: 'омлет, 200 г курицы...',
                       helperText:
-                          'Эмулятор: экранная клав. → глобус → Русский. Или латиницей: omlet, grechka',
+                          'База или ИИ: «творог 0% 150 г», «омлет из 2 яиц»',
                       suffixIcon: Icon(Icons.keyboard),
                     ),
                     onTap: () => _searchFocusNode.requestFocus(),
@@ -436,9 +499,15 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.search),
-                  onPressed: _searching ? null : _search,
+                  onPressed: (_searching || _lookupBusy) ? null : _search,
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            FilledButton.tonalIcon(
+              onPressed: (_searching || _lookupBusy) ? null : _searchWithAi,
+              icon: const Icon(Icons.auto_awesome),
+              label: const Text('Найти через ИИ'),
             ),
             const SizedBox(height: 8),
             Wrap(
@@ -469,8 +538,9 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
                     ),
                     if (r.brand != null) r.brand!,
                     if (r.notes != null && r.notes!.isNotEmpty) r.notes!,
-                    if (r.source == 'ai_vision' && r.confidence != null)
-                      'уверенность ${(r.confidence! * 100).round()}%',
+                    if ((r.source == 'ai_vision' || r.source == 'ai_search') &&
+                        r.confidence != null)
+                      'ИИ · ${(r.confidence! * 100).round()}%',
                   ].join(' · '),
                 ),
                 selected: _selected?.name == r.name,

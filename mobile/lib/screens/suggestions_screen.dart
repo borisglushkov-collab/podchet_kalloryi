@@ -11,6 +11,7 @@ import '../services/weight_analysis.dart';
 import '../theme/app_theme.dart';
 import '../utils/api_error_utils.dart';
 import '../widgets/widgets.dart';
+import 'coach_chat_screen.dart';
 import 'settings_screen.dart';
 
 class SuggestionsScreen extends ConsumerStatefulWidget {
@@ -200,6 +201,21 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
               title: const Text('Коуч'),
               backgroundColor: AppColors.background,
             ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => CoachChatScreen(
+                date: widget.date,
+                mealType: _mealType,
+              ),
+            ),
+          );
+        },
+        icon: const Icon(Icons.chat_bubble_outline_rounded),
+        label: const Text('Чат'),
+      ),
       // Вкладка: верх уже в MainShell SafeArea.
       // Отдельный экран: AppBar закрывает статус-бар — без второго SafeArea.
       body: body,
@@ -211,9 +227,8 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
         ? suggestion.topUpSummary
         : _fallbackTip(suggestion);
 
-    final bottom = widget.embedded
-        ? 24.0
-        : 24.0 + MediaQuery.viewPaddingOf(context).bottom;
+    final bottom = (widget.embedded ? 88.0 : 88.0) +
+        MediaQuery.viewPaddingOf(context).bottom;
     return ListView(
       padding: EdgeInsets.fromLTRB(16, 8, 16, bottom),
       children: [
@@ -309,6 +324,22 @@ class _SuggestionsScreenState extends ConsumerState<SuggestionsScreen> {
           ),
         ],
         const SizedBox(height: 16),
+        OutlinedButton.icon(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CoachChatScreen(
+                  date: widget.date,
+                  mealType: _mealType,
+                ),
+              ),
+            );
+          },
+          icon: const Icon(Icons.chat_bubble_outline_rounded),
+          label: const Text('Спросить коуча'),
+        ),
+        const SizedBox(height: 8),
         FilledButton(
           onPressed: _resettingSession
               ? null
@@ -556,6 +587,17 @@ class _TipCard extends StatelessWidget {
                     color: AppColors.textSecondary,
                   ),
             ),
+            if ((deficit.calories - dailyDeficit.calories).abs() < 1 &&
+                dailyDeficit.calories > 0) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Цель урезана до дневного остатка — рецепты не должны его превышать.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.primaryDark,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ],
           ],
         ),
       ),
