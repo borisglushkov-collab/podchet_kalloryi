@@ -77,6 +77,22 @@ class NutritionCalculator {
   static String mealShareLabel(MealType meal) =>
       '${(mealShare(meal) * 100).round()}% дневной нормы';
 
+  /// Meal target must never exceed what remains for the whole day.
+  static Macros capByDaily(Macros mealDeficit, Macros dailyDeficit) => Macros(
+        calories: mealDeficit.calories < dailyDeficit.calories
+            ? mealDeficit.calories
+            : dailyDeficit.calories,
+        protein: mealDeficit.protein < dailyDeficit.protein
+            ? mealDeficit.protein
+            : dailyDeficit.protein,
+        fat: mealDeficit.fat < dailyDeficit.fat
+            ? mealDeficit.fat
+            : dailyDeficit.fat,
+        carbs: mealDeficit.carbs < dailyDeficit.carbs
+            ? mealDeficit.carbs
+            : dailyDeficit.carbs,
+      );
+
   static Macros mealTargets(Macros daily, MealType meal) {
     final share = mealShare(meal);
     return Macros(
@@ -185,23 +201,25 @@ class NutritionCalculator {
       fat: (targets.fat - consumed.fat).clamp(0, double.infinity),
       carbs: (targets.carbs - consumed.carbs).clamp(0, double.infinity),
     );
+    final deficit = capByDaily(plan.deficit, dailyDeficit);
     final priorities = <String>[];
-    if (plan.deficit.protein >= 10) priorities.add('белок');
-    if (plan.deficit.calories >= 100) priorities.add('калории');
-    if (plan.deficit.carbs >= 15) priorities.add('углеводы');
-    if (plan.deficit.fat >= 5) priorities.add('жиры');
+    if (deficit.protein >= 10) priorities.add('белок');
+    if (deficit.calories >= 100) priorities.add('калории');
+    if (deficit.carbs >= 15) priorities.add('углеводы');
+    if (deficit.fat >= 5) priorities.add('жиры');
 
     var summary = 'ИИ временно недоступен. ';
-    if (plan.deficit.calories <= 0) {
-      summary += 'Норма на ${mealType.label.toLowerCase()} уже закрыта.';
+    if (deficit.calories <= 0) {
+      summary += 'Норма на ${mealType.label.toLowerCase()} уже закрыта '
+          '(или дневной остаток исчерпан).';
     } else {
       summary +=
-          'Добавьте ~${plan.deficit.calories.toStringAsFixed(0)} ккал '
+          'Добавьте ~${deficit.calories.toStringAsFixed(0)} ккал '
           'в ${mealType.label.toLowerCase()}';
       if (priorities.isNotEmpty) {
         summary += ', упор на ${priorities.first}';
       }
-      summary += '.';
+      summary += ' — не больше остатка за день.';
     }
     if (profile != null) {
       summary += ' ${_offlineGoalPracticeNote(profile)}';
@@ -224,7 +242,7 @@ class NutritionCalculator {
     if (weightAnalysis != null) addProducts(weightAnalysis.offlineProducts());
 
     return MealSuggestion(
-      deficit: plan.deficit,
+      deficit: deficit,
       dailyDeficit: dailyDeficit,
       effectiveTarget: plan.effectiveTarget,
       rolloverIn: plan.rolloverIn,

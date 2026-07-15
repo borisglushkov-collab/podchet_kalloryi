@@ -10,7 +10,13 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from ai_food_search_service import (
+    AiFoodSearchNotConfiguredError,
+    ai_search_food,
+    format_ai_error,
+)
 from barcode_service import lookup_barcode
+from coach_chat_prompt import COACH_CHAT_SYSTEM_PROMPT, build_coach_chat_prompt
 from cursor_client import CursorClient
 from food_search_service import search_food
 from food_vision_service import FoodVisionNotConfiguredError, analyze_food_image
@@ -19,6 +25,7 @@ from nutrition_prompt import (
     analyze_weight_context,
     build_top_up_summary_fallback,
     build_user_prompt,
+    cap_macros_by_daily,
     meal_plan_for_type,
     parse_ai_response,
     priority_macros,
@@ -96,6 +103,29 @@ class SuggestMealResponse(BaseModel):
     products: list[dict] = Field(default_factory=list)
 
 
+class ChatMessage(BaseModel):
+    role: str = Field(description="user or assistant")
+    content: str
+
+
+class CoachChatRequest(BaseModel):
+    message: str
+    history: list[ChatMessage] = Field(default_factory=list)
+    meal_type: str = "dinner"
+    consumed: Macros = Field(default_factory=Macros)
+    targets: Macros = Field(default_factory=Macros)
+    meal_consumed: Macros = Field(default_factory=Macros)
+    meals_consumed: dict[str, Macros] = Field(default_factory=dict)
+    preferences: list[str] = Field(default_factory=list)
+    profile_context: ProfileContext | None = None
+    weight_context: dict | None = None
+
+
+class CoachChatResponse(BaseModel):
+    reply: str
+    disclaimer: str = "Рекомендации носят информационный характер и не заменяют консультацию врача."
+
+
 @app.get("/")
 async def root():
     has_key = bool(os.getenv("CURSOR_API_KEY"))
@@ -106,9 +136,11 @@ async def root():
         "endpoints": {
             "health": "GET /health",
             "search_food": "GET /api/search-food?query=...",
+            "ai_search_food": "POST /api/ai-search-food",
             "search_barcode": "GET /api/search-barcode?barcode=...",
             "analyze_food_image": "POST /api/analyze-food-image",
             "suggest_meal": "POST /api/suggest-meal",
+            "coach_chat": "POST /api/coach-chat",
             "reset_session": "POST /api/reset-session",
             "docs": "GET /docs",
         },
@@ -131,6 +163,32 @@ async def search_food_endpoint(query: str):
     except Exception as e:
         logger.exception("Food search error")
         raise HTTPException(status_code=502, detail=f"Ошибка поиска продуктов: {e}") from e
+
+
+class AiSearchFoodRequest(BaseModel):
+    query: str
+
+
+@app.post("/api/ai-search-food")
+async def ai_search_food_endpoint(request: AiSearchFoodRequest):
+    query = request.query.strip()
+    if len(query) < 2:
+        raise HTTPException(status_code=400, detail="Введите название продукта (минимум 2 символа)")
+    if not cursor_client or not os.getenv("CURSOR_API_KEY"):
+        raise HTTPException(
+            status_code=503,
+            detail="CURSOR_API_KEY не настроен. Создайте backend/.env из .env.example",
+        )
+    try:
+        items = await ai_search_food(query, client=cursor_client)
+        return {"items": items, "source": "ai_search"}
+    except AiFoodSearchNotConfiguredError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except Exception as e:
+        logger.exception("AI food search error")
+        raise HTTPException(
+            status_code=502, detail=f"Ошибка ИИ-поиска: {format_ai_error(e)}"
+        ) from e
 
 
 @app.get("/api/search-barcode")
@@ -196,7 +254,9 @@ async def suggest_meal(request: SuggestMealRequest):
     plan = meal_plan_for_type(
         request.targets.model_dump(), meals_consumed, request.meal_type
     )
-    meal_deficit = Macros(**plan["deficit"])
+    meal_deficit = Macros(
+        **cap_macros_by_daily(plan["deficit"], daily_deficit.model_dump())
+    )
     effective_target = Macros(**plan["effective"])
     rollover_in = Macros(**plan["rollover_in"])
 
@@ -286,11 +346,90 @@ async def suggest_meal(request: SuggestMealRequest):
     )
 
 
+@app.post("/api/coach-chat", response_model=CoachChatResponse)
+async def coach_chat(request: CoachChatRequest):
+    if not cursor_client or not os.getenv("CURSOR_API_KEY"):
+        raise HTTPException(
+            status_code=503,
+            detail="CURSOR_API_KEY не настроен. Создайте backend/.env из .env.example",
+        )
+
+    message = request.message.strip()
+    if len(message) < 1:
+        raise HTTPException(status_code=400, detail="Пустое сообщение")
+    if len(message) > 2000:
+        raise HTTPException(status_code=400, detail="Сообщение слишком длинное")
+
+    daily_deficit = Macros(
+        calories=max(0, request.targets.calories - request.consumed.calories),
+        protein=max(0, request.targets.protein - request.consumed.protein),
+        fat=max(0, request.targets.fat - request.consumed.fat),
+        carbs=max(0, request.targets.carbs - request.consumed.carbs),
+    )
+    meals_consumed = {
+        meal: macros.model_dump()
+        for meal, macros in request.meals_consumed.items()
+    }
+    if not meals_consumed:
+        meals_consumed = {request.meal_type: request.meal_consumed.model_dump()}
+
+    plan = meal_plan_for_type(
+        request.targets.model_dump(), meals_consumed, request.meal_type
+    )
+    meal_deficit = Macros(
+        **cap_macros_by_daily(plan["deficit"], daily_deficit.model_dump())
+    )
+
+    weight_insight_parts = []
+    if request.profile_context:
+        profile_note = profile_insight_short(request.profile_context.model_dump())
+        if profile_note:
+            weight_insight_parts.append(profile_note)
+    weight_note = analyze_weight_context(request.weight_context)
+    if weight_note:
+        weight_insight_parts.append(weight_note)
+
+    history = [
+        {"role": m.role if m.role in {"user", "assistant"} else "user", "content": m.content}
+        for m in request.history
+        if m.content.strip()
+    ]
+
+    user_prompt = build_coach_chat_prompt(
+        message,
+        history=history,
+        meal_type=request.meal_type,
+        consumed=request.consumed.model_dump(),
+        targets=request.targets.model_dump(),
+        daily_deficit=daily_deficit.model_dump(),
+        meal_deficit=meal_deficit.model_dump(),
+        preferences=request.preferences,
+        profile_context=(
+            request.profile_context.model_dump() if request.profile_context else None
+        ),
+        weight_insight=" ".join(weight_insight_parts),
+    )
+
+    try:
+        reply = await cursor_client.prompt(COACH_CHAT_SYSTEM_PROMPT, user_prompt)
+    except Exception as e:
+        logger.exception("Coach chat error")
+        raise HTTPException(
+            status_code=502, detail=f"Ошибка ИИ: {format_ai_error(e)}"
+        ) from e
+
+    reply = (reply or "").strip()
+    if not reply:
+        raise HTTPException(status_code=502, detail="Пустой ответ коуча")
+
+    return CoachChatResponse(reply=reply)
+
+
 @app.post("/api/reset-session")
 async def reset_session():
     if cursor_client:
         cursor_client.reset_session()
-    return {"status": "ok"}
+    return {"status": "ok", "hint": "Сессия Cursor сброшена. Повторите запрос через несколько секунд."}
 
 
 if __name__ == "__main__":

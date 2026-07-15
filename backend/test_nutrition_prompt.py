@@ -6,6 +6,7 @@ from nutrition_prompt import (
     analyze_weight_context,
     build_top_up_summary_fallback,
     build_user_prompt,
+    cap_macros_by_daily,
     compute_meal_plan,
     format_profile_context,
     parse_ai_response,
@@ -201,3 +202,33 @@ def test_parse_ai_response_markdown():
     wrapped = f"```json\n{json.dumps(data)}\n```"
     result = parse_ai_response(wrapped)
     assert result["recipes"][0]["name"] == "Омлет"
+
+
+def test_cap_macros_by_daily():
+    meal = {"calories": 579, "protein": 110, "fat": 16, "carbs": 49}
+    daily = {"calories": 181, "protein": 130, "fat": 0, "carbs": 5}
+    capped = cap_macros_by_daily(meal, daily)
+    assert capped["calories"] == 181
+    assert capped["protein"] == 110
+    assert capped["fat"] == 0
+    assert capped["carbs"] == 5
+
+
+def test_build_user_prompt_caps_to_daily_remaining():
+    prompt = build_user_prompt(
+        "dinner",
+        {"calories": 1819, "protein": 20, "fat": 70, "carbs": 245},
+        {"calories": 2000, "protein": 150, "fat": 70, "carbs": 250},
+        {"calories": 0, "protein": 0, "fat": 0, "carbs": 0},
+        [],
+        "Москва",
+        meals_consumed={
+            "breakfast": {"calories": 600, "protein": 10, "fat": 30, "carbs": 80},
+            "lunch": {"calories": 1219, "protein": 10, "fat": 40, "carbs": 165},
+            "dinner": {"calories": 0, "protein": 0, "fat": 0, "carbs": 0},
+            "snack": {"calories": 0, "protein": 0, "fat": 0, "carbs": 0},
+        },
+    )
+    assert "жёсткий потолок" in prompt.lower() or "дневн" in prompt.lower()
+    assert "181" in prompt
+    assert "урезана" in prompt.lower() or "ВАЖНО" in prompt

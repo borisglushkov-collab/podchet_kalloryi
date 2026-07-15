@@ -89,6 +89,41 @@ class ApiService {
     final baseUrl = await SettingsService.getBackendUrl();
     await _dio.post('$baseUrl/api/reset-session');
   }
+
+  Future<String> coachChat({
+    required String message,
+    required List<Map<String, String>> history,
+    required MealType mealType,
+    required Macros consumed,
+    required Macros targets,
+    required Macros mealConsumed,
+    required Map<MealType, Macros> mealsConsumed,
+    List<String> preferences = const [],
+    UserProfile? profile,
+    WeightAnalysis? weightAnalysis,
+  }) async {
+    final baseUrl = await SettingsService.getBackendUrl();
+    final response = await _dio.post(
+      '$baseUrl/api/coach-chat',
+      data: {
+        'message': message,
+        'history': history,
+        'meal_type': mealType.apiValue,
+        'consumed': consumed.toJson(),
+        'targets': targets.toJson(),
+        'meal_consumed': mealConsumed.toJson(),
+        'meals_consumed': {
+          for (final entry in mealsConsumed.entries)
+            entry.key.apiValue: entry.value.toJson(),
+        },
+        'preferences': preferences,
+        if (profile != null) 'profile_context': profile.toCoachApiJson(),
+        if (weightAnalysis != null && weightAnalysis.hasData)
+          'weight_context': weightAnalysis.toApiJson(),
+      },
+    );
+    return (response.data['reply'] as String?)?.trim() ?? '';
+  }
 }
 
 class FoodSearchService {
@@ -118,5 +153,22 @@ class FoodSearchService {
       if (local.isNotEmpty) return local;
       rethrow;
     }
+  }
+
+  Future<List<FoodSearchResult>> searchWithAi(String query) async {
+    if (query.trim().length < 2) return [];
+    final q = normalizeSearchQuery(query);
+    final baseUrl = await SettingsService.getBackendUrl();
+    final response = await _dio.post(
+      '$baseUrl/api/ai-search-food',
+      data: {'query': q},
+      options: Options(
+        receiveTimeout: const Duration(seconds: 180),
+      ),
+    );
+    final items = response.data['items'] as List<dynamic>? ?? [];
+    return items
+        .map((raw) => FoodSearchResult.fromApiItem(raw as Map<String, dynamic>))
+        .toList();
   }
 }
