@@ -1,5 +1,6 @@
 """FastAPI backend for calorie tracker AI suggestions."""
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -16,6 +17,7 @@ from ai_food_search_service import (
     format_ai_error,
 )
 from barcode_service import lookup_barcode
+from coach_chat_fallback import build_coach_chat_fallback
 from coach_chat_prompt import COACH_CHAT_SYSTEM_PROMPT, build_coach_chat_prompt
 from cursor_client import CursorClient
 from food_search_service import search_food
@@ -185,9 +187,33 @@ async def ai_search_food_endpoint(request: AiSearchFoodRequest):
     except AiFoodSearchNotConfiguredError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except Exception as e:
-        logger.exception("AI food search error")
+        ai_err = format_ai_error(e)
+        logger.exception("AI food search error: %s", ai_err)
+        # Don't block the user: fall back to calorizator/local search.
+        try:
+            fallback = await search_food(query)
+            items = fallback.get("items") or []
+            if items:
+                src = fallback.get("source") or "local"
+                logger.warning(
+                    "AI search failed (%s); returning %d items from %s",
+                    ai_err,
+                    len(items),
+                    src,
+                )
+                return {
+                    "items": items,
+                    "source": f"fallback_{src}",
+                    "ai_error": ai_err,
+                    "warning": (
+                        "ИИ не ответил вовремя — показаны результаты обычного поиска. "
+                        f"({ai_err})"
+                    ),
+                }
+        except Exception as fallback_exc:
+            logger.warning("Fallback food search also failed: %s", fallback_exc)
         raise HTTPException(
-            status_code=502, detail=f"Ошибка ИИ-поиска: {format_ai_error(e)}"
+            status_code=502, detail=f"Ошибка ИИ-поиска: {ai_err}"
         ) from e
 
 
@@ -283,18 +309,18 @@ async def suggest_meal(request: SuggestMealRequest):
     )
 
     try:
-        result_text = await cursor_client.prompt(SYSTEM_PROMPT, user_prompt)
+        result_text = await asyncio.wait_for(
+            cursor_client.prompt(SYSTEM_PROMPT, user_prompt),
+            timeout=90.0,
+        )
         parsed = parse_ai_response(result_text)
     except Exception as e:
         logger.exception("Cursor API error")
-        detail = str(e)
-        if hasattr(e, "response") and getattr(e, "response", None) is not None:
-            try:
-                body = e.response.json()
-                detail = body.get("error", {}).get("message", detail)
-            except Exception:
-                pass
-        raise HTTPException(status_code=502, detail=f"Ошибка ИИ: {detail}") from e
+        if cursor_client is not None:
+            cursor_client.reset_session()
+        raise HTTPException(
+            status_code=502, detail=f"Ошибка ИИ: {format_ai_error(e)}"
+        ) from e
 
     raw_products = parsed.get("products", [])
     try:
@@ -410,18 +436,32 @@ async def coach_chat(request: CoachChatRequest):
         weight_insight=" ".join(weight_insight_parts),
     )
 
+    # Fail over quickly: Cursor agents often hang ~60s on this VPS.
     try:
-        reply = await cursor_client.prompt(COACH_CHAT_SYSTEM_PROMPT, user_prompt)
+        reply = await asyncio.wait_for(
+            cursor_client.prompt(COACH_CHAT_SYSTEM_PROMPT, user_prompt),
+            timeout=50.0,
+        )
+        reply = (reply or "").strip()
+        if reply:
+            return CoachChatResponse(reply=reply)
+        logger.warning("Coach chat returned empty reply; using fallback")
     except Exception as e:
-        logger.exception("Coach chat error")
-        raise HTTPException(
-            status_code=502, detail=f"Ошибка ИИ: {format_ai_error(e)}"
-        ) from e
+        ai_err = format_ai_error(e)
+        logger.exception("Coach chat error: %s — using offline fallback", ai_err)
+        if cursor_client is not None:
+            cursor_client.reset_session()
 
-    reply = (reply or "").strip()
-    if not reply:
-        raise HTTPException(status_code=502, detail="Пустой ответ коуча")
-
+    reply = build_coach_chat_fallback(
+        message,
+        meal_type=request.meal_type,
+        daily_deficit=daily_deficit.model_dump(),
+        meal_deficit=meal_deficit.model_dump(),
+        preferences=request.preferences,
+        profile_context=(
+            request.profile_context.model_dump() if request.profile_context else None
+        ),
+    )
     return CoachChatResponse(reply=reply)
 
 

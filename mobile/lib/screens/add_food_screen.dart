@@ -124,9 +124,10 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
       _selected = null;
     });
     try {
-      final results =
+      final outcome =
           await ref.read(foodLookupServiceProvider).searchWithAi(query);
       if (!mounted) return;
+      final results = outcome.items;
       setState(() {
         _results = results;
         if (results.isNotEmpty) {
@@ -142,6 +143,15 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('ИИ ничего не нашёл. Уточните запрос или введите вручную.'),
+          ),
+        );
+      } else if (outcome.usedFallback || (outcome.warning != null && outcome.warning!.isNotEmpty)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              outcome.warning ??
+                  'ИИ не ответил — показаны ${results.length} результат(ов) обычного поиска.',
+            ),
           ),
         );
       } else {

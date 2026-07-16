@@ -18,6 +18,13 @@ class AiFoodSearchNotConfiguredError(RuntimeError):
 
 def format_ai_error(exc: BaseException) -> str:
     """Human-readable Cursor/httpx error (never empty)."""
+    # Unwrap one level if we already wrapped with RuntimeError(format_ai_error(...)).
+    if isinstance(exc, RuntimeError):
+        inner = str(exc).strip()
+        if inner:
+            return inner
+        if exc.__cause__ is not None:
+            return format_ai_error(exc.__cause__)
     if isinstance(exc, httpx.HTTPStatusError):
         status = exc.response.status_code if exc.response is not None else "?"
         body = ""
@@ -30,9 +37,11 @@ def format_ai_error(exc: BaseException) -> str:
                 body = str(err)
         except Exception:
             body = (exc.response.text or "")[:300] if exc.response is not None else ""
-        return f"HTTP {status}: {body}".strip()
-    if isinstance(exc, httpx.TimeoutException):
-        return "таймаут запроса к Cursor API"
+        msg = f"HTTP {status}: {body}".strip(": ").strip()
+        return msg or f"HTTP {status}"
+    if isinstance(exc, (httpx.TimeoutException, TimeoutError)):
+        text = str(exc).strip()
+        return text or "таймаут запроса к Cursor API (сервер ИИ не ответил вовремя)"
     text = str(exc).strip()
     if text:
         return text
