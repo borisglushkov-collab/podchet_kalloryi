@@ -29,7 +29,8 @@ class _ChatBubble {
   const _ChatBubble({required this.role, required this.content});
 }
 
-class _CoachChatScreenState extends ConsumerState<CoachChatScreen> {
+class _CoachChatScreenState extends ConsumerState<CoachChatScreen>
+    with WidgetsBindingObserver {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final List<_ChatBubble> _messages = [
@@ -41,12 +42,34 @@ class _CoachChatScreenState extends ConsumerState<CoachChatScreen> {
     ),
   ];
   bool _sending = false;
+  double _lastKeyboardInset = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    // When the keyboard opens/closes, keep the latest message above the input.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final inset = MediaQuery.viewInsetsOf(context).bottom;
+      if (inset != _lastKeyboardInset) {
+        _lastKeyboardInset = inset;
+        _scrollToEnd();
+      }
+    });
   }
 
   Future<void> _send() async {
@@ -130,8 +153,9 @@ class _CoachChatScreenState extends ConsumerState<CoachChatScreen> {
   void _scrollToEnd() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
+      final target = _scrollController.position.maxScrollExtent;
       _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent + 80,
+        target,
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOut,
       );
@@ -140,11 +164,12 @@ class _CoachChatScreenState extends ConsumerState<CoachChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-    final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
-
+    // Scaffold already shrinks for the keyboard (resizeToAvoidBottomInset).
+    // Do NOT add MediaQuery.viewInsets.bottom again — that double-counts the
+    // keyboard and makes the input bar cover the last chat bubbles.
     return Scaffold(
       backgroundColor: AppColors.background,
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: Text('Чат с коучем · ${widget.mealType.label}'),
         backgroundColor: AppColors.background,
@@ -154,7 +179,8 @@ class _CoachChatScreenState extends ConsumerState<CoachChatScreen> {
           Expanded(
             child: ListView.builder(
               controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
               itemCount: _messages.length + (_sending ? 1 : 0),
               itemBuilder: (context, index) {
                 if (_sending && index == _messages.length) {
@@ -186,7 +212,7 @@ class _CoachChatScreenState extends ConsumerState<CoachChatScreen> {
                           : AppColors.surface,
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: Text(
+                    child: SelectableText(
                       msg.content,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             height: 1.35,
@@ -200,56 +226,57 @@ class _CoachChatScreenState extends ConsumerState<CoachChatScreen> {
           Material(
             color: AppColors.surface,
             elevation: 2,
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                12,
-                10,
-                8,
-                10 + (bottomInset > 0 ? bottomInset : safeBottom),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      minLines: 1,
-                      maxLines: 4,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _send(),
-                      decoration: InputDecoration(
-                        hintText: 'Спросите коуча…',
-                        filled: true,
-                        fillColor: AppColors.surfaceMuted,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
+            child: SafeArea(
+              top: false,
+              // Keyboard inset is handled by Scaffold; SafeArea only for nav bar.
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        minLines: 1,
+                        maxLines: 4,
+                        textInputAction: TextInputAction.send,
+                        onTap: _scrollToEnd,
+                        onSubmitted: (_) => _send(),
+                        decoration: InputDecoration(
+                          hintText: 'Спросите коуча…',
+                          filled: true,
+                          fillColor: AppColors.surfaceMuted,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  IconButton.filled(
-                    onPressed: _sending ? null : _send,
-                    style: IconButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
+                    const SizedBox(width: 4),
+                    IconButton.filled(
+                      onPressed: _sending ? null : _send,
+                      style: IconButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                      icon: _sending
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.send_rounded),
                     ),
-                    icon: _sending
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.send_rounded),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
