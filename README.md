@@ -2,10 +2,18 @@
 
 Приложение подсчёта калорий (аналог FatSecret) с ИИ-рекомендациями через Cursor API.
 
+## Версия
+
+Единый источник: файл [`VERSION`](VERSION) → `bash scripts/sync-version.sh`  
+(обновляет `mobile/pubspec.yaml`, `backend/VERSION`, тег деплоя, `VERSION.md`).
+
 ## Структура
 
 ```
 podchet_kalloryi/
+├── VERSION                 # единая версия (источник правды)
+├── VERSION.md              # сводка + changelog
+├── scripts/sync-version.sh # разнести VERSION по проекту
 ├── mobile/                 # Flutter-приложение
 ├── backend/                # FastAPI сервер
 ├── design/                 # UI/UX, макеты (ветка cursor/design-a36d)

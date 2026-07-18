@@ -3,12 +3,12 @@
 # Пример:
 #   curl -fsSL https://raw.githubusercontent.com/borisglushkov-collab/podchet_kalloryi/main/backend/deploy/update-from-github.sh | bash
 # или:
-#   bash update-from-github.sh v1.4.19-backend
+#   bash update-from-github.sh v1.4.23-backend
 
 set -euo pipefail
 
 REPO="${REPO:-borisglushkov-collab/podchet_kalloryi}"
-TAG="${1:-v1.4.22-backend}"
+TAG="${1:-v1.4.23-backend}"
 ZIP_URL="${ZIP_URL:-https://github.com/${REPO}/releases/download/${TAG}/podchet_backend_deploy.zip}"
 TMP_ZIP=/tmp/podchet_backend_deploy.zip
 TMP_DIR=/tmp/podchet_backend_unpack

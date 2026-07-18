@@ -1,0 +1,10 @@
+# Единый источник версии проекта. Меняйте только этот файл, затем:
+#   bash scripts/sync-version.sh
+#
+# Mobile:  pubspec → MOBILE_VERSION+MOBILE_BUILD  (например 1.4.23+34)
+# Backend: GitHub tag → v{BACKEND_VERSION}-backend
+# FastAPI: backend/VERSION (создаётся sync-скриптом)
+
+MOBILE_VERSION=1.4.23
+MOBILE_BUILD=34
+BACKEND_VERSION=1.4.23
