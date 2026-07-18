@@ -4,12 +4,23 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
+
+def _read_api_version() -> str:
+    """Version from backend/VERSION (synced from root VERSION via scripts/sync-version.sh)."""
+    path = Path(__file__).resolve().parent / "VERSION"
+    if path.is_file():
+        text = path.read_text(encoding="utf-8").strip()
+        if text:
+            return text.splitlines()[0].strip()
+    return "0.0.0"
 
 from ai_food_search_service import (
     AiFoodSearchNotConfiguredError,
@@ -51,7 +62,11 @@ async def lifespan(app: FastAPI):
     cursor_client = None
 
 
-app = FastAPI(title="Podchet Kalloriy API", version="1.2.0", lifespan=lifespan)
+app = FastAPI(
+    title="Podchet Kalloriy API",
+    version=_read_api_version(),
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -154,7 +169,11 @@ async def root():
 @app.get("/health")
 async def health():
     has_key = bool(os.getenv("CURSOR_API_KEY"))
-    return {"status": "ok", "cursor_api_configured": has_key}
+    return {
+        "status": "ok",
+        "version": app.version,
+        "cursor_api_configured": has_key,
+    }
 
 
 @app.get("/api/search-food")
