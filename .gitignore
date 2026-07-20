@@ -23,3 +23,6 @@ mobile/.dart_tool
 podchet_backend_deploy.zip
 backend/deploy/*-output.txt
 deploy.log
+
+.ssh/
+!.ssh/README.md
