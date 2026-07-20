@@ -5,7 +5,7 @@
   "localPathWindows": "D:\\ucheba\\podchet_kalloriy",
   "localWorktreePath": "D:\\ucheba\\podchet_kalloriy\\android-сборки",
   "outputDirectory": "android-сборки",
-  "latestApk": "podchet_kalloriy-1.3.0-health-scale.apk",
+  "latestApk": "podchet_kalloriy-1.4.24-35-health-scale.apk",
   "yandexDisk": {
     "folder": "app:/podchet_kalloriy/apk",
     "configExample": "scripts/yandex-disk.env.example"
