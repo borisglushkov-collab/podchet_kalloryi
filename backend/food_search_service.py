@@ -1,9 +1,10 @@
-"""Food search: local database + Calorizator.ru + health-diet.ru."""
+"""Food search: local + health-diet.ru + calorizator.ru + Open Food Facts."""
 
 import asyncio
 import logging
 import re
 
+from barcode_service import search_openfoodfacts
 from calorizator_service import search_calorizator
 from health_diet_service import search_health_diet
 from local_foods import LOCAL_FOODS
@@ -19,8 +20,11 @@ def _stem_hit(name_l: str, token: str) -> bool:
     return any(word.startswith(stem) for word in words if word)
 
 
-def _relevance_score(name: str, query: str) -> int:
-    name_l = name.lower()
+def _relevance_score(name: str, query: str, brand: str | None = None) -> int:
+    haystack = name
+    if brand:
+        haystack = f"{name} {brand}"
+    name_l = haystack.lower()
     query_l = query.strip().lower()
     if not query_l:
         return 0
@@ -52,7 +56,7 @@ def _relevance_score(name: str, query: str) -> int:
 def _search_local(query: str, page_size: int) -> list[dict]:
     scored: list[tuple[int, dict]] = []
     for item in LOCAL_FOODS:
-        score = _relevance_score(item["name"], query)
+        score = _relevance_score(item["name"], query, item.get("brand"))
         if score > 0:
             scored.append((score, {**item, "source": "local"}))
     scored.sort(key=lambda x: x[0], reverse=True)
@@ -60,9 +64,11 @@ def _search_local(query: str, page_size: int) -> list[dict]:
 
 
 def _source_bonus(source: str) -> int:
-    # Prefer curated local items, then health-diet tables, then calorizator.
+    # Prefer curated local, then OFF brands, health-diet tables, then calorizator.
     if source == "local":
         return 5
+    if source == "openfoodfacts":
+        return 4
     if source == "health_diet":
         return 3
     if source == "calorizator":
@@ -80,7 +86,7 @@ def _merge_results(parts: list[list[dict]], query: str, page_size: int) -> list[
             key = item["name"].lower()
             if key in seen:
                 continue
-            score = _relevance_score(item["name"], query)
+            score = _relevance_score(item["name"], query, item.get("brand"))
             if score > 0:
                 seen.add(key)
                 merged.append((score + _source_bonus(item.get("source", "")), item))
@@ -124,17 +130,27 @@ async def search_food(query: str, page_size: int = 20) -> dict:
             logger.warning("health-diet unavailable: %s", exc)
             return []
 
-    calorizator_items, health_diet_items = await asyncio.gather(
+    async def _safe_openfoodfacts() -> list[dict]:
+        try:
+            return await search_openfoodfacts(q, page_size)
+        except Exception as exc:
+            logger.warning("Open Food Facts unavailable: %s", exc)
+            return []
+
+    calorizator_items, health_diet_items, off_items = await asyncio.gather(
         _safe_calorizator(),
         _safe_health_diet(),
+        _safe_openfoodfacts(),
     )
 
-    remote_parts = [health_diet_items, calorizator_items]
+    remote_parts = [off_items, health_diet_items, calorizator_items]
     items = _merge_results([local_items, *remote_parts], q, page_size)
 
     sources = set()
     if local_items:
         sources.add("local")
+    if off_items:
+        sources.add("openfoodfacts")
     if health_diet_items:
         sources.add("health_diet")
     if calorizator_items:

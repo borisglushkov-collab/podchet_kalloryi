@@ -494,7 +494,7 @@ class _AddFoodScreenState extends ConsumerState<AddFoodScreen> {
                       labelText: 'Поиск продукта',
                       hintText: 'омлет, 200 г курицы...',
                       helperText:
-                          'База или ИИ: «творог 0% 150 г», «омлет из 2 яиц»',
+                          'База/бренды/ИИ: «милти», «творог 0%», «омлет»',
                       suffixIcon: Icon(Icons.keyboard),
                     ),
                     onTap: () => _searchFocusNode.requestFocus(),
