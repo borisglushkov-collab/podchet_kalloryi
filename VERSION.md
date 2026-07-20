@@ -1,4 +1,4 @@
-# Podchet Kalloriy — единая версия 1.4.23
+# Podchet Kalloriy — backend 1.4.24 / mobile 1.4.23
 
 > Источник правды: файл [`VERSION`](VERSION). После правки запускайте `bash scripts/sync-version.sh`.
 
@@ -7,8 +7,12 @@
 | Компонент | Версия | Где используется |
 |-----------|--------|------------------|
 | Mobile APK | 1.4.23+34 | `mobile/pubspec.yaml` |
-| Backend API | 1.4.23 | `backend/VERSION` → FastAPI `version` |
-| Backend deploy tag | `v1.4.23-backend` | `backend/deploy/update-from-github.sh` / GitHub Release |
+| Backend API | 1.4.24 | `backend/VERSION` → FastAPI `version` |
+| Backend deploy tag | `v1.4.24-backend` | `backend/deploy/update-from-github.sh` / GitHub Release |
+
+## v1.4.24
+
+- Поиск продуктов: добавлен источник **health-diet.ru/table_calorie/** (~5500 позиций КБЖУ)
 
 ## v1.4.23
 

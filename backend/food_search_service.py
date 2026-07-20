@@ -1,11 +1,22 @@
-"""Food search: local database + Calorizator.ru."""
+"""Food search: local database + Calorizator.ru + health-diet.ru."""
 
+import asyncio
 import logging
+import re
 
 from calorizator_service import search_calorizator
+from health_diet_service import search_health_diet
 from local_foods import LOCAL_FOODS
 
 logger = logging.getLogger(__name__)
+
+
+def _stem_hit(name_l: str, token: str) -> bool:
+    if len(token) < 4:
+        return False
+    stem = token[:4]
+    words = re.split(r"[\s,./\-]+", name_l)
+    return any(word.startswith(stem) for word in words if word)
 
 
 def _relevance_score(name: str, query: str) -> int:
@@ -27,6 +38,14 @@ def _relevance_score(name: str, query: str) -> int:
         return 40
     if matched > 0:
         return 20
+    stem_matched = sum(1 for t in tokens if _stem_hit(name_l, t))
+    if stem_matched == len(tokens):
+        words = re.split(r"[\s,./\-]+", name_l)
+        if any(word.startswith(tokens[0][:4]) for word in words[:1] if len(tokens[0]) >= 4):
+            return 50
+        return 35
+    if stem_matched > 0:
+        return 25
     return 0
 
 
@@ -40,42 +59,39 @@ def _search_local(query: str, page_size: int) -> list[dict]:
     return [item for _, item in scored[:page_size]]
 
 
-def _merge_results(local: list[dict], remote: list[dict], query: str, page_size: int) -> list[dict]:
+def _source_bonus(source: str) -> int:
+    # Prefer curated local items, then health-diet tables, then calorizator.
+    if source == "local":
+        return 5
+    if source == "health_diet":
+        return 3
+    if source == "calorizator":
+        return 1
+    return 0
+
+
+def _merge_results(parts: list[list[dict]], query: str, page_size: int) -> list[dict]:
     seen: set[str] = set()
     merged: list[tuple[int, dict]] = []
+    fallback: list[dict] = []
 
-    for item in local:
-        key = item["name"].lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append((_relevance_score(item["name"], query) + 5, item))
-
-    scored_remote: list[tuple[int, dict]] = []
-    fallback_remote: list[dict] = []
-    for item in remote:
-        key = item["name"].lower()
-        if key in seen:
-            continue
-        score = _relevance_score(item["name"], query)
-        if score > 0:
-            scored_remote.append((score, item))
-        else:
-            fallback_remote.append(item)
-
-    scored_remote.sort(key=lambda x: x[0], reverse=True)
-    for score, item in scored_remote:
-        key = item["name"].lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append((score, item))
+    for group in parts:
+        for item in group:
+            key = item["name"].lower()
+            if key in seen:
+                continue
+            score = _relevance_score(item["name"], query)
+            if score > 0:
+                seen.add(key)
+                merged.append((score + _source_bonus(item.get("source", "")), item))
+            else:
+                fallback.append(item)
 
     merged.sort(key=lambda x: x[0], reverse=True)
     results = [item for _, item in merged[:page_size]]
 
     if len(results) < page_size:
-        for item in fallback_remote:
+        for item in fallback:
             key = item["name"].lower()
             if key in seen:
                 continue
@@ -94,21 +110,40 @@ async def search_food(query: str, page_size: int = 20) -> dict:
 
     local_items = _search_local(q, page_size)
 
-    remote_items: list[dict] = []
-    try:
-        remote_items = await search_calorizator(q, page_size)
-    except Exception as exc:
-        logger.warning("Calorizator unavailable: %s", exc)
+    async def _safe_calorizator() -> list[dict]:
+        try:
+            return await search_calorizator(q, page_size)
+        except Exception as exc:
+            logger.warning("Calorizator unavailable: %s", exc)
+            return []
 
-    if local_items or remote_items:
-        items = _merge_results(local_items, remote_items, q, page_size)
-    else:
-        items = []
+    async def _safe_health_diet() -> list[dict]:
+        try:
+            return await search_health_diet(q, page_size)
+        except Exception as exc:
+            logger.warning("health-diet unavailable: %s", exc)
+            return []
 
-    if local_items and remote_items:
+    calorizator_items, health_diet_items = await asyncio.gather(
+        _safe_calorizator(),
+        _safe_health_diet(),
+    )
+
+    remote_parts = [health_diet_items, calorizator_items]
+    items = _merge_results([local_items, *remote_parts], q, page_size)
+
+    sources = set()
+    if local_items:
+        sources.add("local")
+    if health_diet_items:
+        sources.add("health_diet")
+    if calorizator_items:
+        sources.add("calorizator")
+
+    if len(sources) > 1:
         source = "mixed"
-    elif remote_items:
-        source = "calorizator"
+    elif sources:
+        source = next(iter(sources))
     else:
         source = "local"
 
