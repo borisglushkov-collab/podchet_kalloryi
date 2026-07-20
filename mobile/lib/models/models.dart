@@ -293,6 +293,17 @@ class FoodEntry {
         'carbs': carbs,
       };
 
+  /// Payload for coach / suggest-meal diary scan (no id/date).
+  Map<String, dynamic> toDiaryApiJson() => {
+        'meal_type': mealType.apiValue,
+        'name': name,
+        'grams': grams,
+        'calories': calories,
+        'protein': protein,
+        'fat': fat,
+        'carbs': carbs,
+      };
+
   factory FoodEntry.fromMap(Map<String, dynamic> map) => FoodEntry(
         id: map['id'] as int?,
         date: map['date'] as String,

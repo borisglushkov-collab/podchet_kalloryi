@@ -138,6 +138,14 @@ class NutritionCalculator {
     };
   }
 
+  /// Serialize today's diary for coach / suggest-meal (names + BJU).
+  static List<Map<String, dynamic>> diaryEntriesForApi(
+    List<FoodEntry> entries, {
+    int limit = 25,
+  }) {
+    return entries.take(limit).map((e) => e.toDiaryApiJson()).toList();
+  }
+
   static Map<MealType, MealPlanInfo> computeMealPlan(
     Macros dailyTargets,
     Map<MealType, Macros> mealsConsumed,

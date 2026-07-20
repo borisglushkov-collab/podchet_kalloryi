@@ -1,14 +1,14 @@
-# Podchet Kalloriy — backend 1.4.24 / mobile 1.4.23
+# Podchet Kalloriy — единая версия 1.4.24
 
 > Источник правды: файл [`VERSION`](VERSION). После правки запускайте `bash scripts/sync-version.sh`.
 
-Синхронизировано: **2026-07-18**
+Синхронизировано: **2026-07-20**
 
 | Компонент | Версия | Где используется |
 |-----------|--------|------------------|
-| Mobile APK | 1.4.23+34 | `mobile/pubspec.yaml` |
-| Backend API | 1.4.24 | `backend/VERSION` → FastAPI `version` |
-| Backend deploy tag | `v1.4.24-backend` | `backend/deploy/update-from-github.sh` / GitHub Release |
+| Mobile APK | 1.4.24+35 | `mobile/pubspec.yaml` |
+| Backend API | 1.4.25 | `backend/VERSION` → FastAPI `version` |
+| Backend deploy tag | `v1.4.25-backend` | `backend/deploy/update-from-github.sh` / GitHub Release |
 
 ## v1.4.24
 

@@ -8,6 +8,7 @@ from nutrition_prompt import (
     build_user_prompt,
     cap_macros_by_daily,
     compute_meal_plan,
+    format_diary_entries,
     format_profile_context,
     parse_ai_response,
     priority_macros,
@@ -33,6 +34,68 @@ def test_build_user_prompt():
     assert "добить" in prompt.lower()
     assert "перенос" in prompt.lower()
     assert "без свинины" in prompt
+
+
+def test_build_user_prompt_with_diary():
+    prompt = build_user_prompt(
+        "dinner",
+        {"calories": 900, "protein": 40, "fat": 30, "carbs": 90},
+        {"calories": 2000, "protein": 120, "fat": 65, "carbs": 250},
+        {"calories": 0, "protein": 0, "fat": 0, "carbs": 0},
+        [],
+        "Москва",
+        diary_entries=[
+            {
+                "meal_type": "breakfast",
+                "name": "Овсянка с бананом",
+                "grams": 250,
+                "calories": 320,
+                "protein": 10,
+                "fat": 6,
+                "carbs": 55,
+            },
+            {
+                "meal_type": "lunch",
+                "name": "Курица с рисом",
+                "grams": 350,
+                "calories": 580,
+                "protein": 40,
+                "fat": 15,
+                "carbs": 50,
+            },
+        ],
+    )
+    assert "дневник" in prompt.lower()
+    assert "Овсянка с бананом" in prompt
+    assert "Курица с рисом" in prompt
+    assert "не дублируй" in prompt.lower()
+
+
+def test_format_diary_entries_empty():
+    assert format_diary_entries(None) == ""
+    assert format_diary_entries([]) == ""
+    assert format_diary_entries([{"name": ""}]) == ""
+
+
+def test_format_diary_entries_caps():
+    from nutrition_prompt import DIARY_ENTRIES_LIMIT, format_diary_entries
+
+    entries = [
+        {
+            "meal_type": "snack",
+            "name": f"Продукт {i}",
+            "grams": 50,
+            "calories": 100,
+            "protein": 5,
+            "fat": 2,
+            "carbs": 10,
+        }
+        for i in range(DIARY_ENTRIES_LIMIT + 5)
+    ]
+    block = format_diary_entries(entries)
+    assert f"Продукт {DIARY_ENTRIES_LIMIT - 1}" in block
+    assert f"Продукт {DIARY_ENTRIES_LIMIT}" not in block
+    assert "показаны первые" in block
 
 
 def test_meal_plan_rollover_to_last_meal():

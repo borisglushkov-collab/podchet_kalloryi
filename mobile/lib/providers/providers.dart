@@ -70,5 +70,6 @@ final mealSuggestionProvider =
         preferences: prefs,
         profile: profile,
         weightAnalysis: weightAnalysis,
+        diaryEntries: NutritionCalculator.diaryEntriesForApi(entries),
       );
 });

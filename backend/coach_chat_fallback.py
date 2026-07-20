@@ -69,6 +69,7 @@ def build_coach_chat_fallback(
     meal_deficit: dict[str, float] | None = None,
     preferences: list[str] | None = None,
     profile_context: dict[str, Any] | None = None,
+    diary_entries: list[dict[str, Any]] | None = None,
 ) -> str:
     """Build a short Russian coach reply without calling an LLM."""
     daily = daily_deficit or {}
@@ -99,10 +100,25 @@ def build_coach_chat_fallback(
             "gain": "набор",
         }.get(str(profile_context.get("goal", "")), "")
 
+    diary_names: list[str] = []
+    for raw in (diary_entries or [])[:8]:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "").strip()
+        if name and name not in diary_names:
+            diary_names.append(name)
+
     parts: list[str] = []
     parts.append(
         "ИИ сейчас отвечает медленно, поэтому даю быстрый расчёт по вашей норме."
     )
+    if diary_names:
+        shown = ", ".join(diary_names[:5])
+        more = f" и ещё {len(diary_names) - 5}" if len(diary_names) > 5 else ""
+        parts.append(
+            f"В дневнике уже есть: {shown}{more}. "
+            "Ниже — варианты дополнения/замены, без повтора того же."
+        )
     parts.append(
         f"На {meal_ru} ориентир: ~{budget_kcal:.0f} ккал · "
         f"Б {budget_p:.0f} · Ж {budget_f:.0f} · У {budget_c:.0f} "

@@ -61,6 +61,7 @@ class ApiService {
     String? city,
     UserProfile? profile,
     WeightAnalysis? weightAnalysis,
+    List<Map<String, dynamic>> diaryEntries = const [],
   }) async {
     final baseUrl = await SettingsService.getBackendUrl();
     final resolvedCity = city ?? await SettingsService.getCity();
@@ -80,6 +81,7 @@ class ApiService {
         if (profile != null) 'profile_context': profile.toCoachApiJson(),
         if (weightAnalysis != null && weightAnalysis.hasData)
           'weight_context': weightAnalysis.toApiJson(),
+        if (diaryEntries.isNotEmpty) 'diary_entries': diaryEntries,
       },
     );
     return MealSuggestion.fromJson(response.data as Map<String, dynamic>);
@@ -101,6 +103,7 @@ class ApiService {
     List<String> preferences = const [],
     UserProfile? profile,
     WeightAnalysis? weightAnalysis,
+    List<Map<String, dynamic>> diaryEntries = const [],
   }) async {
     final baseUrl = await SettingsService.getBackendUrl();
     final response = await _dio.post(
@@ -120,6 +123,7 @@ class ApiService {
         if (profile != null) 'profile_context': profile.toCoachApiJson(),
         if (weightAnalysis != null && weightAnalysis.hasData)
           'weight_context': weightAnalysis.toApiJson(),
+        if (diaryEntries.isNotEmpty) 'diary_entries': diaryEntries,
       },
     );
     return (response.data['reply'] as String?)?.trim() ?? '';

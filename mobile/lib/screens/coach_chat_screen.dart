@@ -125,6 +125,7 @@ class _CoachChatScreenState extends ConsumerState<CoachChatScreen>
             preferences: prefs,
             profile: profile,
             weightAnalysis: weightAnalysis,
+            diaryEntries: NutritionCalculator.diaryEntriesForApi(entries),
           );
 
       if (!mounted) return;

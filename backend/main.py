@@ -95,6 +95,16 @@ class ProfileContext(BaseModel):
     target_weight_kg: float | None = None
 
 
+class DiaryEntry(BaseModel):
+    meal_type: str = "snack"
+    name: str = ""
+    grams: float = 0
+    calories: float = 0
+    protein: float = 0
+    fat: float = 0
+    carbs: float = 0
+
+
 class SuggestMealRequest(BaseModel):
     meal_type: str = Field(description="breakfast, lunch, dinner, snack")
     consumed: Macros
@@ -105,6 +115,7 @@ class SuggestMealRequest(BaseModel):
     city: str = "Москва"
     profile_context: ProfileContext | None = None
     weight_context: dict | None = None
+    diary_entries: list[DiaryEntry] = Field(default_factory=list)
 
 
 class SuggestMealResponse(BaseModel):
@@ -136,6 +147,7 @@ class CoachChatRequest(BaseModel):
     preferences: list[str] = Field(default_factory=list)
     profile_context: ProfileContext | None = None
     weight_context: dict | None = None
+    diary_entries: list[DiaryEntry] = Field(default_factory=list)
 
 
 class CoachChatResponse(BaseModel):
@@ -325,6 +337,7 @@ async def suggest_meal(request: SuggestMealRequest):
         profile_context=(
             request.profile_context.model_dump() if request.profile_context else None
         ),
+        diary_entries=[e.model_dump() for e in request.diary_entries],
     )
 
     try:
@@ -440,6 +453,7 @@ async def coach_chat(request: CoachChatRequest):
         if m.content.strip()
     ]
 
+    diary_payload = [e.model_dump() for e in request.diary_entries]
     user_prompt = build_coach_chat_prompt(
         message,
         history=history,
@@ -453,6 +467,7 @@ async def coach_chat(request: CoachChatRequest):
             request.profile_context.model_dump() if request.profile_context else None
         ),
         weight_insight=" ".join(weight_insight_parts),
+        diary_entries=diary_payload,
     )
 
     # Fail over quickly: Cursor agents often hang ~60s on this VPS.
@@ -480,6 +495,7 @@ async def coach_chat(request: CoachChatRequest):
         profile_context=(
             request.profile_context.model_dump() if request.profile_context else None
         ),
+        diary_entries=diary_payload,
     )
     return CoachChatResponse(reply=reply)
 

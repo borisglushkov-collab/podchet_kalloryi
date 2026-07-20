@@ -27,3 +27,28 @@ def test_build_coach_chat_prompt_includes_limits():
     assert "без свинины" in prompt
     assert "Что съесть на ужин?" in prompt
     assert "История диалога" in prompt
+
+
+def test_build_coach_chat_prompt_includes_diary():
+    prompt = build_coach_chat_prompt(
+        "Что добавить?",
+        meal_type="dinner",
+        consumed={"calories": 900, "protein": 40, "fat": 30, "carbs": 90},
+        targets={"calories": 2000, "protein": 120, "fat": 65, "carbs": 250},
+        daily_deficit={"calories": 1100, "protein": 80, "fat": 35, "carbs": 160},
+        meal_deficit={"calories": 500, "protein": 40, "fat": 20, "carbs": 60},
+        diary_entries=[
+            {
+                "meal_type": "breakfast",
+                "name": "Творог 5%",
+                "grams": 150,
+                "calories": 180,
+                "protein": 24,
+                "fat": 7,
+                "carbs": 5,
+            }
+        ],
+    )
+    assert "Творог 5%" in prompt
+    assert "дневник" in prompt.lower()
+    assert "с опорой на дневник" in prompt.lower()
