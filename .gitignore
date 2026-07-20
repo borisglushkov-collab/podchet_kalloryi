@@ -24,5 +24,7 @@ podchet_backend_deploy.zip
 backend/deploy/*-output.txt
 deploy.log
 
-.ssh/
+.ssh/*
 !.ssh/README.md
+!.ssh/config.example
+
