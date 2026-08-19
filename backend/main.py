@@ -10,6 +10,8 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 
@@ -30,8 +32,12 @@ from ai_food_search_service import (
 from barcode_service import lookup_barcode
 from blood_pressure_csv import CsvImportError, parse_citizen_csv
 from blood_pressure_store import store as bp_store
+from health_day_store import day_store
 from coach_chat_fallback import build_coach_chat_fallback
 from coach_chat_prompt import COACH_CHAT_SYSTEM_PROMPT, build_coach_chat_prompt
+from coach_health_fallback import build_coach_health_fallback
+from coach_health_prompt import COACH_HEALTH_SYSTEM_PROMPT, build_coach_health_prompt
+from coach_health_report import format_day_report
 from cursor_client import CursorClient
 from food_search_service import search_food
 from food_vision_service import FoodVisionNotConfiguredError, analyze_food_image
@@ -172,6 +178,16 @@ class CoachChatRequest(BaseModel):
     health_context: HealthContext | None = None
 
 
+class CoachHealthChatRequest(BaseModel):
+    message: str = "Что улучшить по этому дню?"
+    snapshot: dict = Field(default_factory=dict)
+    history: list[ChatMessage] = Field(default_factory=list)
+
+
+class HealthSyncRequest(BaseModel):
+    snapshot: dict
+
+
 class CoachChatResponse(BaseModel):
     reply: str
     disclaimer: str = "Рекомендации носят информационный характер и не заменяют консультацию врача."
@@ -196,11 +212,17 @@ async def root():
             "blood_pressure_import": "POST /api/health/blood-pressure/import-csv",
             "blood_pressure_list": "GET /api/health/blood-pressure",
             "blood_pressure_summary": "GET /api/health/blood-pressure/summary",
+            "coach_health_chat": "POST /api/coach-health-chat",
+            "health_sync": "POST /api/health/sync",
+            "health_day": "GET /api/health/day/{date}",
+            "health_report": "GET /api/health/day/{date}/report",
+            "hub": "GET /hub/",
             "reset_session": "POST /api/reset-session",
             "docs": "GET /docs",
         },
         "app_url": "http://127.0.0.1:8080",
-        "hint": "Это backend для ИИ. Откройте app_url — там приложение «Подсчёт калорий».",
+        "hub_url": "/hub/",
+        "hint": "Приложение сбора данных для коуча: откройте /hub/ . Старое приложение калорий — app_url.",
     }
 
 
@@ -584,11 +606,99 @@ async def blood_pressure_summary(days: int = 7):
     return bp_store.summary(days)
 
 
+def _attach_bp(snapshot: dict, date: str) -> dict:
+    merged = dict(snapshot)
+    bp_items = bp_store.list(from_date=date, to_date=date)
+    summary = bp_store.summary(7)
+    latest = summary.get("latest")
+    if bp_items:
+        latest = bp_items[0]
+    merged["blood_pressure"] = {
+        **(merged.get("blood_pressure") or {}),
+        "readings_today": bp_items,
+        "latest": (merged.get("blood_pressure") or {}).get("latest") or latest,
+        "avg_7d": summary.get("avg"),
+    }
+    return merged
+
+
+@app.post("/api/health/sync")
+async def health_sync(request: HealthSyncRequest):
+    try:
+        saved = day_store.upsert(request.snapshot)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    date = saved["date"]
+    return {"snapshot": _attach_bp(saved, date), "report": format_day_report(_attach_bp(saved, date))}
+
+
+@app.get("/api/health/day/{date}")
+async def health_day(date: str):
+    snapshot = day_store.get(date) or {"date": date, "generated_at": None}
+    merged = _attach_bp(snapshot, date)
+    return {"snapshot": merged, "report": format_day_report(merged)}
+
+
+@app.get("/api/health/day/{date}/report")
+async def health_day_report(date: str):
+    snapshot = day_store.get(date) or {"date": date}
+    merged = _attach_bp(snapshot, date)
+    return {"report": format_day_report(merged)}
+
+
+@app.post("/api/coach-health-chat", response_model=CoachChatResponse)
+async def coach_health_chat(request: CoachHealthChatRequest):
+    message = (request.message or "").strip() or "Что улучшить по этому дню?"
+    if len(message) > 2000:
+        raise HTTPException(status_code=400, detail="Сообщение слишком длинное")
+    snapshot = dict(request.snapshot or {})
+    date = str(snapshot.get("date") or "")
+    if date:
+        try:
+            day_store.upsert(snapshot)
+        except ValueError:
+            pass
+        snapshot = _attach_bp(snapshot, date)
+    history = [
+        {"role": m.role if m.role in {"user", "assistant"} else "user", "content": m.content}
+        for m in request.history
+        if m.content.strip()
+    ]
+    user_prompt = build_coach_health_prompt(message, snapshot, history=history)
+
+    if cursor_client and os.getenv("CURSOR_API_KEY"):
+        try:
+            reply = await asyncio.wait_for(
+                cursor_client.prompt(COACH_HEALTH_SYSTEM_PROMPT, user_prompt),
+                timeout=50.0,
+            )
+            reply = (reply or "").strip()
+            if reply:
+                return CoachChatResponse(reply=reply)
+        except Exception as e:
+            logger.exception("Coach health chat error: %s", format_ai_error(e))
+            if cursor_client is not None:
+                cursor_client.reset_session()
+
+    reply = build_coach_health_fallback(message, snapshot)
+    return CoachChatResponse(reply=reply)
+
+
+@app.get("/hub")
+async def hub_redirect():
+    return RedirectResponse(url="/hub/")
+
+
 @app.post("/api/reset-session")
 async def reset_session():
     if cursor_client:
         cursor_client.reset_session()
     return {"status": "ok", "hint": "Сессия Cursor сброшена. Повторите запрос через несколько секунд."}
+
+
+HUB_DIR = Path(__file__).resolve().parent / "hub"
+if HUB_DIR.is_dir():
+    app.mount("/hub", StaticFiles(directory=str(HUB_DIR), html=True), name="hub")
 
 
 if __name__ == "__main__":

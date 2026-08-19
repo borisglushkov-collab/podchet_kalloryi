@@ -13,6 +13,7 @@
 ## v1.4.26
 
 - Health Data Hub, фаза 1: импорт CSV давления (Citizen), экран АД, API `/api/health/blood-pressure`, контекст АД в чате коуча
+- Отдельное приложение «Сбор для коуча»: `GET /hub/`, отчёт дня и `POST /api/coach-health-chat`
 - Mobile 1.4.26+37, backend v1.4.27-backend
 
 ## v1.4.25

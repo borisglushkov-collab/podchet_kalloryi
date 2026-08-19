@@ -32,13 +32,23 @@ podchet_kalloryi/
 | [`android-сборки/`](android-сборки/) | `cursor/android-builds-a36d` | APK, скрипты сборки, загрузка на Яндекс.Диск |
 | [`работа с весами/`](работа%20с%20весами/) | `cursor/chat-podchet-kalloryi-a36d` | Health Scale, Futula, BLE-документация |
 
-## Health Data Hub
+## Сбор для коуча (отдельное приложение)
 
-Сбор АД, сна, шагов и питания в одном месте для коуча — см. [`docs/health-data-hub/`](docs/health-data-hub/).
+Это **не вкладка** в «Подсчёте калорий». Отдельное веб-приложение (PWA): собирает день и передаёт коучу.
 
-**Фаза 1 (готово):** импорт CSV давления (Citizen), экран «Давление» (Аналитика → АД / Профиль), контекст АД в чате коуча.
+После деплоя backend:
 
-Дальше: Health Connect. Промпт для агента — [`docs/health-data-hub/CLOUD_AGENT_BRIEF.md`](docs/health-data-hub/CLOUD_AGENT_BRIEF.md).
+**https://example.net/id/falcon**  
+(или ваш адрес сервера + `/hub/`)
+
+На телефоне: Chrome → меню → **Добавить на главный экран**. Появится иконка «Сбор для коуча».
+
+Что делать каждый день:
+1. Внести АД (вручную или CSV Citizen)
+2. Сон, шаги, вес, что ели
+3. **Скопировать отчёт** или **Передать коучу**
+
+Код: `backend/hub/`. Документация: [`docs/health-data-hub/`](docs/health-data-hub/).
 
 ## Сборка APK + Яндекс.Диск
 

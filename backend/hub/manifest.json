@@ -1,0 +1,12 @@
+{
+  "name": "Сбор для коуча",
+  "short_name": "Коучу",
+  "start_url": "/hub/",
+  "display": "standalone",
+  "background_color": "#FFF9F0",
+  "theme_color": "#6BCB77",
+  "lang": "ru",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

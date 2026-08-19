@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../db/database.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../services/api_service.dart';
 import '../services/nutrition_calculator.dart';
 import '../theme/app_theme.dart';
 import '../widgets/health_scale_card.dart';
@@ -541,6 +543,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         context,
                         MaterialPageRoute(builder: (_) => const BloodPressureScreen()),
                       ),
+                    ),
+                    const Divider(height: 1),
+                    _SoftListRow(
+                      icon: Icons.health_and_safety_outlined,
+                      title: 'Сбор для коуча',
+                      subtitle: 'отдельное приложение: день → коучу',
+                      onTap: () async {
+                        final base = await SettingsService.getBackendUrl();
+                        final uri = Uri.parse('${base.replaceAll(RegExp(r'/+$'), '')}/hub/');
+                        final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        if (!ok && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Откройте в браузере: $uri')),
+                          );
+                        }
+                      },
                     ),
                     const Divider(height: 1),
                     _SoftListRow(

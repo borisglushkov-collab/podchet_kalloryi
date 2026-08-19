@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#6BCB77" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Сбор для коуча" />
+  <title>Сбор для коуча</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div>
+      <p class="eyebrow">Отдельное приложение</p>
+      <h1>Сбор для коуча</h1>
+    </div>
+    <input id="date" type="date" />
+  </header>
+
+  <main id="view"></main>
+
+  <nav class="tabs">
+    <button data-tab="today" class="active">Сегодня</button>
+    <button data-tab="add">Добавить</button>
+    <button data-tab="coach">Коучу</button>
+    <button data-tab="more">Ещё</button>
+  </nav>
+
+  <script src="app.js"></script>
+</body>
+</html>
