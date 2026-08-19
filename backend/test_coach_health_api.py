@@ -36,6 +36,38 @@ def test_sync_and_report():
     assert day.json()["snapshot"]["activity"]["steps"] == 871
 
 
+def test_day_endpoint_keeps_snapshot_bp_when_store_empty():
+    health_day_store.day_store.upsert(
+        {
+            "date": "2026-08-20",
+            "blood_pressure": {
+                "latest": {"systolic": 130, "diastolic": 85, "source": "medm_bp"},
+                "readings_today": [
+                    {
+                        "systolic": 130,
+                        "diastolic": 85,
+                        "pulse": 72,
+                        "measured_at": "2026-08-20T08:00:00",
+                        "source": "medm_bp",
+                    },
+                    {
+                        "systolic": 128,
+                        "diastolic": 82,
+                        "pulse": 70,
+                        "measured_at": "2026-08-20T12:00:00",
+                        "source": "medm_bp",
+                    },
+                ],
+            },
+        }
+    )
+    response = client.get("/api/health/day/2026-08-20")
+    assert response.status_code == 200
+    readings = response.json()["snapshot"]["blood_pressure"]["readings_today"]
+    assert len(readings) == 2
+    assert readings[0]["systolic"] == 128
+
+
 def test_coach_health_chat_fallback_without_api_key(monkeypatch):
     monkeypatch.delenv("CURSOR_API_KEY", raising=False)
     response = client.post(

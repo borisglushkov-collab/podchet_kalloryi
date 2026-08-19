@@ -614,17 +614,36 @@ async def blood_pressure_summary(days: int = 7):
     return bp_store.summary(days)
 
 
+def _merge_bp_readings(*groups: list[dict] | None) -> list[dict]:
+    merged: list[dict] = []
+    seen: set[tuple[str, int, int]] = set()
+    for group in groups:
+        for item in group or []:
+            if not item.get("systolic") or not item.get("diastolic"):
+                continue
+            key = (str(item.get("measured_at") or ""), int(item["systolic"]), int(item["diastolic"]))
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
+    merged.sort(key=lambda r: str(r.get("measured_at") or ""), reverse=True)
+    return merged
+
+
 def _attach_bp(snapshot: dict, date: str) -> dict:
     merged = dict(snapshot)
+    bp_snapshot = merged.get("blood_pressure") or {}
     bp_items = bp_store.list(from_date=date, to_date=date)
+    snapshot_readings = bp_snapshot.get("readings_today") or []
+    readings_today = _merge_bp_readings(snapshot_readings, bp_items)
     summary = bp_store.summary(7)
-    latest = summary.get("latest")
-    if bp_items:
+    latest = bp_snapshot.get("latest") or (readings_today[0] if readings_today else summary.get("latest"))
+    if bp_items and not bp_snapshot.get("latest"):
         latest = bp_items[0]
     merged["blood_pressure"] = {
-        **(merged.get("blood_pressure") or {}),
-        "readings_today": bp_items,
-        "latest": (merged.get("blood_pressure") or {}).get("latest") or latest,
+        **bp_snapshot,
+        "readings_today": readings_today,
+        "latest": latest,
         "avg_7d": summary.get("avg"),
     }
     return merged

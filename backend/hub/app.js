@@ -84,11 +84,13 @@ function importNutritionMeals(d, nutrition, force = false) {
 }
 
 function applySnapshotToDay(d, snap, { force = false } = {}) {
-  if (snap.steps?.count != null && (force || d.steps == null || snap.source === "mi_fitness_auto")) {
-    d.steps = snap.steps.count;
+  const stepCount = snap.steps?.count ?? snap.activity?.steps;
+  if (stepCount != null && (force || d.steps == null || snap.source === "mi_fitness_auto")) {
+    d.steps = Number(stepCount);
   }
-  if (snap.sleep?.total_min != null && (force || d.sleep_min == null || snap.source === "mi_fitness_auto")) {
-    d.sleep_min = snap.sleep.total_min;
+  const sleepMin = snap.sleep?.total_min ?? snap.sleep?.duration_min;
+  if (sleepMin != null && (force || d.sleep_min == null || snap.source === "mi_fitness_auto")) {
+    d.sleep_min = Number(sleepMin);
   }
   if (snap.weight?.kg != null && (force || d.weight_kg == null || snap.weight.source === "xiaomi_home")) {
     applyBodyComposition(d, snap.weight);
@@ -878,6 +880,20 @@ function setRefreshBusy(busy) {
   }
 }
 
+function summarizeCollectedSnapshot(snap) {
+  const parts = [];
+  const steps = snap.steps?.count ?? snap.activity?.steps;
+  if (steps != null) parts.push(`шаги ${steps}`);
+  const mealCount = (snap.nutrition?.meals || []).reduce((n, m) => n + (m.items?.length || 0), 0);
+  if (mealCount) parts.push(`еда ${mealCount}`);
+  const bpCount = snap.blood_pressure?.readings_today?.length || 0;
+  if (bpCount) parts.push(`АД ${bpCount}`);
+  const workoutCount = snap.workouts?.length || 0;
+  if (workoutCount) parts.push(`тренировки ${workoutCount}`);
+  if (snap.weight?.kg != null) parts.push(`вес ${snap.weight.kg} кг`);
+  return parts.length ? parts.join(", ") : "нет записей за день";
+}
+
 async function refreshData() {
   if (state.refreshing) return;
   setRefreshBusy(true);
@@ -892,13 +908,14 @@ async function refreshData() {
       toast(msg);
       return;
     }
-    setRefreshStatus("Загружаю на экран…");
-    await loadServerDay({ force: true });
+    const snap = await r.json();
+    applySnapshotToDay(day(), snap, { force: true });
+    saveJson(STORAGE_DAYS, state.days);
     await fetchCollectorStatus();
-    persist();
     const t = new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-    setRefreshStatus(`Обновлено в ${t}`);
-    toast("Данные обновлены");
+    const summary = summarizeCollectedSnapshot(snap);
+    setRefreshStatus(`Обновлено в ${t}: ${summary}`);
+    toast(`Данные обновлены: ${summary}`);
     render();
   } catch (err) {
     setRefreshStatus(String(err.message || err), true);
