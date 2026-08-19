@@ -353,6 +353,12 @@ function renderMore() {
       `}
     </div>
     <div class="card wide form" style="margin-top:10px">
+      <h2>FatSecret (еда)</h2>
+      <p class="hint">Подключите FatSecret для автоматического сбора дневника питания</p>
+      <button class="btn primary" id="fatsecret-connect">Подключить FatSecret</button>
+      <div id="fatsecret-status" class="sub"></div>
+    </div>
+    <div class="card wide form" style="margin-top:10px">
       <h2>MedM BP (давление)</h2>
       <p class="hint">Подключите аккаунт MedM для автоматического сбора данных АД</p>
       <input id="medm-email" placeholder="Email MedM" />
@@ -508,6 +514,7 @@ function bind() {
   document.getElementById("xi-verify")?.addEventListener("click", xiaomiVerify);
   document.getElementById("xi-tokens")?.addEventListener("click", xiaomiSetTokens);
   document.getElementById("medm-login")?.addEventListener("click", medmLogin);
+  document.getElementById("fatsecret-connect")?.addEventListener("click", fatsecretConnect);
 }
 
 async function importCsv() {
@@ -712,6 +719,20 @@ async function loadServerDay() {
     saveJson(STORAGE_DAYS, state.days);
     render();
   } catch { /* offline */ }
+}
+
+async function fatsecretConnect() {
+  try {
+    const r = await fetch("/api/health/fatsecret-auth");
+    const data = await r.json();
+    if (data.authorize_url) {
+      window.location.href = data.authorize_url;
+    } else {
+      toast("Ошибка получения ссылки FatSecret");
+    }
+  } catch (err) {
+    toast("Ошибка: " + err.message);
+  }
 }
 
 async function medmLogin() {

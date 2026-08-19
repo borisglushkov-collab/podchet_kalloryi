@@ -793,6 +793,38 @@ async def medm_bp_list(limit: int = 50):
     return {"count": len(readings), "readings": readings}
 
 
+@app.get("/api/health/fatsecret-auth")
+async def fatsecret_auth_start(request: Request):
+    from fatsecret_client import get_authorize_url
+    host = request.headers.get("host", "201.51.22.29")
+    scheme = request.headers.get("x-forwarded-proto", "http")
+    callback = f"{scheme}://{host}/api/health/fatsecret-callback"
+    url, session_id = get_authorize_url(callback)
+    return {"authorize_url": url, "session_id": session_id}
+
+
+@app.get("/api/health/fatsecret-callback")
+async def fatsecret_callback(oauth_token: str = "", oauth_verifier: str = ""):
+    from fatsecret_client import complete_auth
+    if not oauth_verifier:
+        return RedirectResponse(url="/hub/?fatsecret=error")
+    try:
+        complete_auth(oauth_token, oauth_verifier)
+    except Exception as exc:
+        logger.error("FatSecret OAuth error: %s", exc)
+        return RedirectResponse(url="/hub/?fatsecret=error")
+    return RedirectResponse(url="/hub/?fatsecret=ok")
+
+
+@app.get("/api/health/fatsecret-food")
+async def fatsecret_food():
+    from fatsecret_client import fetch_food_entries_today, fetch_food_month, load_tokens
+    has_tokens = load_tokens() is not None
+    entries = fetch_food_entries_today() if has_tokens else []
+    month = fetch_food_month() if has_tokens else []
+    return {"connected": has_tokens, "today": entries, "month": month}
+
+
 @app.get("/api/health/xiaomi-devices")
 async def xiaomi_devices():
     from xiaomi_auth import XiaomiTokens

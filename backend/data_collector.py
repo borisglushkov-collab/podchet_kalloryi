@@ -161,6 +161,29 @@ def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any
                 "latest": {"systolic": int(sys_val), "diastolic": int(dia_val)},
             }
 
+    # FatSecret food diary
+    food_entries = raw.get("fatsecret_food") or []
+    if food_entries:
+        total_cal = sum(e.get("calories", 0) for e in food_entries)
+        total_p = sum(e.get("protein", 0) for e in food_entries)
+        total_f = sum(e.get("fat", 0) for e in food_entries)
+        total_c = sum(e.get("carbs", 0) for e in food_entries)
+        meals_by_type: dict[str, list] = {}
+        for e in food_entries:
+            mt = e.get("meal", "snack") or "snack"
+            meals_by_type.setdefault(mt, []).append(e)
+        snap["nutrition"] = {
+            "calories": round(total_cal),
+            "protein_g": round(total_p),
+            "fat_g": round(total_f),
+            "carbs_g": round(total_c),
+            "meals": [
+                {"meal_type": mt, "items": items}
+                for mt, items in meals_by_type.items()
+            ],
+            "source": "fatsecret",
+        }
+
     # MedM blood pressure
     medm_bp = raw.get("medm_bp") or []
     if medm_bp:
@@ -242,6 +265,16 @@ async def collect_once() -> dict[str, Any]:
             logger.info("MedM BP: %d readings", len(bp_readings))
     except Exception as exc:
         logger.warning("MedM BP fetch failed: %s", exc)
+
+    # Try FatSecret food diary
+    try:
+        from fatsecret_client import fetch_food_entries_today
+        food_entries = fetch_food_entries_today()
+        if food_entries:
+            raw["fatsecret_food"] = food_entries
+            logger.info("FatSecret: %d food entries", len(food_entries))
+    except Exception as exc:
+        logger.warning("FatSecret fetch failed: %s", exc)
 
     today = date.today()
     snapshot = _normalize_snapshot(raw, today)
