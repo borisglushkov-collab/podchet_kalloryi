@@ -76,12 +76,47 @@ def format_day_report(snapshot: dict[str, Any]) -> str:
         lines.append("Тренировки: " + "; ".join(bits))
 
     body = snapshot.get("body_composition") or {}
+    weight_obj = snapshot.get("weight") or {}
     weight = body.get("weight_kg")
+    if weight is None:
+        weight = weight_obj.get("kg")
     if weight is None:
         profile = snapshot.get("profile") or {}
         weight = profile.get("weight_kg_latest")
     if weight is not None:
-        lines.append(f"Вес: {weight}")
+        lines.append(f"Вес: {weight} кг")
+
+    comp_bits = []
+    mapping = (
+        ("bmi", "ИМТ", weight_obj.get("bmi"), body.get("bmi")),
+        ("bodyFat", "жир", weight_obj.get("bodyFat"), body.get("body_fat_pct")),
+        ("muscle", "мышцы", weight_obj.get("muscle"), body.get("muscle_kg")),
+        ("water", "вода", weight_obj.get("water"), body.get("water_pct")),
+        ("bone", "кость", weight_obj.get("bone"), body.get("bone_kg")),
+        ("visceralFat", "висц. жир", weight_obj.get("visceralFat"), body.get("visceral_fat")),
+        ("bodyAge", "возраст тела", weight_obj.get("bodyAge"), body.get("body_age")),
+        ("bmr", "BMR", weight_obj.get("bmr"), body.get("bmr_kcal")),
+        ("bodyScore", "оценка", weight_obj.get("bodyScore"), body.get("body_score")),
+        ("heartRate", "пульс", weight_obj.get("heartRate"), body.get("heart_rate")),
+        ("skeletalMuscle", "скел. мышцы", weight_obj.get("skeletalMuscle"), body.get("skeletal_muscle_kg")),
+        ("protein", "белок", weight_obj.get("protein"), body.get("protein_kg")),
+    )
+    for _, label, val1, val2 in mapping:
+        val = val1 if val1 is not None else val2
+        if val is None:
+            continue
+        suffix = ""
+        if label in ("жир", "вода"):
+            suffix = "%"
+        elif label in ("мышцы", "кость", "скел. мышцы", "белок"):
+            suffix = " кг"
+        elif label == "BMR":
+            suffix = " kcal"
+        elif label == "пульс":
+            suffix = " bpm"
+        comp_bits.append(f"{label} {val}{suffix}")
+    if comp_bits:
+        lines.append("Состав тела: " + ", ".join(comp_bits))
 
     nutrition = snapshot.get("nutrition") or {}
     kcal = nutrition.get("calories")

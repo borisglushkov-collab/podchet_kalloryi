@@ -28,8 +28,92 @@ const emptyDay = (date) => ({
   sleep_min: null,
   steps: null,
   weight_kg: null,
+  body_composition: null,
   notes: "",
 });
+
+function bodyCompositionFromWeight(w) {
+  if (!w || w.kg == null) return null;
+  return {
+    weight_kg: Number(w.kg),
+    bmi: w.bmi ?? null,
+    body_fat_pct: w.bodyFat ?? null,
+    muscle_kg: w.muscle ?? null,
+    water_pct: w.water ?? null,
+    bone_kg: w.bone ?? null,
+    visceral_fat: w.visceralFat ?? null,
+    body_age: w.bodyAge ?? null,
+    bmr_kcal: w.bmr ?? null,
+    body_score: w.bodyScore ?? null,
+    heart_rate: w.heartRate ?? null,
+    skeletal_muscle_kg: w.skeletalMuscle ?? null,
+    protein_kg: w.protein ?? null,
+    source: w.source || "xiaomi_home",
+  };
+}
+
+function applyBodyComposition(d, w) {
+  const bc = bodyCompositionFromWeight(w);
+  if (!bc) return;
+  d.weight_kg = bc.weight_kg;
+  state.profile.weight_kg_latest = bc.weight_kg;
+  d.body_composition = bc;
+}
+
+function fmtNum(v, suffix = "") {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  if (Number.isNaN(n)) return null;
+  const text = Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10);
+  return suffix ? `${text}${suffix}` : text;
+}
+
+function renderBodyMetrics(bc) {
+  if (!bc) return "";
+  const rows = [
+    ["ИМТ", fmtNum(bc.bmi)],
+    ["Жир", fmtNum(bc.body_fat_pct, "%")],
+    ["Мышцы", fmtNum(bc.muscle_kg, " кг")],
+    ["Вода", fmtNum(bc.water_pct, "%")],
+    ["Кость", fmtNum(bc.bone_kg, " кг")],
+    ["Висц. жир", fmtNum(bc.visceral_fat)],
+    ["Возраст тела", fmtNum(bc.body_age, " лет")],
+    ["БMR", fmtNum(bc.bmr_kcal, " ккал")],
+    ["Оценка", fmtNum(bc.body_score, "/100")],
+    ["Пульс", fmtNum(bc.heart_rate, " уд/мин")],
+    ["Скел. мышцы", fmtNum(bc.skeletal_muscle_kg, " кг")],
+    ["Белок", fmtNum(bc.protein_kg, " кг")],
+  ].filter(([, val]) => val != null);
+  if (!rows.length) return "";
+  return `
+    <div class="metrics">${rows.map(([label, val]) => `
+      <div class="metric">
+        <div class="metric-label">${label}</div>
+        <div class="metric-value">${val}</div>
+      </div>`).join("")}
+    </div>`;
+}
+
+function bodyCompositionReportLines(bc) {
+  if (!bc) return [];
+  const lines = [];
+  if (bc.weight_kg != null) lines.push(`Вес: ${bc.weight_kg} кг`);
+  const parts = [];
+  if (bc.bmi != null) parts.push(`ИМТ ${bc.bmi}`);
+  if (bc.body_fat_pct != null) parts.push(`жир ${bc.body_fat_pct}%`);
+  if (bc.muscle_kg != null) parts.push(`мышцы ${bc.muscle_kg} кг`);
+  if (bc.water_pct != null) parts.push(`вода ${bc.water_pct}%`);
+  if (bc.bone_kg != null) parts.push(`кость ${bc.bone_kg} кг`);
+  if (bc.visceral_fat != null) parts.push(`висц. жир ${bc.visceral_fat}`);
+  if (bc.body_age != null) parts.push(`возраст тела ${bc.body_age}`);
+  if (bc.bmr_kcal != null) parts.push(`BMR ${bc.bmr_kcal} ккал`);
+  if (bc.body_score != null) parts.push(`оценка ${bc.body_score}`);
+  if (bc.heart_rate != null) parts.push(`пульс ${bc.heart_rate}`);
+  if (bc.skeletal_muscle_kg != null) parts.push(`скел. мышцы ${bc.skeletal_muscle_kg} кг`);
+  if (bc.protein_kg != null) parts.push(`белок ${bc.protein_kg} кг`);
+  if (parts.length) lines.push(`Состав тела: ${parts.join(", ")}`);
+  return lines;
+}
 
 function loadJson(key, fallback) {
   try {
@@ -140,7 +224,23 @@ function snapshot() {
     },
     activity: d.steps == null ? {} : { steps: Number(d.steps), source: "manual" },
     sleep: d.sleep_min == null ? {} : { duration_min: Number(d.sleep_min), source: "manual" },
-    body_composition: d.weight_kg == null ? {} : { weight_kg: Number(d.weight_kg) },
+    body_composition: d.body_composition || (d.weight_kg == null ? {} : { weight_kg: Number(d.weight_kg) }),
+    weight: d.body_composition ? {
+      kg: d.body_composition.weight_kg,
+      bmi: d.body_composition.bmi,
+      bodyFat: d.body_composition.body_fat_pct,
+      muscle: d.body_composition.muscle_kg,
+      water: d.body_composition.water_pct,
+      bone: d.body_composition.bone_kg,
+      visceralFat: d.body_composition.visceral_fat,
+      bodyAge: d.body_composition.body_age,
+      bmr: d.body_composition.bmr_kcal,
+      bodyScore: d.body_composition.body_score,
+      heartRate: d.body_composition.heart_rate,
+      skeletalMuscle: d.body_composition.skeletal_muscle_kg,
+      protein: d.body_composition.protein_kg,
+      source: d.body_composition.source,
+    } : (d.weight_kg == null ? undefined : { kg: Number(d.weight_kg) }),
     workouts: d.workouts || [],
     notes: d.notes || "",
   };
@@ -172,8 +272,12 @@ function formatReport(snap) {
     });
     lines.push(`Тренировки: ${bits.join("; ")}`);
   }
-  const weight = snap.body_composition?.weight_kg ?? snap.profile?.weight_kg_latest;
-  if (weight != null) lines.push(`Вес: ${weight}`);
+  const bc = snap.body_composition || null;
+  for (const line of bodyCompositionReportLines(bc)) lines.push(line);
+  if (!bc) {
+    const weight = snap.profile?.weight_kg_latest;
+    if (weight != null) lines.push(`Вес: ${weight}`);
+  }
   const n = snap.nutrition || {};
   const mealBits = (n.meals || [])
     .map((meal) => {
@@ -228,6 +332,9 @@ function renderToday() {
   const totals = nutritionTotals(d.meals);
   const high = bp && (bp.systolic >= 140 || bp.diastolic >= 90);
   const sleepH = d.sleep_min ? `${Math.floor(d.sleep_min / 60)}ч ${d.sleep_min % 60}м` : "—";
+  const bc = d.body_composition;
+  const weightVal = bc?.weight_kg ?? d.weight_kg ?? state.profile.weight_kg_latest ?? "—";
+  const weightSub = bc?.bmi != null ? `ИМТ ${bc.bmi} · Xiaomi Home` : (bc?.source === "xiaomi_home" ? "Xiaomi Home" : "кг");
   return `
     <div class="cards">
       <div class="card">
@@ -247,9 +354,16 @@ function renderToday() {
       </div>
       <div class="card">
         <h2>Вес</h2>
-        <div class="value">${d.weight_kg ?? state.profile.weight_kg_latest ?? "—"}</div>
-        <div class="sub">кг</div>
+        <div class="value">${weightVal}</div>
+        <div class="sub">${weightSub}</div>
       </div>
+      ${bc && renderBodyMetrics(bc) ? `
+      <div class="card wide">
+        <h2>Состав тела</h2>
+        <div class="sub">Xiaomi Body Composition Scale S400</div>
+        ${renderBodyMetrics(bc)}
+      </div>
+      ` : ""}
       ${d.heart_rate ? `
       <div class="card">
         <h2>Пульс</h2>
@@ -644,7 +758,7 @@ async function collectNow() {
     const d = dayFor(snap.date || todayIso());
     if (snap.steps?.count != null) d.steps = snap.steps.count;
     if (snap.sleep?.total_min != null) d.sleep_min = snap.sleep.total_min;
-    if (snap.weight?.kg != null) { d.weight_kg = snap.weight.kg; state.profile.weight_kg_latest = snap.weight.kg; }
+    if (snap.weight?.kg != null) applyBodyComposition(d, snap.weight);
     if (Array.isArray(snap.workouts) && snap.workouts.length) d.workouts = snap.workouts;
     persist();
     await fetchCollectorStatus();
@@ -743,10 +857,7 @@ async function loadServerDay(autoCollect = false) {
     const d = day();
     if (snap.steps?.count != null && (d.steps == null || snap.source === "mi_fitness_auto")) d.steps = snap.steps.count;
     if (snap.sleep?.total_min != null && (d.sleep_min == null || snap.source === "mi_fitness_auto")) d.sleep_min = snap.sleep.total_min;
-    if (snap.weight?.kg != null && (d.weight_kg == null || snap.source === "mi_fitness_auto")) {
-      d.weight_kg = snap.weight.kg;
-      state.profile.weight_kg_latest = snap.weight.kg;
-    }
+    if (snap.weight?.kg != null) applyBodyComposition(d, snap.weight);
     if (snap.heart_rate) d.heart_rate = snap.heart_rate;
     if (Array.isArray(snap.workouts) && snap.workouts.length) d.workouts = snap.workouts;
     if (snap.blood_pressure?.latest) {
