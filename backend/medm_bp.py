@@ -60,8 +60,8 @@ async def medm_login(email: str, password: str) -> MedMTokens:
     async with httpx.AsyncClient(timeout=20) as c:
         r = await c.post(
             f"{_API_BASE}/user/login",
-            data={"email": email, "password": password},
-            headers={"Accept": "application/json"},
+            json={"email": email, "password": password},
+            headers={"Accept": "application/json", "Content-Type": "application/json"},
         )
         r.raise_for_status()
         data = r.json()
@@ -82,8 +82,8 @@ async def medm_refresh(tokens: MedMTokens) -> MedMTokens:
     async with httpx.AsyncClient(timeout=20) as c:
         r = await c.post(
             f"{_API_BASE}/user/refresh_token",
-            data={"refresh_token": tokens.refresh_token},
-            headers={"Accept": "application/json"},
+            json={"refresh_token": tokens.refresh_token},
+            headers={"Accept": "application/json", "Content-Type": "application/json"},
         )
         r.raise_for_status()
         data = r.json()
