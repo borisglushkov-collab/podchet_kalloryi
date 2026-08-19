@@ -1,14 +1,19 @@
-# Podchet Kalloriy — единая версия 1.4.25
+# Podchet Kalloriy — единая версия 1.4.26
 
 > Источник правды: файл [`VERSION`](VERSION). После правки запускайте `bash scripts/sync-version.sh`.
 
-Синхронизировано: **2026-07-20**
+Синхронизировано: **2026-08-19**
 
 | Компонент | Версия | Где используется |
 |-----------|--------|------------------|
-| Mobile APK | 1.4.25+36 | `mobile/pubspec.yaml` |
-| Backend API | 1.4.26 | `backend/VERSION` → FastAPI `version` |
-| Backend deploy tag | `v1.4.26-backend` | `backend/deploy/update-from-github.sh` / GitHub Release |
+| Mobile APK | 1.4.26+37 | `mobile/pubspec.yaml` |
+| Backend API | 1.4.27 | `backend/VERSION` → FastAPI `version` |
+| Backend deploy tag | `v1.4.27-backend` | `backend/deploy/update-from-github.sh` / GitHub Release |
+
+## v1.4.26
+
+- Health Data Hub, фаза 1: импорт CSV давления (Citizen), экран АД, API `/api/health/blood-pressure`, контекст АД в чате коуча
+- Mobile 1.4.26+37, backend v1.4.27-backend
 
 ## v1.4.25
 

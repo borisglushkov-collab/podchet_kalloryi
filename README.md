@@ -32,11 +32,13 @@ podchet_kalloryi/
 | [`android-сборки/`](android-сборки/) | `cursor/android-builds-a36d` | APK, скрипты сборки, загрузка на Яндекс.Диск |
 | [`работа с весами/`](работа%20с%20весами/) | `cursor/chat-podchet-kalloryi-a36d` | Health Scale, Futula, BLE-документация |
 
-## Health Data Hub (план)
+## Health Data Hub
 
 Сбор АД, сна, шагов и питания в одном месте для коуча — см. [`docs/health-data-hub/`](docs/health-data-hub/).
 
-Отдельный Cloud Agent: промпт в [`docs/health-data-hub/CLOUD_AGENT_BRIEF.md`](docs/health-data-hub/CLOUD_AGENT_BRIEF.md).
+**Фаза 1 (готово):** импорт CSV давления (Citizen), экран «Давление» (Аналитика → АД / Профиль), контекст АД в чате коуча.
+
+Дальше: Health Connect. Промпт для агента — [`docs/health-data-hub/CLOUD_AGENT_BRIEF.md`](docs/health-data-hub/CLOUD_AGENT_BRIEF.md).
 
 ## Сборка APK + Яндекс.Диск
 

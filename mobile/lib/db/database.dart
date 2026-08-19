@@ -23,7 +23,7 @@ class AppDatabase {
     final path = await _databasePath();
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE user_profile (
@@ -65,6 +65,7 @@ class AppDatabase {
             source TEXT NOT NULL DEFAULT 'manual'
           )
         ''');
+        await _createHealthTables(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -123,8 +124,58 @@ class AppDatabase {
             });
           }
         }
+        if (oldVersion < 4) {
+          await _createHealthTables(db);
+        }
       },
     );
+  }
+
+  static Future<void> _createHealthTables(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS blood_pressure_readings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        measured_at TEXT NOT NULL,
+        systolic INTEGER NOT NULL,
+        diastolic INTEGER NOT NULL,
+        pulse INTEGER,
+        source TEXT NOT NULL DEFAULT 'manual',
+        note TEXT,
+        UNIQUE(measured_at, systolic, diastolic)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sleep_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        start_at TEXT NOT NULL,
+        end_at TEXT NOT NULL,
+        duration_min INTEGER NOT NULL,
+        quality_label TEXT,
+        source TEXT DEFAULT 'health_connect'
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS activity_daily (
+        date TEXT PRIMARY KEY,
+        steps INTEGER,
+        active_minutes INTEGER,
+        calories_burned REAL,
+        synced_at TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS body_composition (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        measured_at TEXT NOT NULL,
+        weight_kg REAL NOT NULL,
+        body_fat_pct REAL,
+        visceral_fat REAL,
+        muscle_kg REAL,
+        bmr_kcal INTEGER,
+        source TEXT
+      )
+    ''');
   }
 
   static Future<UserProfile?> getProfile() async {
@@ -250,6 +301,76 @@ class AppDatabase {
     ));
 
     await saveProfile(profile.copyWith(weightKg: weightKg));
+  }
+
+  static Future<List<BloodPressureReading>> getBloodPressureReadings({
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    if (kIsWeb) return WebDatabase.getBloodPressureReadings(from: from, to: to);
+    final db = await database;
+    final rows = await db.query(
+      'blood_pressure_readings',
+      orderBy: 'measured_at DESC',
+    );
+    var items = rows.map(BloodPressureReading.fromMap).toList();
+    if (from != null) {
+      items = items.where((e) => !e.measuredAt.isBefore(from)).toList();
+    }
+    if (to != null) {
+      items = items.where((e) => !e.measuredAt.isAfter(to)).toList();
+    }
+    return items;
+  }
+
+  static Future<BloodPressureReading?> getLatestBloodPressure() async {
+    final items = await getBloodPressureReadings();
+    return items.isEmpty ? null : items.first;
+  }
+
+  static Future<BloodPressureAverage?> getBloodPressureAverage(int days) async {
+    final cutoff = DateTime.now().subtract(Duration(days: days));
+    final items = await getBloodPressureReadings(from: cutoff);
+    if (items.isEmpty) return null;
+    final sys = items.map((e) => e.systolic).reduce((a, b) => a + b) / items.length;
+    final dia = items.map((e) => e.diastolic).reduce((a, b) => a + b) / items.length;
+    final pulses = items.where((e) => e.pulse != null).map((e) => e.pulse!).toList();
+    return BloodPressureAverage(
+      systolic: sys,
+      diastolic: dia,
+      pulse: pulses.isEmpty ? null : pulses.reduce((a, b) => a + b) / pulses.length,
+      count: items.length,
+    );
+  }
+
+  static Future<bool> addBloodPressureReading(BloodPressureReading reading) async {
+    if (kIsWeb) return WebDatabase.addBloodPressureReading(reading);
+    final db = await database;
+    final id = await db.insert(
+      'blood_pressure_readings',
+      reading.toMap()..remove('id'),
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+    return id != 0;
+  }
+
+  static Future<int> importBloodPressureReadings(
+    List<BloodPressureReading> readings,
+  ) async {
+    var created = 0;
+    for (final reading in readings) {
+      if (await addBloodPressureReading(reading)) created += 1;
+    }
+    return created;
+  }
+
+  static Future<void> deleteBloodPressureReading(int id) async {
+    if (kIsWeb) {
+      await WebDatabase.deleteBloodPressureReading(id);
+      return;
+    }
+    final db = await database;
+    await db.delete('blood_pressure_readings', where: 'id = ?', whereArgs: [id]);
   }
 
   static String formatDateForDb(DateTime date) =>

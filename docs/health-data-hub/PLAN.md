@@ -38,28 +38,28 @@
 
 ### Фаза 0 — спецификация (2–3 дня)
 
-- [ ] JSON-схема `DailyHealthSnapshot` (см. `schemas/daily_health_snapshot.json`)
-- [ ] Таблицы SQLite: `blood_pressure`, `sleep_sessions`, `activity_daily`, `body_composition`
+- [x] JSON-схема `DailyHealthSnapshot` (см. `schemas/daily_health_snapshot.json`)
+- [x] Таблицы SQLite: `blood_pressure`, `sleep_sessions`, `activity_daily`, `body_composition`
 - [ ] API контракт: `POST /api/health/sync`, `GET /api/health/day/{date}`
 
 ### Фаза 1 — ручной ввод + CSV (1 неделя)
 
 **Backend**
 
-- [ ] `POST /api/health/blood-pressure` — одна запись
-- [ ] `POST /api/health/blood-pressure/import-csv` — формат как Citizen export (`Дата,Время,Сис,Диа,Пульс,...`)
-- [ ] `GET /api/health/blood-pressure/summary?days=7|30`
+- [x] `POST /api/health/blood-pressure` — одна запись
+- [x] `POST /api/health/blood-pressure/import-csv` — формат как Citizen export (`Дата,Время,Сис,Диа,Пульс,...`)
+- [x] `GET /api/health/blood-pressure/summary?days=7|30`
 
 **Mobile**
 
-- [ ] Экран «Давление»: последнее, среднее за 7/30 дней, мини-график
-- [ ] Импорт CSV из файла (Android `file_picker`)
-- [ ] Быстрый ввод: систол / диастол / пульс / время
+- [x] Экран «Давление»: последнее, среднее за 7/30 дней, мини-график
+- [x] Импорт CSV из файла (Android `file_picker`)
+- [x] Быстрый ввод: систол / диастол / пульс / время
 
 **Коуч**
 
-- [ ] Расширить `CoachChatRequest`: блок `health_context` (АД утро, сон, шаги)
-- [ ] Обновить `coach_chat_prompt.py`: учёт гипертонии, соли, алкоголя
+- [x] Расширить `CoachChatRequest`: блок `health_context` (АД утро, сон, шаги)
+- [x] Обновить `coach_chat_prompt.py`: учёт гипертонии, соли, алкоголя
 
 ### Фаза 2 — Health Connect (Android, 1–1.5 недели)
 
@@ -157,8 +157,8 @@
 
 ## Следующий шаг для разработки
 
-1. Создать ветку `cursor/health-data-hub-985a` (или продолжить её)
-2. Реализовать **Фазу 1**: таблицы + CSV import + экран давления
-3. Запустить **отдельный Cloud Agent** с `CLOUD_AGENT_BRIEF.md`
+1. Фаза 1 реализована на ветке `cursor/health-data-hub-985a`
+2. Дальше **Фаза 2**: Health Connect (шаги + сон из Mi Fitness)
+3. Затем дашборд «День здоровья» и кнопка экспорта отчёта
 
 См. также: `ARCHITECTURE.md`, `schemas/daily_health_snapshot.json`.

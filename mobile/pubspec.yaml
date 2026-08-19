@@ -1,7 +1,7 @@
 name: podchet_kalloriy
 description: Приложение подсчёта калорий с ИИ-рекомендациями
 publish_to: 'none'
-version: 1.4.25+36
+version: 1.4.26+37
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -26,6 +26,7 @@ dependencies:
   mobile_scanner: ^6.0.2
   image_picker: ^1.1.2
   flutter_blue_plus: ^1.35.5
+  file_picker: ^8.1.7
   pp_bluetooth_kit_flutter:
     git:
       url: https://github.com/LefuHengqi/pp_bluetooth_kit_flutter.git

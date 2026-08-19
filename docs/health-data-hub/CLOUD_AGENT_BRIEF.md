@@ -7,33 +7,23 @@
 ## Промпт для нового агента
 
 ```
-Задача: реализовать Health Data Hub в приложении Podchet Kalloriy.
+Задача: Health Data Hub, Фаза 2 — Health Connect (Android).
 
-Контекст:
-- Flutter mobile/ + Python backend/
-- Уже есть: дневник еды, coach-chat (/api/coach-chat), весы LeFu BLE
-- Нужно: сбор АД, сна, шагов, веса в одном месте для коучинга
+Фаза 1 уже в ветке cursor/health-data-hub-985a:
+- SQLite blood_pressure_readings, CSV Citizen, экран АД, API /api/health/blood-pressure
+- coach health_context (АД)
 
-Прочитай план:
-- docs/health-data-hub/PLAN.md
-- docs/health-data-hub/ARCHITECTURE.md
-- docs/health-data-hub/schemas/daily_health_snapshot.json
+Сделай Фазу 2 по docs/health-data-hub/PLAN.md и ARCHITECTURE.md:
+1. pub package health (или health_connect), разрешения Android 14+
+2. Читать шаги и сон из Health Connect (Mi Fitness → HC)
+3. Таблицы sleep_sessions / activity_daily уже есть — заполнять их
+4. Показать шаги/сон на экране АД или отдельном блоке
+5. Передавать sleep_last_night_min и steps_today в health_context коуча
+6. Онбординг: «В Mi Fitness включите Health Connect: шаги, сон, пульс»
 
-Начни с Фазы 1 (MVP):
-1. SQLite таблицы blood_pressure_readings (+ миграция)
-2. Парсер CSV Citizen (формат: Дата,Время,Сис,Диа,Пульс,...)
-3. Backend endpoints POST/GET blood-pressure
-4. Flutter экран списка + импорт CSV + мини-график 7 дней
-5. Расширить coach_chat_prompt.py — health_context (АД, сон когда появится)
+Не делать: прямой API Xiaomi/Mi Fit, интеграцию Yazio, POST /api/coach-health-chat.
 
-Пользователь: мужчина 41–42, 165 см, ~109 кг, гипертония Edarbi 80,
-рабочие цели: 1900–2100 kcal, Б 120–140, соль/диастол критичны.
-
-Не делать: прямой API Mi Fit/Xiaomi, интеграцию Yazio.
-
-После Фазы 1 — Health Connect на Android (шаги, сон из Mi Fitness).
-
-Коммиты на ветку cursor/health-data-hub-985a, PR в main.
+Коммиты на cursor/health-data-hub-985a, PR в main.
 ```
 
 ---

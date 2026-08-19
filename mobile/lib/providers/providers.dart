@@ -8,8 +8,9 @@ import '../services/food_lookup_service.dart';
 import '../services/nutrition_calculator.dart';
 import '../services/weight_analysis.dart';
 
-final weightEntriesProvider = FutureProvider<List<WeightEntry>>((ref) async {
-  return AppDatabase.getWeightEntries();
+final bloodPressureReadingsProvider =
+    FutureProvider<List<BloodPressureReading>>((ref) async {
+  return AppDatabase.getBloodPressureReadings();
 });
 
 final apiServiceProvider = Provider((ref) => ApiService());

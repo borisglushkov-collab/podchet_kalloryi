@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -28,6 +28,8 @@ from ai_food_search_service import (
     format_ai_error,
 )
 from barcode_service import lookup_barcode
+from blood_pressure_csv import CsvImportError, parse_citizen_csv
+from blood_pressure_store import store as bp_store
 from coach_chat_fallback import build_coach_chat_fallback
 from coach_chat_prompt import COACH_CHAT_SYSTEM_PROMPT, build_coach_chat_prompt
 from cursor_client import CursorClient
@@ -136,6 +138,25 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class HealthContext(BaseModel):
+    blood_pressure_latest: dict | None = None
+    blood_pressure_avg_7d: dict | None = None
+    sleep_last_night_min: int | None = None
+    steps_today: int | None = None
+    weight_latest_kg: float | None = None
+    medications: list[str] = Field(default_factory=list)
+    coaching_targets: dict | None = None
+
+
+class BloodPressureReadingIn(BaseModel):
+    measured_at: str | None = None
+    systolic: int
+    diastolic: int
+    pulse: int | None = None
+    source: str = "manual"
+    note: str | None = None
+
+
 class CoachChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] = Field(default_factory=list)
@@ -148,6 +169,7 @@ class CoachChatRequest(BaseModel):
     profile_context: ProfileContext | None = None
     weight_context: dict | None = None
     diary_entries: list[DiaryEntry] = Field(default_factory=list)
+    health_context: HealthContext | None = None
 
 
 class CoachChatResponse(BaseModel):
@@ -170,6 +192,10 @@ async def root():
             "analyze_food_image": "POST /api/analyze-food-image",
             "suggest_meal": "POST /api/suggest-meal",
             "coach_chat": "POST /api/coach-chat",
+            "blood_pressure": "POST /api/health/blood-pressure",
+            "blood_pressure_import": "POST /api/health/blood-pressure/import-csv",
+            "blood_pressure_list": "GET /api/health/blood-pressure",
+            "blood_pressure_summary": "GET /api/health/blood-pressure/summary",
             "reset_session": "POST /api/reset-session",
             "docs": "GET /docs",
         },
@@ -454,6 +480,9 @@ async def coach_chat(request: CoachChatRequest):
     ]
 
     diary_payload = [e.model_dump() for e in request.diary_entries]
+    health_payload = (
+        request.health_context.model_dump() if request.health_context else None
+    )
     user_prompt = build_coach_chat_prompt(
         message,
         history=history,
@@ -468,6 +497,7 @@ async def coach_chat(request: CoachChatRequest):
         ),
         weight_insight=" ".join(weight_insight_parts),
         diary_entries=diary_payload,
+        health_context=health_payload,
     )
 
     # Fail over quickly: Cursor agents often hang ~60s on this VPS.
@@ -498,6 +528,60 @@ async def coach_chat(request: CoachChatRequest):
         diary_entries=diary_payload,
     )
     return CoachChatResponse(reply=reply)
+
+
+@app.post("/api/health/blood-pressure")
+async def add_blood_pressure(reading: BloodPressureReadingIn):
+    try:
+        item, created = bp_store.add(reading.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"item": item, "created": created}
+
+
+@app.post("/api/health/blood-pressure/import-csv")
+async def import_blood_pressure_csv(request: Request):
+    content_type = (request.headers.get("content-type") or "").lower()
+    raw = ""
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        upload = form.get("file")
+        if upload is None:
+            raise HTTPException(status_code=400, detail="Передайте CSV файл")
+        data = await upload.read()
+        raw = data.decode("utf-8-sig") if isinstance(data, bytes) else str(data)
+    else:
+        body = await request.json()
+        raw = str((body or {}).get("csv") or "")
+    if not raw.strip():
+        raise HTTPException(status_code=400, detail="Передайте CSV файл или поле csv")
+    try:
+        parsed = parse_citizen_csv(raw)
+    except CsvImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    stored = bp_store.add_many(parsed["readings"])
+    return {
+        "created": stored["created"],
+        "skipped_duplicates": stored["skipped_duplicates"] + parsed["skipped_duplicates"],
+        "parse_errors": parsed["errors"],
+        "imported": stored["created"],
+    }
+
+
+@app.get("/api/health/blood-pressure")
+async def list_blood_pressure(
+    from_: str | None = Query(None, alias="from"),
+    to: str | None = None,
+):
+    items = bp_store.list(from_date=from_, to_date=to)
+    return {"count": len(items), "items": items}
+
+
+@app.get("/api/health/blood-pressure/summary")
+async def blood_pressure_summary(days: int = 7):
+    if days not in (7, 30):
+        days = 30 if days > 7 else 7
+    return bp_store.summary(days)
 
 
 @app.post("/api/reset-session")

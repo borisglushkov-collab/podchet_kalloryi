@@ -104,6 +104,7 @@ class ApiService {
     UserProfile? profile,
     WeightAnalysis? weightAnalysis,
     List<Map<String, dynamic>> diaryEntries = const [],
+    Map<String, dynamic>? healthContext,
   }) async {
     final baseUrl = await SettingsService.getBackendUrl();
     final response = await _dio.post(
@@ -124,6 +125,7 @@ class ApiService {
         if (weightAnalysis != null && weightAnalysis.hasData)
           'weight_context': weightAnalysis.toApiJson(),
         if (diaryEntries.isNotEmpty) 'diary_entries': diaryEntries,
+        if (healthContext != null) 'health_context': healthContext,
       },
     );
     return (response.data['reply'] as String?)?.trim() ?? '';

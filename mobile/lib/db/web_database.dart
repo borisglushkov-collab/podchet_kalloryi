@@ -128,4 +128,68 @@ class WebDatabase {
     entries.removeWhere((e) => e.id == id);
     await _saveWeightEntries(entries);
   }
+
+  static const _bpKey = 'blood_pressure_readings';
+
+  static Future<List<BloodPressureReading>> getBloodPressureReadings({
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    final prefs = await _prefs;
+    final raw = prefs.getString(_bpKey);
+    if (raw == null) return [];
+    final list = jsonDecode(raw) as List<dynamic>;
+    var items = list
+        .map((e) => BloodPressureReading.fromMap(e as Map<String, dynamic>))
+        .toList()
+      ..sort((a, b) => b.measuredAt.compareTo(a.measuredAt));
+    if (from != null) {
+      items = items.where((e) => !e.measuredAt.isBefore(from)).toList();
+    }
+    if (to != null) {
+      items = items.where((e) => !e.measuredAt.isAfter(to)).toList();
+    }
+    return items;
+  }
+
+  static Future<void> _saveBloodPressure(List<BloodPressureReading> items) async {
+    final prefs = await _prefs;
+    await prefs.setString(
+      _bpKey,
+      jsonEncode(items.map((e) => e.toMap()).toList()),
+    );
+  }
+
+  static Future<bool> addBloodPressureReading(BloodPressureReading reading) async {
+    final items = await getBloodPressureReadings();
+    final exists = items.any(
+      (e) =>
+          e.measuredAt == reading.measuredAt &&
+          e.systolic == reading.systolic &&
+          e.diastolic == reading.diastolic,
+    );
+    if (exists) return false;
+    final nextId = items.isEmpty
+        ? 1
+        : items.map((e) => e.id ?? 0).reduce((a, b) => a > b ? a : b) + 1;
+    items.add(
+      BloodPressureReading(
+        id: nextId,
+        measuredAt: reading.measuredAt,
+        systolic: reading.systolic,
+        diastolic: reading.diastolic,
+        pulse: reading.pulse,
+        source: reading.source,
+        note: reading.note,
+      ),
+    );
+    await _saveBloodPressure(items);
+    return true;
+  }
+
+  static Future<void> deleteBloodPressureReading(int id) async {
+    final items = await getBloodPressureReadings();
+    items.removeWhere((e) => e.id == id);
+    await _saveBloodPressure(items);
+  }
 }

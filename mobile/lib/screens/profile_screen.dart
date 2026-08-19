@@ -8,6 +8,7 @@ import '../services/nutrition_calculator.dart';
 import '../theme/app_theme.dart';
 import '../widgets/health_scale_card.dart';
 import 'weight_tracker_screen.dart';
+import 'blood_pressure_screen.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   final bool embedded;
@@ -529,6 +530,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const WeightTrackerScreen()),
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    _SoftListRow(
+                      icon: Icons.favorite_outline,
+                      title: 'Давление',
+                      subtitle: 'CSV Citizen, график 7/30 дней',
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const BloodPressureScreen()),
                       ),
                     ),
                     const Divider(height: 1),
