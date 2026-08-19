@@ -196,18 +196,22 @@ class MiFitnessClient:
         return items
 
     async def get_today_summary(self) -> dict[str, Any]:
-        today = date.today()
-        yesterday = today - timedelta(days=1)
-        result: dict[str, Any] = {"date": today.isoformat()}
+        return await self.get_day_summary(date.today())
+
+    async def get_day_summary(self, target_date: date) -> dict[str, Any]:
+        """Fetch Mi Fitness metrics for a specific calendar day."""
+        prev = target_date - timedelta(days=1)
+        result: dict[str, Any] = {"date": target_date.isoformat()}
 
         for key in ("steps", "sleep", "weight", "heart_rate", "blood_pressure"):
             try:
-                start = yesterday if key == "sleep" else today
-                items = await self.fetch_key(key, start, today)
+                # Sleep often spans midnight: include previous night when querying a day.
+                start = prev if key == "sleep" else target_date
+                items = await self.fetch_key(key, start, target_date)
                 result[key] = items
-                logger.info("Mi Fitness %s: %d items", key, len(items))
+                logger.info("Mi Fitness %s (%s): %d items", key, target_date.isoformat(), len(items))
             except Exception as exc:
-                logger.warning("Mi Fitness fetch %s failed: %s", key, exc)
+                logger.warning("Mi Fitness fetch %s (%s) failed: %s", key, target_date.isoformat(), exc)
                 result[key] = []
 
         return result

@@ -586,8 +586,9 @@ function parseCitizenCsv(text) {
 }
 
 document.getElementById("date").value = state.date;
-document.getElementById("date").addEventListener("change", (e) => {
+document.getElementById("date").addEventListener("change", async (e) => {
   state.date = e.target.value || todayIso();
+  await loadServerDay(true);
   render();
 });
 document.querySelectorAll(".tabs button").forEach((btn) => {
@@ -698,12 +699,21 @@ async function xiaomiSetTokens() {
   }
 }
 
-async function loadServerDay() {
+async function loadServerDay(autoCollect = false) {
   try {
     const r = await fetch(`/api/health/day/${state.date}`);
     if (!r.ok) return;
     const data = await r.json();
     const snap = data.snapshot || {};
+    if (autoCollect && !snap.generated_at && state.date <= todayIso()) {
+      toast("Загружаю данные за этот день…");
+      try {
+        await fetch(`/api/health/collect-now?date=${encodeURIComponent(state.date)}`, { method: "POST" });
+        return loadServerDay(false);
+      } catch {
+        /* offline */
+      }
+    }
     const d = day();
     if (snap.steps?.count != null && (d.steps == null || snap.source === "mi_fitness_auto")) d.steps = snap.steps.count;
     if (snap.sleep?.total_min != null && (d.sleep_min == null || snap.source === "mi_fitness_auto")) d.sleep_min = snap.sleep.total_min;

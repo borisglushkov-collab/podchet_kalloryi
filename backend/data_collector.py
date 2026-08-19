@@ -51,6 +51,39 @@ def _parse_value(item: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _record_date_iso(record: dict[str, Any]) -> str | None:
+    """Best-effort extract YYYY-MM-DD from a vendor record."""
+    for key in ("measured_at", "date", "createTime", "create_time", "time", "timestamp"):
+        val = record.get(key)
+        if val is None and isinstance(record.get("bodyData"), dict):
+            val = record["bodyData"].get(key)
+        if val is None:
+            continue
+        if isinstance(val, (int, float)):
+            ts = float(val)
+            if ts > 1_000_000_000_000:
+                ts /= 1000.0
+            try:
+                return datetime.fromtimestamp(ts, tz=timezone.utc).date().isoformat()
+            except (OSError, OverflowError, ValueError):
+                continue
+        text = str(val).strip()
+        if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+            return text[:10]
+    return None
+
+
+def _filter_scale_for_date(records: list[dict[str, Any]], target_date: date) -> list[dict[str, Any]]:
+    iso = target_date.isoformat()
+    matched = [r for r in records if _record_date_iso(r) == iso]
+    return matched or records
+
+
+def _filter_medm_for_date(readings: list[dict[str, Any]], target_date: date) -> list[dict[str, Any]]:
+    iso = target_date.isoformat()
+    return [r for r in readings if str(r.get("measured_at") or "").startswith(iso)]
+
+
 def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any]:
     """Convert raw Mi Fitness API items into our day-snapshot format."""
     snap: dict[str, Any] = {"date": target_date.isoformat()}
@@ -227,10 +260,11 @@ async def _get_tokens() -> XiaomiTokens | None:
         return None
 
 
-async def collect_once() -> dict[str, Any]:
-    """Run one collection cycle. Returns the saved snapshot or error dict."""
+async def collect_for_date(target_date: date | None = None) -> dict[str, Any]:
+    """Run one collection cycle for a specific day. Defaults to today."""
     global _last_result, _last_error
 
+    day = target_date or date.today()
     tokens = await _get_tokens()
     if not tokens:
         _last_error = "No Xiaomi credentials configured"
@@ -239,7 +273,7 @@ async def collect_once() -> dict[str, Any]:
     client = MiFitnessClient(tokens, region=_REGION)
     try:
         await client.connect()
-        raw = await client.get_today_summary()
+        raw = await client.get_day_summary(day)
     except Exception as exc:
         _last_error = f"Mi Fitness API error: {exc}"
         logger.error(_last_error)
@@ -251,47 +285,66 @@ async def collect_once() -> dict[str, Any]:
         await home_client.connect()
         scale_data = await home_client.get_scale_data(model="yunmai.scales.ms104")
         if scale_data:
-            raw["weight_home"] = scale_data
-            logger.info("Xiaomi Home scale: %d records", len(scale_data))
+            raw["weight_home"] = _filter_scale_for_date(scale_data, day)
+            logger.info("Xiaomi Home scale (%s): %d records", day.isoformat(), len(raw["weight_home"]))
     except Exception as exc:
         logger.warning("Xiaomi Home scale fetch failed: %s", exc)
 
     # Try MedM BP
     try:
         from medm_bp import fetch_bp_readings
-        bp_readings = await fetch_bp_readings(limit=20)
-        if bp_readings:
-            raw["medm_bp"] = bp_readings
-            logger.info("MedM BP: %d readings", len(bp_readings))
+        bp_readings = await fetch_bp_readings(limit=50)
+        bp_for_day = _filter_medm_for_date(bp_readings, day)
+        if bp_for_day:
+            raw["medm_bp"] = bp_for_day
+            logger.info("MedM BP (%s): %d readings", day.isoformat(), len(bp_for_day))
     except Exception as exc:
         logger.warning("MedM BP fetch failed: %s", exc)
 
     # Try FatSecret food diary
     try:
-        from fatsecret_client import fetch_food_entries_today
-        food_entries = fetch_food_entries_today()
+        from fatsecret_client import fetch_food_entries_for_date
+        food_entries = fetch_food_entries_for_date(day)
         if food_entries:
             raw["fatsecret_food"] = food_entries
-            logger.info("FatSecret: %d food entries", len(food_entries))
+            logger.info("FatSecret (%s): %d food entries", day.isoformat(), len(food_entries))
     except Exception as exc:
         logger.warning("FatSecret fetch failed: %s", exc)
 
-    today = date.today()
-    snapshot = _normalize_snapshot(raw, today)
+    snapshot = _normalize_snapshot(raw, day)
     try:
         saved = day_store.upsert(snapshot)
     except ValueError as exc:
         _last_error = f"Store error: {exc}"
         return {"error": _last_error}
 
-    _last_error = None
-    _last_result = {
-        "date": today.isoformat(),
-        "collected_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
-        "keys": [k for k in ("steps", "sleep", "weight", "heart_rate", "blood_pressure") if k in snapshot],
-    }
-    logger.info("Data collected: %s", _last_result)
+    if day == date.today():
+        _last_error = None
+        _last_result = {
+            "date": day.isoformat(),
+            "collected_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            "keys": [k for k in ("steps", "sleep", "weight", "heart_rate", "blood_pressure", "nutrition") if k in snapshot],
+        }
+        logger.info("Data collected: %s", _last_result)
+    else:
+        logger.info("Backfilled data for %s: keys=%s", day.isoformat(), list(snapshot.keys()))
     return saved
+
+
+async def collect_once() -> dict[str, Any]:
+    """Run one collection cycle for today."""
+    return await collect_for_date(date.today())
+
+
+async def backfill_days(days: int = 7) -> list[dict[str, Any]]:
+    """Collect and store snapshots for today and previous days."""
+    results: list[dict[str, Any]] = []
+    today = date.today()
+    for offset in range(days):
+        target = today - timedelta(days=offset)
+        result = await collect_for_date(target)
+        results.append({"date": target.isoformat(), "ok": "error" not in result, "keys": list(result.keys()) if "error" not in result else [], "error": result.get("error")})
+    return results
 
 
 async def _loop() -> None:

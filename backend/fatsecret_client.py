@@ -211,15 +211,16 @@ def _get_client() -> Fatsecret | None:
     )
 
 
-def fetch_food_entries_today() -> list[dict[str, Any]]:
-    """Fetch today's food diary entries."""
+def fetch_food_entries_for_date(target_date: date | None = None) -> list[dict[str, Any]]:
+    """Fetch food diary entries for a specific day (default: today)."""
     fs = _get_client()
     if not fs:
         return []
+    d = target_date or date.today()
     try:
         # В текущей версии библиотеки дневник находится в `fs.diary.*`
         # `entries_get_v2` возвращает список entries за указанную дату.
-        entries = fs.diary.entries_get_v2(date=date.today())
+        entries = fs.diary.entries_get_v2(date=d)
         if not entries:
             return []
         if not isinstance(entries, list):
@@ -228,6 +229,11 @@ def fetch_food_entries_today() -> list[dict[str, Any]]:
     except Exception as exc:
         logger.warning("FatSecret food_entries_get failed: %s", exc)
         return []
+
+
+def fetch_food_entries_today() -> list[dict[str, Any]]:
+    """Fetch today's food diary entries."""
+    return fetch_food_entries_for_date(date.today())
 
 
 def fetch_food_month(target_date: date | None = None) -> list[dict[str, Any]]:

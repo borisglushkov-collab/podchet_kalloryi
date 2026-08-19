@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import date as Date
 from pathlib import Path
 from typing import Optional
 
@@ -39,7 +40,7 @@ from coach_health_fallback import build_coach_health_fallback
 from coach_health_prompt import COACH_HEALTH_SYSTEM_PROMPT, build_coach_health_prompt
 from coach_health_report import format_day_report
 from cursor_client import CursorClient
-from data_collector import collect_once, collector_status, start_collector, stop_collector
+from data_collector import backfill_days, collect_for_date, collect_once, collector_status, start_collector, stop_collector
 from food_search_service import search_food
 from food_vision_service import FoodVisionNotConfiguredError, analyze_food_image
 from nutrition_prompt import (
@@ -759,11 +760,24 @@ async def xiaomi_set_tokens(request: XiaomiTokensRequest):
 
 
 @app.post("/api/health/collect-now")
-async def collect_now():
-    result = await collect_once()
+async def collect_now(target_date: str | None = Query(None, alias="date")):
+    day = None
+    if target_date:
+        try:
+            day = Date.fromisoformat(target_date)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
+    result = await collect_for_date(day)
     if "error" in result:
         raise HTTPException(status_code=502, detail=result["error"])
     return result
+
+
+@app.post("/api/health/backfill")
+async def backfill(days: int = 7):
+    if days < 1 or days > 31:
+        raise HTTPException(status_code=400, detail="days must be between 1 and 31")
+    return {"results": await backfill_days(days)}
 
 
 @app.get("/api/health/collector-status")
