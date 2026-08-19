@@ -786,6 +786,14 @@ async function fatsecretVerify() {
     if (!r.ok) { toast(data.detail || "Ошибка"); return; }
     toast("FatSecret подключён!");
     state.fatsecretSession = null;
+    // Подтягиваем данные сразу после успешного OAuth,
+    // чтобы "Еда" появилась без перезагрузки страницы.
+    try {
+      await fetch("/api/health/collect-now", { method: "POST" });
+    } catch {
+      /* ignore offline */
+    }
+    await loadServerDay();
     render();
   } catch (err) {
     toast("Ошибка: " + err.message);
