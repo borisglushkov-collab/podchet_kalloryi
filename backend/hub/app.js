@@ -78,16 +78,17 @@ function normalizeNutritionItem(it) {
   };
 }
 
-function shouldImportNutritionFromServer(d, nutrition, force) {
-  if (force) return true;
-  if (!nutrition?.meals?.length) return false;
-  if (nutrition.source === "fatsecret") return true;
-  return countNutritionItems(nutrition) > (d.meals?.length || 0);
-}
-
 function importNutritionMeals(d, nutrition, force = false) {
   const n = nutrition || {};
-  if (!shouldImportNutritionFromServer(d, n, force)) return;
+  const incomingCount = countNutritionItems(n);
+  if (incomingCount === 0) return;
+
+  const shouldReplace =
+    force ||
+    n.source === "fatsecret" ||
+    incomingCount > (d.meals?.length || 0);
+  if (!shouldReplace) return;
+
   d.meals = [];
   for (const m of n.meals) {
     const mt = String(m.meal_type || "snack").toLowerCase();
@@ -874,7 +875,7 @@ async function loadServerDay(options = false) {
     }
     applySnapshotToDay(day(), snap, { force });
     saveJson(STORAGE_DAYS, state.days);
-    if (!force) render();
+    render();
     return true;
   } catch {
     return false;
@@ -905,7 +906,10 @@ function summarizeCollectedSnapshot(snap) {
   const steps = snap.steps?.count ?? snap.activity?.steps;
   if (steps != null) parts.push(`шаги ${steps}`);
   const mealCount = (snap.nutrition?.meals || []).reduce((n, m) => n + (m.items?.length || 0), 0);
-  if (mealCount) parts.push(`еда ${mealCount}`);
+  const mealKcal = snap.nutrition?.calories;
+  if (mealCount) {
+    parts.push(mealKcal ? `еда ${mealCount} (${Math.round(mealKcal)} ккал)` : `еда ${mealCount}`);
+  }
   const bpCount = snap.blood_pressure?.readings_today?.length || 0;
   if (bpCount) parts.push(`АД ${bpCount}`);
   const workoutCount = snap.workouts?.length || 0;
@@ -1074,13 +1078,16 @@ async function medmLogin() {
   }
 }
 
-fetchCollectorStatus();
-loadServerDay();
+async function boot() {
+  await fetchCollectorStatus();
+  await loadServerDay();
+  render();
+}
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js?v=4").then((reg) => {
+  navigator.serviceWorker.register("sw.js?v=5").then((reg) => {
     reg.update().catch(() => {});
   }).catch(() => {});
 }
 
-render();
+boot();

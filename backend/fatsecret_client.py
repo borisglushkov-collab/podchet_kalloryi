@@ -26,14 +26,17 @@ import string
 import time
 import urllib.parse
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import requests
 from fatsecret import Fatsecret
 
 logger = logging.getLogger(__name__)
+
+_USER_TZ = ZoneInfo("Europe/Moscow")
 
 _CREDS_PATH = Path(__file__).resolve().parent / "data" / "fatsecret_tokens.json"
 
@@ -211,12 +214,17 @@ def _get_client() -> Fatsecret | None:
     )
 
 
+def user_local_date() -> date:
+    """FatSecret diary dates follow the user's local day (Europe/Moscow)."""
+    return datetime.now(_USER_TZ).date()
+
+
 def fetch_food_entries_for_date(target_date: date | None = None) -> list[dict[str, Any]]:
-    """Fetch food diary entries for a specific day (default: today)."""
+    """Fetch food diary entries for a specific day (default: today in Europe/Moscow)."""
     fs = _get_client()
     if not fs:
         return []
-    d = target_date or date.today()
+    d = target_date or user_local_date()
     try:
         # В текущей версии библиотеки дневник находится в `fs.diary.*`
         # `entries_get_v2` возвращает список entries за указанную дату.
@@ -232,8 +240,8 @@ def fetch_food_entries_for_date(target_date: date | None = None) -> list[dict[st
 
 
 def fetch_food_entries_today() -> list[dict[str, Any]]:
-    """Fetch today's food diary entries."""
-    return fetch_food_entries_for_date(date.today())
+    """Fetch today's food diary entries (Europe/Moscow)."""
+    return fetch_food_entries_for_date(user_local_date())
 
 
 def fetch_food_month(target_date: date | None = None) -> list[dict[str, Any]]:
@@ -242,7 +250,7 @@ def fetch_food_month(target_date: date | None = None) -> list[dict[str, Any]]:
     if not fs:
         return []
     try:
-        d = target_date or date.today()
+        d = target_date or user_local_date()
         # v2: entries_get_month_v2(date_int) — если передать None, вернёт текущий месяц.
         # Мы пока используем его без точной валидации date_int (PWA сейчас не требует month-таблицу).
         days = fs.diary.entries_get_month_v2(date=None)
