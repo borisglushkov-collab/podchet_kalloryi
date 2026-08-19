@@ -60,6 +60,85 @@ function applyBodyComposition(d, w) {
   d.body_composition = bc;
 }
 
+function importNutritionMeals(d, nutrition, force = false) {
+  const n = nutrition || {};
+  if (!Array.isArray(n.meals) || !n.meals.length) return;
+  if (!force && Array.isArray(d.meals) && d.meals.length) return;
+  d.meals = [];
+  for (const m of n.meals) {
+    const mt = String(m.meal_type || "snack").toLowerCase();
+    const items = Array.isArray(m.items) ? m.items : [];
+    for (const it of items) {
+      if (!it || !it.name) continue;
+      d.meals.push({
+        meal_type: mt,
+        name: it.name,
+        grams: it.grams ?? 0,
+        calories: it.calories ?? 0,
+        protein: it.protein ?? 0,
+        fat: it.fat ?? 0,
+        carbs: it.carbs ?? 0,
+      });
+    }
+  }
+}
+
+function applySnapshotToDay(d, snap, { force = false } = {}) {
+  if (snap.steps?.count != null && (force || d.steps == null || snap.source === "mi_fitness_auto")) {
+    d.steps = snap.steps.count;
+  }
+  if (snap.sleep?.total_min != null && (force || d.sleep_min == null || snap.source === "mi_fitness_auto")) {
+    d.sleep_min = snap.sleep.total_min;
+  }
+  if (snap.weight?.kg != null && (force || d.weight_kg == null || snap.weight.source === "xiaomi_home")) {
+    applyBodyComposition(d, snap.weight);
+  }
+  if (snap.heart_rate && (force || !d.heart_rate)) d.heart_rate = snap.heart_rate;
+  if (force) {
+    d.workouts = Array.isArray(snap.workouts) ? snap.workouts : [];
+  } else if (Array.isArray(snap.workouts) && snap.workouts.length && !d.workouts?.length) {
+    d.workouts = snap.workouts;
+  }
+
+  if (force && Array.isArray(snap.blood_pressure?.readings_today) && snap.blood_pressure.readings_today.length) {
+    d.bp = snap.blood_pressure.readings_today.map((r) => ({
+      systolic: r.systolic,
+      diastolic: r.diastolic,
+      pulse: r.pulse,
+      measured_at: r.measured_at,
+      source: r.source || "auto",
+    }));
+  } else {
+    if (snap.blood_pressure?.latest) {
+      const bp = snap.blood_pressure.latest;
+      if (bp.systolic && bp.diastolic && !d.bp.length) {
+        d.bp.push({
+          systolic: bp.systolic,
+          diastolic: bp.diastolic,
+          pulse: bp.pulse,
+          measured_at: bp.measured_at || new Date().toISOString(),
+          source: bp.source || "auto",
+        });
+      }
+    }
+    if (snap.blood_pressure?.readings_today) {
+      for (const r of snap.blood_pressure.readings_today) {
+        if (r.systolic && r.diastolic && !d.bp.some((b) => b.systolic === r.systolic && b.diastolic === r.diastolic && b.measured_at === r.measured_at)) {
+          d.bp.push({
+            systolic: r.systolic,
+            diastolic: r.diastolic,
+            pulse: r.pulse,
+            measured_at: r.measured_at,
+            source: r.source || "auto",
+          });
+        }
+      }
+    }
+  }
+
+  importNutritionMeals(d, snap.nutrition, force);
+}
+
 function fmtNum(v, suffix = "") {
   if (v == null || v === "") return null;
   const n = Number(v);
@@ -145,6 +224,7 @@ const state = {
   collectorStatus: {},
   xiaomi2fa: null,
   fatsecretSession: null,
+  refreshing: false,
 };
 
 function day() {
@@ -396,6 +476,7 @@ function renderToday() {
       </div>
     </div>
     <div class="actions">
+      <button class="btn ghost" id="refresh-data-tab">Обновить данные</button>
       <button class="btn primary" id="copy-report">Скопировать отчёт коучу</button>
       <button class="btn ghost" id="ask-coach">Спросить коуча по этому дню</button>
     </div>
@@ -657,6 +738,7 @@ function bind() {
   });
   document.getElementById("import-csv")?.addEventListener("click", importCsv);
   document.getElementById("collect-now")?.addEventListener("click", collectNow);
+  document.getElementById("refresh-data-tab")?.addEventListener("click", refreshData);
   document.getElementById("xi-login")?.addEventListener("click", xiaomiLogin);
   document.getElementById("xi-verify")?.addEventListener("click", xiaomiVerify);
   document.getElementById("xi-tokens")?.addEventListener("click", xiaomiSetTokens);
@@ -730,6 +812,7 @@ document.getElementById("date").addEventListener("change", async (e) => {
   await loadServerDay(true);
   render();
 });
+document.getElementById("refresh-data")?.addEventListener("click", refreshData);
 document.querySelectorAll(".tabs button").forEach((btn) => {
   btn.addEventListener("click", () => {
     state.tab = btn.dataset.tab;
@@ -745,28 +828,69 @@ async function fetchCollectorStatus() {
   } catch { /* offline */ }
 }
 
-async function collectNow() {
-  toast("Собираю данные из Mi Fitness…");
+async function loadServerDay(options = false) {
+  const opts = typeof options === "boolean" ? { autoCollect: options } : options;
+  const { autoCollect = false, force = false } = opts;
   try {
-    const r = await fetch("/api/health/collect-now", { method: "POST" });
+    const r = await fetch(`/api/health/day/${state.date}`);
+    if (!r.ok) return false;
+    const data = await r.json();
+    const snap = data.snapshot || {};
+    if (autoCollect && !snap.generated_at && state.date <= todayIso()) {
+      toast("Загружаю данные за этот день…");
+      try {
+        await fetch(`/api/health/collect-now?date=${encodeURIComponent(state.date)}`, { method: "POST" });
+        return loadServerDay({ force: false });
+      } catch {
+        /* offline */
+      }
+    }
+    applySnapshotToDay(day(), snap, { force });
+    saveJson(STORAGE_DAYS, state.days);
+    if (!force) render();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function setRefreshBusy(busy) {
+  state.refreshing = busy;
+  for (const id of ["refresh-data", "refresh-data-tab", "collect-now"]) {
+    const btn = document.getElementById(id);
+    if (!btn) continue;
+    btn.disabled = busy;
+    if (id === "refresh-data") btn.textContent = busy ? "…" : "Обновить";
+    if (id === "refresh-data-tab") btn.textContent = busy ? "Обновляю…" : "Обновить данные";
+    if (id === "collect-now") btn.textContent = busy ? "Обновляю…" : "Собрать данные сейчас";
+  }
+}
+
+async function refreshData() {
+  if (state.refreshing) return;
+  setRefreshBusy(true);
+  toast(`Обновляю данные за ${state.date}…`);
+  try {
+    const r = await fetch(`/api/health/collect-now?date=${encodeURIComponent(state.date)}`, { method: "POST" });
     if (!r.ok) {
-      const e = await r.json();
-      toast(e.detail || "Ошибка сбора");
+      const e = await r.json().catch(() => ({}));
+      toast(e.detail || "Ошибка сбора данных");
       return;
     }
-    const snap = await r.json();
-    const d = dayFor(snap.date || todayIso());
-    if (snap.steps?.count != null) d.steps = snap.steps.count;
-    if (snap.sleep?.total_min != null) d.sleep_min = snap.sleep.total_min;
-    if (snap.weight?.kg != null) applyBodyComposition(d, snap.weight);
-    if (Array.isArray(snap.workouts) && snap.workouts.length) d.workouts = snap.workouts;
-    persist();
+    await loadServerDay({ force: true });
     await fetchCollectorStatus();
-    toast("Данные обновлены из Mi Fitness");
+    persist();
+    toast("Данные обновлены");
     render();
   } catch (err) {
     toast("Ошибка: " + err.message);
+  } finally {
+    setRefreshBusy(false);
   }
+}
+
+async function collectNow() {
+  await refreshData();
 }
 
 async function xiaomiLogin() {
@@ -839,71 +963,6 @@ async function xiaomiSetTokens() {
   }
 }
 
-async function loadServerDay(autoCollect = false) {
-  try {
-    const r = await fetch(`/api/health/day/${state.date}`);
-    if (!r.ok) return;
-    const data = await r.json();
-    const snap = data.snapshot || {};
-    if (autoCollect && !snap.generated_at && state.date <= todayIso()) {
-      toast("Загружаю данные за этот день…");
-      try {
-        await fetch(`/api/health/collect-now?date=${encodeURIComponent(state.date)}`, { method: "POST" });
-        return loadServerDay(false);
-      } catch {
-        /* offline */
-      }
-    }
-    const d = day();
-    if (snap.steps?.count != null && (d.steps == null || snap.source === "mi_fitness_auto")) d.steps = snap.steps.count;
-    if (snap.sleep?.total_min != null && (d.sleep_min == null || snap.source === "mi_fitness_auto")) d.sleep_min = snap.sleep.total_min;
-    if (snap.weight?.kg != null) applyBodyComposition(d, snap.weight);
-    if (snap.heart_rate) d.heart_rate = snap.heart_rate;
-    if (Array.isArray(snap.workouts) && snap.workouts.length) d.workouts = snap.workouts;
-    if (snap.blood_pressure?.latest) {
-      const bp = snap.blood_pressure.latest;
-      if (bp.systolic && bp.diastolic && !d.bp.length) {
-        d.bp.push({ systolic: bp.systolic, diastolic: bp.diastolic, pulse: bp.pulse, measured_at: bp.measured_at || new Date().toISOString(), source: bp.source || "auto" });
-      }
-    }
-    if (snap.blood_pressure?.readings_today) {
-      for (const r of snap.blood_pressure.readings_today) {
-        if (r.systolic && r.diastolic && !d.bp.some(b => b.systolic === r.systolic && b.diastolic === r.diastolic && b.measured_at === r.measured_at)) {
-          d.bp.push({ systolic: r.systolic, diastolic: r.diastolic, pulse: r.pulse, measured_at: r.measured_at, source: r.source || "auto" });
-        }
-      }
-    }
-
-    // FatSecret: import nutrition into local day.meals for UI rendering.
-    // UI uses day().meals (not snap.nutrition) to show calories/BJU and the "Еда" list.
-    const n = snap.nutrition || {};
-    if (Array.isArray(n.meals) && n.meals.length) {
-      // Do not overwrite manually added meals if user already has them.
-      if (!Array.isArray(d.meals) || d.meals.length === 0) {
-        d.meals = [];
-        for (const m of n.meals) {
-          const mt = String(m.meal_type || "snack").toLowerCase();
-          const items = Array.isArray(m.items) ? m.items : [];
-          for (const it of items) {
-            if (!it || !it.name) continue;
-            d.meals.push({
-              meal_type: mt,
-              name: it.name,
-              grams: it.grams ?? 0,
-              calories: it.calories ?? 0,
-              protein: it.protein ?? 0,
-              fat: it.fat ?? 0,
-              carbs: it.carbs ?? 0,
-            });
-          }
-        }
-      }
-    }
-    saveJson(STORAGE_DAYS, state.days);
-    render();
-  } catch { /* offline */ }
-}
-
 async function fatsecretConnect() {
   try {
     const r = await fetch("/api/health/fatsecret-auth");
@@ -934,15 +993,7 @@ async function fatsecretVerify() {
     if (!r.ok) { toast(data.detail || "Ошибка"); return; }
     toast("FatSecret подключён!");
     state.fatsecretSession = null;
-    // Подтягиваем данные сразу после успешного OAuth,
-    // чтобы "Еда" появилась без перезагрузки страницы.
-    try {
-      await fetch("/api/health/collect-now", { method: "POST" });
-    } catch {
-      /* ignore offline */
-    }
-    await loadServerDay();
-    render();
+    await refreshData();
   } catch (err) {
     toast("Ошибка: " + err.message);
   }
