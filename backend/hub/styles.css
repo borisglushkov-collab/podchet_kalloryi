@@ -42,6 +42,16 @@ body {
   opacity: 0.6;
   cursor: wait;
 }
+.refresh-status {
+  margin: 4px 0 0;
+  min-height: 16px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+.refresh-status.error {
+  color: var(--danger);
+}
 .eyebrow {
   margin: 0;
   font-size: 12px;

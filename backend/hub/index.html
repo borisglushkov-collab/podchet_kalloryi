@@ -11,13 +11,14 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon.svg" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&display=swap" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=4" />
 </head>
 <body>
   <header class="top">
     <div>
       <p class="eyebrow">Отдельное приложение</p>
       <h1>Сбор для коуча</h1>
+      <p id="refresh-status" class="refresh-status" aria-live="polite"></p>
     </div>
     <div class="top-actions">
       <button class="btn ghost refresh-btn" id="refresh-data" type="button">Обновить</button>
@@ -34,6 +35,6 @@
     <button data-tab="more">Ещё</button>
   </nav>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

@@ -738,7 +738,6 @@ function bind() {
   });
   document.getElementById("import-csv")?.addEventListener("click", importCsv);
   document.getElementById("collect-now")?.addEventListener("click", collectNow);
-  document.getElementById("refresh-data-tab")?.addEventListener("click", refreshData);
   document.getElementById("xi-login")?.addEventListener("click", xiaomiLogin);
   document.getElementById("xi-verify")?.addEventListener("click", xiaomiVerify);
   document.getElementById("xi-tokens")?.addEventListener("click", xiaomiSetTokens);
@@ -812,7 +811,13 @@ document.getElementById("date").addEventListener("change", async (e) => {
   await loadServerDay(true);
   render();
 });
-document.getElementById("refresh-data")?.addEventListener("click", refreshData);
+document.body.addEventListener("click", (e) => {
+  const id = e.target?.id;
+  if (id === "refresh-data" || id === "refresh-data-tab") {
+    e.preventDefault();
+    refreshData();
+  }
+});
 document.querySelectorAll(".tabs button").forEach((btn) => {
   btn.addEventListener("click", () => {
     state.tab = btn.dataset.tab;
@@ -854,6 +859,13 @@ async function loadServerDay(options = false) {
   }
 }
 
+function setRefreshStatus(text, isError = false) {
+  const el = document.getElementById("refresh-status");
+  if (!el) return;
+  el.textContent = text || "";
+  el.classList.toggle("error", Boolean(isError));
+}
+
 function setRefreshBusy(busy) {
   state.refreshing = busy;
   for (const id of ["refresh-data", "refresh-data-tab", "collect-now"]) {
@@ -869,20 +881,27 @@ function setRefreshBusy(busy) {
 async function refreshData() {
   if (state.refreshing) return;
   setRefreshBusy(true);
-  toast(`Обновляю данные за ${state.date}…`);
+  setRefreshStatus(`Сбор данных за ${state.date}… ~10 сек`);
+  toast(`Обновляю ${state.date}…`);
   try {
     const r = await fetch(`/api/health/collect-now?date=${encodeURIComponent(state.date)}`, { method: "POST" });
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
-      toast(e.detail || "Ошибка сбора данных");
+      const msg = e.detail || "Ошибка сбора данных";
+      setRefreshStatus(msg, true);
+      toast(msg);
       return;
     }
+    setRefreshStatus("Загружаю на экран…");
     await loadServerDay({ force: true });
     await fetchCollectorStatus();
     persist();
+    const t = new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+    setRefreshStatus(`Обновлено в ${t}`);
     toast("Данные обновлены");
     render();
   } catch (err) {
+    setRefreshStatus(String(err.message || err), true);
     toast("Ошибка: " + err.message);
   } finally {
     setRefreshBusy(false);
@@ -1022,7 +1041,9 @@ fetchCollectorStatus();
 loadServerDay();
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js").catch(() => {});
+  navigator.serviceWorker.register("sw.js?v=4").then((reg) => {
+    reg.update().catch(() => {});
+  }).catch(() => {});
 }
 
 render();
