@@ -210,7 +210,7 @@ class _BloodPressureScreenState extends ConsumerState<BloodPressureScreen> {
                 color: AppColors.primary,
                 onRefresh: _reload,
                 child: ListView(
-                  padding: EdgeInsets.fromLTRB(16, widget.embedded ? 8 : 8, 16, bottomPad + 72),
+                  padding: EdgeInsets.fromLTRB(16, widget.embedded ? 8 : 8, 16, bottomPad + 140),
                   children: [
                     if (!widget.embedded)
                       Text('Давление', style: Theme.of(context).textTheme.headlineSmall),

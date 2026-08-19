@@ -31,21 +31,19 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: SegmentedButton<int>(
+              showSelectedIcon: false,
               segments: const [
                 ButtonSegment(
                   value: 0,
                   label: Text('Калории'),
-                  icon: Icon(Icons.local_fire_department_outlined, size: 18),
                 ),
                 ButtonSegment(
                   value: 1,
                   label: Text('Вес'),
-                  icon: Icon(Icons.monitor_weight_outlined, size: 18),
                 ),
                 ButtonSegment(
                   value: 2,
                   label: Text('АД'),
-                  icon: Icon(Icons.favorite_outline, size: 18),
                 ),
               ],
               selected: {_tab},
