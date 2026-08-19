@@ -780,18 +780,16 @@ class MedMLoginRequest(BaseModel):
 async def medm_login_endpoint(request: MedMLoginRequest):
     from medm_bp import medm_login
     try:
-        tokens = await medm_login(request.email, request.password)
+        record_id = await medm_login(request.email, request.password)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"status": "ok", "has_token": bool(tokens.auth_token)}
+    return {"status": "ok", "record_id": record_id}
 
 
 @app.get("/api/health/medm-bp")
-async def medm_bp_list(days: int = 7):
+async def medm_bp_list(limit: int = 50):
     from medm_bp import fetch_bp_readings
-    from datetime import date, timedelta
-    since = date.today() - timedelta(days=days)
-    readings = await fetch_bp_readings(since=since)
+    readings = await fetch_bp_readings(limit=limit)
     return {"count": len(readings), "readings": readings}
 
 
