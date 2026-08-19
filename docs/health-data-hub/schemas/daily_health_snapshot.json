@@ -1,0 +1,152 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://podchet.local/schemas/daily_health_snapshot.json",
+  "title": "DailyHealthSnapshot",
+  "description": "Агрегат здоровья и питания за календарный день (локальный экспорт / sync)",
+  "type": "object",
+  "required": ["date", "generated_at"],
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date",
+      "example": "2026-08-19"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "profile": {
+      "type": "object",
+      "properties": {
+        "height_cm": { "type": "number" },
+        "weight_kg_latest": { "type": "number" },
+        "medications": {
+          "type": "array",
+          "items": { "type": "string" },
+          "example": ["Edarbi 80"]
+        },
+        "coaching_calorie_target": {
+          "type": "object",
+          "properties": {
+            "kcal_min": { "type": "integer", "default": 1900 },
+            "kcal_max": { "type": "integer", "default": 2100 },
+            "protein_g": { "type": "integer", "default": 130 },
+            "fat_g_min": { "type": "integer", "default": 55 },
+            "fat_g_max": { "type": "integer", "default": 70 },
+            "carbs_g_min": { "type": "integer", "default": 150 },
+            "carbs_g_max": { "type": "integer", "default": 180 }
+          }
+        }
+      }
+    },
+    "nutrition": {
+      "type": "object",
+      "properties": {
+        "calories": { "type": "number" },
+        "protein_g": { "type": "number" },
+        "fat_g": { "type": "number" },
+        "carbs_g": { "type": "number" },
+        "meals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "meal_type": { "enum": ["breakfast", "lunch", "dinner", "snack"] },
+              "logged_at": { "type": "string", "format": "date-time" },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string" },
+                    "grams": { "type": "number" },
+                    "calories": { "type": "number" },
+                    "protein_g": { "type": "number" },
+                    "fat_g": { "type": "number" },
+                    "carbs_g": { "type": "number" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "blood_pressure": {
+      "type": "object",
+      "properties": {
+        "readings_today": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/bp_reading" }
+        },
+        "latest": { "$ref": "#/definitions/bp_reading" },
+        "avg_7d": {
+          "type": "object",
+          "properties": {
+            "systolic": { "type": "number" },
+            "diastolic": { "type": "number" },
+            "pulse": { "type": "number" }
+          }
+        },
+        "avg_30d": {
+          "type": "object",
+          "properties": {
+            "systolic": { "type": "number" },
+            "diastolic": { "type": "number" }
+          }
+        }
+      }
+    },
+    "activity": {
+      "type": "object",
+      "properties": {
+        "steps": { "type": "integer" },
+        "active_minutes": { "type": "integer" },
+        "calories_burned": { "type": "number" },
+        "source": { "type": "string", "example": "health_connect" }
+      }
+    },
+    "sleep": {
+      "type": "object",
+      "properties": {
+        "duration_min": { "type": "integer" },
+        "start_at": { "type": "string", "format": "date-time" },
+        "end_at": { "type": "string", "format": "date-time" },
+        "quality_label": { "enum": ["poor", "ok", "good", "excellent"] },
+        "source": { "type": "string" }
+      }
+    },
+    "body_composition": {
+      "type": "object",
+      "properties": {
+        "weight_kg": { "type": "number" },
+        "body_fat_pct": { "type": "number" },
+        "visceral_fat": { "type": "number" },
+        "muscle_kg": { "type": "number" },
+        "bmr_kcal": { "type": "integer" },
+        "measured_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "vitals": {
+      "type": "object",
+      "properties": {
+        "spo2_pct": { "type": "number" },
+        "resting_hr": { "type": "integer" },
+        "stress_score": { "type": "integer" }
+      }
+    }
+  },
+  "definitions": {
+    "bp_reading": {
+      "type": "object",
+      "required": ["measured_at", "systolic", "diastolic"],
+      "properties": {
+        "measured_at": { "type": "string", "format": "date-time" },
+        "systolic": { "type": "integer", "minimum": 70, "maximum": 250 },
+        "diastolic": { "type": "integer", "minimum": 40, "maximum": 150 },
+        "pulse": { "type": "integer" },
+        "source": { "type": "string" }
+      }
+    }
+  }
+}
