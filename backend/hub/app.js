@@ -696,6 +696,19 @@ async function loadServerDay() {
       state.profile.weight_kg_latest = snap.weight.kg;
     }
     if (snap.heart_rate) d.heart_rate = snap.heart_rate;
+    if (snap.blood_pressure?.latest) {
+      const bp = snap.blood_pressure.latest;
+      if (bp.systolic && bp.diastolic && !d.bp.length) {
+        d.bp.push({ systolic: bp.systolic, diastolic: bp.diastolic, pulse: bp.pulse, measured_at: bp.measured_at || new Date().toISOString(), source: bp.source || "auto" });
+      }
+    }
+    if (snap.blood_pressure?.readings_today) {
+      for (const r of snap.blood_pressure.readings_today) {
+        if (r.systolic && r.diastolic && !d.bp.some(b => b.systolic === r.systolic && b.diastolic === r.diastolic && b.measured_at === r.measured_at)) {
+          d.bp.push({ systolic: r.systolic, diastolic: r.diastolic, pulse: r.pulse, measured_at: r.measured_at, source: r.source || "auto" });
+        }
+      }
+    }
     saveJson(STORAGE_DAYS, state.days);
     render();
   } catch { /* offline */ }

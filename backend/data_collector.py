@@ -236,7 +236,7 @@ async def collect_once() -> dict[str, Any]:
     # Try MedM BP
     try:
         from medm_bp import fetch_bp_readings
-        bp_readings = await fetch_bp_readings(since=date.today(), limit=20)
+        bp_readings = await fetch_bp_readings(limit=20)
         if bp_readings:
             raw["medm_bp"] = bp_readings
             logger.info("MedM BP: %d readings", len(bp_readings))
