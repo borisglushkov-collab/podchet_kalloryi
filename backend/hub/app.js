@@ -725,6 +725,32 @@ async function loadServerDay() {
         }
       }
     }
+
+    // FatSecret: import nutrition into local day.meals for UI rendering.
+    // UI uses day().meals (not snap.nutrition) to show calories/BJU and the "Еда" list.
+    const n = snap.nutrition || {};
+    if (Array.isArray(n.meals) && n.meals.length) {
+      // Do not overwrite manually added meals if user already has them.
+      if (!Array.isArray(d.meals) || d.meals.length === 0) {
+        d.meals = [];
+        for (const m of n.meals) {
+          const mt = String(m.meal_type || "snack").toLowerCase();
+          const items = Array.isArray(m.items) ? m.items : [];
+          for (const it of items) {
+            if (!it || !it.name) continue;
+            d.meals.push({
+              meal_type: mt,
+              name: it.name,
+              grams: it.grams ?? 0,
+              calories: it.calories ?? 0,
+              protein: it.protein ?? 0,
+              fat: it.fat ?? 0,
+              carbs: it.carbs ?? 0,
+            });
+          }
+        }
+      }
+    }
     saveJson(STORAGE_DAYS, state.days);
     render();
   } catch { /* offline */ }
