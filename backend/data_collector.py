@@ -22,6 +22,24 @@ logger = logging.getLogger(__name__)
 _INTERVAL_MINUTES = int(os.getenv("COLLECT_INTERVAL_MIN", "30"))
 _REGION = os.getenv("XIAOMI_REGION", "ru")
 
+_SPORT_NAMES: dict[int, str] = {
+    1: "Бег",
+    2: "Ходьба",
+    3: "Велосипед",
+    4: "Плавание",
+    5: "Эллипс",
+    6: "Йога",
+    7: "Силовая",
+    8: "HIIT",
+    9: "Тренажёр",
+    10: "Футбол",
+    11: "Бasketball",
+    12: "Теннис",
+    13: "Гребля",
+    14: "Скакалка",
+    15: "Танцы",
+}
+
 _collector_task: asyncio.Task | None = None
 _last_result: dict[str, Any] = {}
 _last_error: str | None = None
@@ -82,6 +100,33 @@ def _filter_scale_for_date(records: list[dict[str, Any]], target_date: date) -> 
 def _filter_medm_for_date(readings: list[dict[str, Any]], target_date: date) -> list[dict[str, Any]]:
     iso = target_date.isoformat()
     return [r for r in readings if str(r.get("measured_at") or "").startswith(iso)]
+
+
+def _normalize_workout(item: dict[str, Any]) -> dict[str, Any]:
+    v = _parse_value(item)
+    sport_type = int(v.get("sport_type") or v.get("proto_type") or 0)
+    duration_sec = int(v.get("duration") or 0)
+    start_ts = v.get("start_time") or v.get("time")
+    start_at = None
+    if start_ts:
+        try:
+            start_at = datetime.fromtimestamp(int(start_ts), tz=timezone.utc).replace(microsecond=0).isoformat()
+        except (OSError, OverflowError, ValueError):
+            start_at = None
+    name = _SPORT_NAMES.get(sport_type, "Тренировка")
+    if sport_type == 13 or v.get("row_count"):
+        name = "Гребля"
+    return {
+        "sport_type": sport_type,
+        "name": name,
+        "duration_min": round(duration_sec / 60) if duration_sec else 0,
+        "calories": int(v.get("calories") or v.get("total_cal") or 0),
+        "avg_hr": int(v.get("avg_hrm") or 0) or None,
+        "max_hr": int(v.get("max_hrm") or 0) or None,
+        "distance_m": int(v.get("distance") or 0) or None,
+        "start_at": start_at,
+        "source": "mi_fitness",
+    }
 
 
 def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any]:
@@ -182,6 +227,10 @@ def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any
                 "max": max(vals),
                 "samples": len(vals),
             }
+
+    workout_list = raw.get("workouts") or []
+    if workout_list:
+        snap["workouts"] = [_normalize_workout(w) for w in workout_list]
 
     # Blood pressure
     bp_list = raw.get("blood_pressure") or []

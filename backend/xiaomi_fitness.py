@@ -195,6 +195,32 @@ class MiFitnessClient:
 
         return items
 
+    async def fetch_sport_records(
+        self, start_date: date, end_date: date, *, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        tz = timezone(timedelta(hours=3))
+        start_ts = int(datetime.combine(start_date, datetime.min.time(), tzinfo=tz).timestamp())
+        end_ts = int(datetime.combine(end_date, datetime.max.time().replace(microsecond=0), tzinfo=tz).timestamp())
+
+        items: list[dict[str, Any]] = []
+        next_key: str | None = None
+        for _ in range(10):
+            payload: dict[str, Any] = {
+                "start_time": start_ts,
+                "end_time": end_ts,
+                "limit": limit,
+            }
+            if next_key:
+                payload["next_key"] = next_key
+            result = await self._request("/app/v1/data/get_sport_records_by_time", payload)
+            items.extend(result.get("sport_records") or [])
+            if not result.get("has_more"):
+                break
+            next_key = result.get("next_key")
+            if not next_key:
+                break
+        return items
+
     async def get_today_summary(self) -> dict[str, Any]:
         return await self.get_day_summary(date.today())
 
@@ -213,6 +239,13 @@ class MiFitnessClient:
             except Exception as exc:
                 logger.warning("Mi Fitness fetch %s (%s) failed: %s", key, target_date.isoformat(), exc)
                 result[key] = []
+
+        try:
+            result["workouts"] = await self.fetch_sport_records(target_date, target_date)
+            logger.info("Mi Fitness workouts (%s): %d items", target_date.isoformat(), len(result["workouts"]))
+        except Exception as exc:
+            logger.warning("Mi Fitness workouts (%s) failed: %s", target_date.isoformat(), exc)
+            result["workouts"] = []
 
         return result
 

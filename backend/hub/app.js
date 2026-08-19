@@ -24,6 +24,7 @@ const emptyDay = (date) => ({
   date,
   meals: [],
   bp: [],
+  workouts: [],
   sleep_min: null,
   steps: null,
   weight_kg: null,
@@ -140,6 +141,7 @@ function snapshot() {
     activity: d.steps == null ? {} : { steps: Number(d.steps), source: "manual" },
     sleep: d.sleep_min == null ? {} : { duration_min: Number(d.sleep_min), source: "manual" },
     body_composition: d.weight_kg == null ? {} : { weight_kg: Number(d.weight_kg) },
+    workouts: d.workouts || [],
     notes: d.notes || "",
   };
 }
@@ -160,6 +162,16 @@ function formatReport(snap) {
     lines.push(`Сон: ${h}h${String(m).padStart(2, "0")}`);
   }
   if (snap.activity?.steps != null) lines.push(`Шаги: ${snap.activity.steps}`);
+  const workouts = snap.workouts || [];
+  if (workouts.length) {
+    const bits = workouts.map((w) => {
+      const mins = w.duration_min ? `${w.duration_min} мин` : "";
+      const cal = w.calories ? `${w.calories} ккал` : "";
+      const hr = w.avg_hr ? `пульс ${w.avg_hr}` : "";
+      return [w.name || "Тренировка", mins, cal, hr].filter(Boolean).join(", ");
+    });
+    lines.push(`Тренировки: ${bits.join("; ")}`);
+  }
   const weight = snap.body_composition?.weight_kg ?? snap.profile?.weight_kg_latest;
   if (weight != null) lines.push(`Вес: ${weight}`);
   const n = snap.nutrition || {};
@@ -243,6 +255,19 @@ function renderToday() {
         <h2>Пульс</h2>
         <div class="value">${d.heart_rate.avg ?? "—"}</div>
         <div class="sub">мин ${d.heart_rate.min ?? "—"} / макс ${d.heart_rate.max ?? "—"}</div>
+      </div>
+      ` : ""}
+      ${(d.workouts || []).length ? `
+      <div class="card wide">
+        <h2>Тренировки</h2>
+        <ul class="list">${d.workouts.map((w) => {
+          const dur = w.duration_min ? `${w.duration_min} мин` : "";
+          const cal = w.calories ? `${w.calories} ккал` : "";
+          const hr = w.avg_hr ? `пульс ${w.avg_hr}` : "";
+          const sub = [dur, cal, hr].filter(Boolean).join(" · ");
+          return `<li><span>${w.name || "Тренировка"}${sub ? ` — ${sub}` : ""}</span></li>`;
+        }).join("")}</ul>
+        <div class="sub">из Mi Fitness</div>
       </div>
       ` : ""}
       <div class="card wide">
@@ -620,6 +645,7 @@ async function collectNow() {
     if (snap.steps?.count != null) d.steps = snap.steps.count;
     if (snap.sleep?.total_min != null) d.sleep_min = snap.sleep.total_min;
     if (snap.weight?.kg != null) { d.weight_kg = snap.weight.kg; state.profile.weight_kg_latest = snap.weight.kg; }
+    if (Array.isArray(snap.workouts) && snap.workouts.length) d.workouts = snap.workouts;
     persist();
     await fetchCollectorStatus();
     toast("Данные обновлены из Mi Fitness");
@@ -722,6 +748,7 @@ async function loadServerDay(autoCollect = false) {
       state.profile.weight_kg_latest = snap.weight.kg;
     }
     if (snap.heart_rate) d.heart_rate = snap.heart_rate;
+    if (Array.isArray(snap.workouts) && snap.workouts.length) d.workouts = snap.workouts;
     if (snap.blood_pressure?.latest) {
       const bp = snap.blood_pressure.latest;
       if (bp.systolic && bp.diastolic && !d.bp.length) {

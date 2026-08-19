@@ -61,6 +61,20 @@ def format_day_report(snapshot: dict[str, Any]) -> str:
     if activity.get("steps") is not None:
         lines.append(f"Шаги: {activity['steps']}")
 
+    workouts = snapshot.get("workouts") or []
+    if workouts:
+        bits = []
+        for w in workouts:
+            parts = [str(w.get("name") or "Тренировка")]
+            if w.get("duration_min"):
+                parts.append(f"{w['duration_min']} мин")
+            if w.get("calories"):
+                parts.append(f"{w['calories']} kcal")
+            if w.get("avg_hr"):
+                parts.append(f"пульс {w['avg_hr']}")
+            bits.append(", ".join(parts))
+        lines.append("Тренировки: " + "; ".join(bits))
+
     body = snapshot.get("body_composition") or {}
     weight = body.get("weight_kg")
     if weight is None:
