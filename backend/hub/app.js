@@ -60,25 +60,42 @@ function applyBodyComposition(d, w) {
   d.body_composition = bc;
 }
 
+function countNutritionItems(nutrition) {
+  return (nutrition?.meals || []).reduce((n, m) => n + (m.items?.length || 0), 0);
+}
+
+function normalizeNutritionItem(it) {
+  if (!it) return null;
+  const name = String(it.name || it.food_entry_name || it.food_name || "").trim();
+  if (!name) return null;
+  return {
+    name,
+    grams: Number(it.grams ?? it.number_of_units ?? 0),
+    calories: Number(it.calories ?? 0),
+    protein: Number(it.protein ?? it.protein_g ?? 0),
+    fat: Number(it.fat ?? it.fat_g ?? 0),
+    carbs: Number(it.carbs ?? it.carbs_g ?? it.carbohydrate ?? 0),
+  };
+}
+
+function shouldImportNutritionFromServer(d, nutrition, force) {
+  if (force) return true;
+  if (!nutrition?.meals?.length) return false;
+  if (nutrition.source === "fatsecret") return true;
+  return countNutritionItems(nutrition) > (d.meals?.length || 0);
+}
+
 function importNutritionMeals(d, nutrition, force = false) {
   const n = nutrition || {};
-  if (!Array.isArray(n.meals) || !n.meals.length) return;
-  if (!force && Array.isArray(d.meals) && d.meals.length) return;
+  if (!shouldImportNutritionFromServer(d, n, force)) return;
   d.meals = [];
   for (const m of n.meals) {
     const mt = String(m.meal_type || "snack").toLowerCase();
     const items = Array.isArray(m.items) ? m.items : [];
     for (const it of items) {
-      if (!it || !it.name) continue;
-      d.meals.push({
-        meal_type: mt,
-        name: it.name,
-        grams: it.grams ?? 0,
-        calories: it.calories ?? 0,
-        protein: it.protein ?? 0,
-        fat: it.fat ?? 0,
-        carbs: it.carbs ?? 0,
-      });
+      const row = normalizeNutritionItem(it);
+      if (!row) continue;
+      d.meals.push({ meal_type: mt, ...row });
     }
   }
 }
@@ -245,9 +262,9 @@ function nutritionTotals(meals) {
   return meals.reduce(
     (acc, m) => ({
       calories: acc.calories + Number(m.calories || 0),
-      protein_g: acc.protein_g + Number(m.protein || 0),
-      fat_g: acc.fat_g + Number(m.fat || 0),
-      carbs_g: acc.carbs_g + Number(m.carbs || 0),
+      protein_g: acc.protein_g + Number(m.protein ?? m.protein_g ?? 0),
+      fat_g: acc.fat_g + Number(m.fat ?? m.fat_g ?? 0),
+      carbs_g: acc.carbs_g + Number(m.carbs ?? m.carbs_g ?? 0),
     }),
     { calories: 0, protein_g: 0, fat_g: 0, carbs_g: 0 }
   );
@@ -475,8 +492,9 @@ function renderToday() {
         <ul class="list">${
           d.meals.length
             ? d.meals.map((m, i) => `<li><span>${MEAL_RU[m.meal_type] || m.meal_type}: ${m.name}</span><button class="btn ghost" data-del-meal="${i}">×</button></li>`).join("")
-            : `<li class="empty">Пока пусто — добавьте приём</li>`
+            : `<li class="empty">Пока пусто — подключите FatSecret и нажмите «Обновить»</li>`
         }</ul>
+        <div class="sub">FatSecret (облако). Новые записи появятся после «Обновить»</div>
       </div>
     </div>
     <div class="actions">

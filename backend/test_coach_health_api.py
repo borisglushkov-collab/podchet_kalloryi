@@ -68,6 +68,39 @@ def test_day_endpoint_keeps_snapshot_bp_when_store_empty():
     assert readings[0]["systolic"] == 128
 
 
+def test_sync_keeps_existing_fatsecret_when_client_sends_empty_meals():
+    health_day_store.day_store.upsert(
+        {
+            "date": "2026-08-19",
+            "nutrition": {
+                "calories": 1138,
+                "source": "fatsecret",
+                "meals": [
+                    {
+                        "meal_type": "breakfast",
+                        "items": [{"name": "Хлеб", "calories": 66, "protein_g": 1.9, "fat_g": 0.8, "carbs_g": 12.7}],
+                    }
+                ],
+            },
+        }
+    )
+    response = client.post(
+        "/api/health/sync",
+        json={
+            "snapshot": {
+                "date": "2026-08-19",
+                "nutrition": {"calories": 0, "meals": []},
+                "activity": {"steps": 100, "source": "manual"},
+            }
+        },
+    )
+    assert response.status_code == 200
+    day = client.get("/api/health/day/2026-08-19")
+    nutrition = day.json()["snapshot"]["nutrition"]
+    assert nutrition["source"] == "fatsecret"
+    assert nutrition["calories"] == 1138
+
+
 def test_coach_health_chat_fallback_without_api_key(monkeypatch):
     monkeypatch.delenv("CURSOR_API_KEY", raising=False)
     response = client.post(

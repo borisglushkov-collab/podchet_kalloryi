@@ -173,6 +173,30 @@ def _aggregate_steps_for_day(steps_list: list[dict[str, Any]], target_date: date
     }
 
 
+def _meal_type_key(raw: str | None) -> str:
+    key = str(raw or "snack").strip().lower()
+    if key in {"breakfast", "lunch", "dinner", "snack"}:
+        return key
+    return "snack"
+
+
+def _normalize_food_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    protein = round(float(entry.get("protein") or 0), 1)
+    fat = round(float(entry.get("fat") or 0), 1)
+    carbs = round(float(entry.get("carbs") or 0), 1)
+    return {
+        "name": str(entry.get("name") or "").strip(),
+        "grams": round(float(entry.get("grams") or 0), 1),
+        "calories": round(float(entry.get("calories") or 0), 1),
+        "protein": protein,
+        "fat": fat,
+        "carbs": carbs,
+        "protein_g": protein,
+        "fat_g": fat,
+        "carbs_g": carbs,
+    }
+
+
 def _filter_medm_for_date(readings: list[dict[str, Any]], target_date: date) -> list[dict[str, Any]]:
     iso = target_date.isoformat()
     return [r for r in readings if str(r.get("measured_at") or "").startswith(iso)]
@@ -364,19 +388,22 @@ def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any
     # FatSecret food diary
     food_entries = raw.get("fatsecret_food") or []
     if food_entries:
-        total_cal = sum(e.get("calories", 0) for e in food_entries)
-        total_p = sum(e.get("protein", 0) for e in food_entries)
-        total_f = sum(e.get("fat", 0) for e in food_entries)
-        total_c = sum(e.get("carbs", 0) for e in food_entries)
+        normalized_entries = [_normalize_food_entry(e) for e in food_entries if e.get("name")]
+        total_cal = sum(e.get("calories", 0) for e in normalized_entries)
+        total_p = sum(e.get("protein", 0) for e in normalized_entries)
+        total_f = sum(e.get("fat", 0) for e in normalized_entries)
+        total_c = sum(e.get("carbs", 0) for e in normalized_entries)
         meals_by_type: dict[str, list] = {}
         for e in food_entries:
-            mt = e.get("meal", "snack") or "snack"
-            meals_by_type.setdefault(mt, []).append(e)
+            if not e.get("name"):
+                continue
+            mt = _meal_type_key(e.get("meal"))
+            meals_by_type.setdefault(mt, []).append(_normalize_food_entry(e))
         snap["nutrition"] = {
             "calories": round(total_cal),
-            "protein_g": round(total_p),
-            "fat_g": round(total_f),
-            "carbs_g": round(total_c),
+            "protein_g": round(total_p, 1),
+            "fat_g": round(total_f, 1),
+            "carbs_g": round(total_c, 1),
             "meals": [
                 {"meal_type": mt, "items": items}
                 for mt, items in meals_by_type.items()
@@ -480,7 +507,7 @@ async def collect_for_date(target_date: date | None = None) -> dict[str, Any]:
 
     snapshot = _normalize_snapshot(raw, day)
     try:
-        saved = day_store.upsert(snapshot)
+        saved = day_store.upsert(snapshot, merge=True)
     except ValueError as exc:
         _last_error = f"Store error: {exc}"
         return {"error": _last_error}

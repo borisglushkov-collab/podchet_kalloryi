@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from health_snapshot_merge import merge_snapshots
+
 
 class HealthDayStore:
     def __init__(self, path: Path | None = None) -> None:
@@ -34,7 +36,7 @@ class HealthDayStore:
             encoding="utf-8",
         )
 
-    def upsert(self, snapshot: dict[str, Any]) -> dict[str, Any]:
+    def upsert(self, snapshot: dict[str, Any], *, merge: bool = False) -> dict[str, Any]:
         date = str(snapshot.get("date") or "").strip()
         if not date:
             raise ValueError("Нужно поле date (YYYY-MM-DD)")
@@ -42,6 +44,9 @@ class HealthDayStore:
         payload["date"] = date
         payload["generated_at"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         with self._lock:
+            if merge and date in self._days:
+                payload = merge_snapshots(self._days[date], payload)
+                payload["generated_at"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
             self._days[date] = payload
             self._persist()
             return payload

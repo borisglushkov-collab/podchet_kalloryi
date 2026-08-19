@@ -652,7 +652,7 @@ def _attach_bp(snapshot: dict, date: str) -> dict:
 @app.post("/api/health/sync")
 async def health_sync(request: HealthSyncRequest):
     try:
-        saved = day_store.upsert(request.snapshot)
+        saved = day_store.upsert(request.snapshot, merge=True)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     date = saved["date"]
@@ -682,7 +682,7 @@ async def coach_health_chat(request: CoachHealthChatRequest):
     date = str(snapshot.get("date") or "")
     if date:
         try:
-            day_store.upsert(snapshot)
+            day_store.upsert(snapshot, merge=True)
         except ValueError:
             pass
         snapshot = _attach_bp(snapshot, date)
