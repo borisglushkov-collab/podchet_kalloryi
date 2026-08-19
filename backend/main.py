@@ -771,6 +771,25 @@ async def get_collector_status():
     return collector_status()
 
 
+@app.get("/api/health/xiaomi-devices")
+async def xiaomi_devices():
+    from xiaomi_auth import XiaomiTokens
+    from xiaomi_home import XiaomiHomeClient
+    tokens = XiaomiTokens.load()
+    if not tokens:
+        raise HTTPException(status_code=400, detail="Xiaomi не подключён")
+    client = XiaomiHomeClient(tokens, region=os.getenv("XIAOMI_REGION", "ru"))
+    await client.connect()
+    devices = await client.get_all_devices()
+    return {
+        "count": len(devices),
+        "devices": [
+            {"name": d.get("name"), "model": d.get("model"), "did": d.get("did"), "online": d.get("isOnline")}
+            for d in devices
+        ],
+    }
+
+
 @app.get("/hub")
 async def hub_redirect():
     return RedirectResponse(url="/hub/")

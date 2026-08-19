@@ -15,6 +15,7 @@ from typing import Any
 from health_day_store import day_store
 from xiaomi_auth import XiaomiTokens, login_xiaomi
 from xiaomi_fitness import MiFitnessClient
+from xiaomi_home import XiaomiHomeClient
 
 logger = logging.getLogger(__name__)
 
@@ -99,9 +100,25 @@ def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any
         if count:
             snap["sleep"]["avg_hr"] = round(avg_hr / count)
 
-    # Weight — value has weight, bmi, etc.
+    # Weight from Xiaomi Home scale (body composition)
+    home_weight = raw.get("weight_home") or []
+    if home_weight:
+        latest_hw = home_weight[-1] if home_weight else {}
+        bd = latest_hw.get("bodyData") or latest_hw
+        w = bd.get("weight")
+        if w is not None:
+            try:
+                snap["weight"] = {"kg": round(float(w), 1)}
+                for field in ("bmi", "bodyFat", "muscle", "water", "bone", "visceralFat", "bodyAge", "bmr"):
+                    val = bd.get(field)
+                    if val is not None:
+                        snap["weight"][field] = round(float(val), 1)
+            except (ValueError, TypeError):
+                pass
+
+    # Weight from Mi Fitness (fallback if no Xiaomi Home data)
     weight_list = raw.get("weight") or []
-    if weight_list:
+    if weight_list and "weight" not in snap:
         latest_v = _parse_value(weight_list[-1])
         w = latest_v.get("weight")
         if w is not None:
@@ -184,6 +201,17 @@ async def collect_once() -> dict[str, Any]:
         _last_error = f"Mi Fitness API error: {exc}"
         logger.error(_last_error)
         return {"error": _last_error}
+
+    # Try Xiaomi Home for scale data (weight/body composition)
+    try:
+        home_client = XiaomiHomeClient(tokens, region=_REGION)
+        await home_client.connect()
+        scale_data = await home_client.get_scale_data(model="yunmai.scales.ms104")
+        if scale_data:
+            raw["weight_home"] = scale_data
+            logger.info("Xiaomi Home scale: %d records", len(scale_data))
+    except Exception as exc:
+        logger.warning("Xiaomi Home scale fetch failed: %s", exc)
 
     today = date.today()
     snapshot = _normalize_snapshot(raw, today)
