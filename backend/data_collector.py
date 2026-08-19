@@ -161,6 +161,26 @@ def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any
                 "latest": {"systolic": int(sys_val), "diastolic": int(dia_val)},
             }
 
+    # MedM blood pressure
+    medm_bp = raw.get("medm_bp") or []
+    if medm_bp:
+        latest_bp = medm_bp[0]
+        sys_val = latest_bp.get("systolic")
+        dia_val = latest_bp.get("diastolic")
+        if sys_val and dia_val:
+            bp_data = snap.get("blood_pressure", {})
+            bp_data["latest"] = {
+                "systolic": int(sys_val),
+                "diastolic": int(dia_val),
+                "pulse": latest_bp.get("pulse"),
+                "source": "medm_bp",
+            }
+            bp_data["readings_today"] = [
+                {"systolic": r["systolic"], "diastolic": r["diastolic"], "pulse": r.get("pulse"), "measured_at": r.get("measured_at"), "source": "medm_bp"}
+                for r in medm_bp if r.get("systolic") and r.get("diastolic")
+            ]
+            snap["blood_pressure"] = bp_data
+
     snap["source"] = "mi_fitness_auto"
     snap["generated_at"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     return snap
@@ -212,6 +232,16 @@ async def collect_once() -> dict[str, Any]:
             logger.info("Xiaomi Home scale: %d records", len(scale_data))
     except Exception as exc:
         logger.warning("Xiaomi Home scale fetch failed: %s", exc)
+
+    # Try MedM BP
+    try:
+        from medm_bp import fetch_bp_readings
+        bp_readings = await fetch_bp_readings(since=date.today(), limit=20)
+        if bp_readings:
+            raw["medm_bp"] = bp_readings
+            logger.info("MedM BP: %d readings", len(bp_readings))
+    except Exception as exc:
+        logger.warning("MedM BP fetch failed: %s", exc)
 
     today = date.today()
     snapshot = _normalize_snapshot(raw, today)

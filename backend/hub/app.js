@@ -353,6 +353,13 @@ function renderMore() {
       `}
     </div>
     <div class="card wide form" style="margin-top:10px">
+      <h2>MedM BP (давление)</h2>
+      <p class="hint">Подключите аккаунт MedM для автоматического сбора данных АД</p>
+      <input id="medm-email" placeholder="Email MedM" />
+      <input id="medm-pass" type="password" placeholder="Пароль MedM" />
+      <button class="btn primary" id="medm-login">Подключить MedM</button>
+    </div>
+    <div class="card wide form" style="margin-top:10px">
       <h2>Импорт CSV давления</h2>
       <p class="hint">Экспорт из Citizen / «Давление»: колонки Дата,Время,Сис,Диа,Пульс</p>
       <input id="csv-file" type="file" accept=".csv,text/csv,text/plain" />
@@ -500,6 +507,7 @@ function bind() {
   document.getElementById("xi-login")?.addEventListener("click", xiaomiLogin);
   document.getElementById("xi-verify")?.addEventListener("click", xiaomiVerify);
   document.getElementById("xi-tokens")?.addEventListener("click", xiaomiSetTokens);
+  document.getElementById("medm-login")?.addEventListener("click", medmLogin);
 }
 
 async function importCsv() {
@@ -691,6 +699,25 @@ async function loadServerDay() {
     saveJson(STORAGE_DAYS, state.days);
     render();
   } catch { /* offline */ }
+}
+
+async function medmLogin() {
+  const email = val("medm-email");
+  const password = val("medm-pass");
+  if (!email || !password) return toast("Введите email и пароль MedM");
+  toast("Подключаюсь к MedM…");
+  try {
+    const r = await fetch("/api/health/medm-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await r.json();
+    if (!r.ok) { toast(data.detail || "Ошибка"); return; }
+    toast("MedM подключён!");
+  } catch (err) {
+    toast("Ошибка: " + err.message);
+  }
 }
 
 fetchCollectorStatus();

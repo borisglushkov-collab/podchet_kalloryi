@@ -771,6 +771,30 @@ async def get_collector_status():
     return collector_status()
 
 
+class MedMLoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+@app.post("/api/health/medm-login")
+async def medm_login_endpoint(request: MedMLoginRequest):
+    from medm_bp import medm_login
+    try:
+        tokens = await medm_login(request.email, request.password)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok", "has_token": bool(tokens.auth_token)}
+
+
+@app.get("/api/health/medm-bp")
+async def medm_bp_list(days: int = 7):
+    from medm_bp import fetch_bp_readings
+    from datetime import date, timedelta
+    since = date.today() - timedelta(days=days)
+    readings = await fetch_bp_readings(since=since)
+    return {"count": len(readings), "readings": readings}
+
+
 @app.get("/api/health/xiaomi-devices")
 async def xiaomi_devices():
     from xiaomi_auth import XiaomiTokens
