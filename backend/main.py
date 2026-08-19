@@ -796,9 +796,8 @@ async def medm_bp_list(limit: int = 50):
 @app.get("/api/health/fatsecret-auth")
 async def fatsecret_auth_start(request: Request):
     from fatsecret_client import get_authorize_url
-    host = request.headers.get("host", "201.51.22.29")
-    scheme = request.headers.get("x-forwarded-proto", "http")
-    callback = f"{scheme}://{host}/api/health/fatsecret-callback"
+    base = os.getenv("PUBLIC_URL", "http://201.51.22.29")
+    callback = f"{base}/api/health/fatsecret-callback"
     url, session_id = get_authorize_url(callback)
     return {"authorize_url": url, "session_id": session_id}
 
