@@ -39,6 +39,7 @@ from coach_health_fallback import build_coach_health_fallback
 from coach_health_prompt import COACH_HEALTH_SYSTEM_PROMPT, build_coach_health_prompt
 from coach_health_report import format_day_report
 from cursor_client import CursorClient
+from data_collector import collect_once, collector_status, start_collector, stop_collector
 from food_search_service import search_food
 from food_vision_service import FoodVisionNotConfiguredError, analyze_food_image
 from nutrition_prompt import (
@@ -66,7 +67,10 @@ cursor_client: Optional[CursorClient] = None
 async def lifespan(app: FastAPI):
     global cursor_client
     cursor_client = CursorClient()
+    if os.getenv("XIAOMI_USER") or (Path(__file__).resolve().parent / "data" / "xiaomi_token.json").is_file():
+        start_collector()
     yield
+    stop_collector()
     cursor_client = None
 
 
@@ -216,6 +220,9 @@ async def root():
             "health_sync": "POST /api/health/sync",
             "health_day": "GET /api/health/day/{date}",
             "health_report": "GET /api/health/day/{date}/report",
+            "xiaomi_login": "POST /api/health/xiaomi-login",
+            "collect_now": "POST /api/health/collect-now",
+            "collector_status": "GET /api/health/collector-status",
             "hub": "GET /hub/",
             "reset_session": "POST /api/reset-session",
             "docs": "GET /docs",
@@ -682,6 +689,86 @@ async def coach_health_chat(request: CoachHealthChatRequest):
 
     reply = build_coach_health_fallback(message, snapshot)
     return CoachChatResponse(reply=reply)
+
+
+class XiaomiLoginRequest(BaseModel):
+    username: str
+    password: str
+    region: str = "ru"
+
+
+class XiaomiVerifyRequest(BaseModel):
+    session_id: str
+    code: str
+
+
+class XiaomiTokensRequest(BaseModel):
+    user_id: str
+    pass_token: str
+
+
+@app.post("/api/health/xiaomi-login")
+async def xiaomi_login(request: XiaomiLoginRequest):
+    from xiaomi_auth import TwoFactorRequired, login_xiaomi
+    try:
+        tokens = await login_xiaomi(request.username, request.password)
+    except TwoFactorRequired as e:
+        return {
+            "status": "2fa_required",
+            "session_id": e.session_id,
+            "message": "Код подтверждения отправлен на email/телефон. Введите его.",
+        }
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    start_collector()
+    return {
+        "status": "ok",
+        "user_id": tokens.user_id,
+        "has_service_token": bool(tokens.service_token),
+    }
+
+
+@app.post("/api/health/xiaomi-verify")
+async def xiaomi_verify(request: XiaomiVerifyRequest):
+    from xiaomi_auth import login_xiaomi_verify
+    try:
+        tokens = await login_xiaomi_verify(request.session_id, request.code)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    start_collector()
+    return {
+        "status": "ok",
+        "user_id": tokens.user_id,
+        "has_service_token": bool(tokens.service_token),
+    }
+
+
+@app.post("/api/health/xiaomi-tokens")
+async def xiaomi_set_tokens(request: XiaomiTokensRequest):
+    from xiaomi_auth import setup_tokens_direct
+    try:
+        tokens = await setup_tokens_direct(request.user_id, request.pass_token)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    start_collector()
+    return {
+        "status": "ok",
+        "user_id": tokens.user_id,
+        "has_service_token": bool(tokens.service_token),
+    }
+
+
+@app.post("/api/health/collect-now")
+async def collect_now():
+    result = await collect_once()
+    if "error" in result:
+        raise HTTPException(status_code=502, detail=result["error"])
+    return result
+
+
+@app.get("/api/health/collector-status")
+async def get_collector_status():
+    return collector_status()
 
 
 @app.get("/hub")

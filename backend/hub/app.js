@@ -57,6 +57,8 @@ const state = {
   profile: { ...defaultProfile(), ...loadJson(STORAGE_PROFILE, {}) },
   chat: loadJson(STORAGE_CHAT, []),
   sending: false,
+  collectorStatus: {},
+  xiaomi2fa: null,
 };
 
 function day() {
@@ -228,7 +230,7 @@ function renderToday() {
       <div class="card">
         <h2>Шаги</h2>
         <div class="value">${d.steps ?? "—"}</div>
-        <div class="sub">из Mi Fitness вручную</div>
+        <div class="sub">${state.collectorStatus?.running ? "авто из Mi Fitness" : "ручной ввод"}</div>
       </div>
       <div class="card">
         <h2>Вес</h2>
@@ -316,8 +318,34 @@ function renderCoach() {
 
 function renderMore() {
   const t = state.profile.coaching_calorie_target || {};
+  const cs = state.collectorStatus || {};
   return `
     <div class="card wide form">
+      <h2>Авто-сбор Mi Fitness</h2>
+      <div class="sub" id="collector-info">${cs.running ? "✓ Сбор активен, каждые " + cs.interval_min + " мин" : "Сбор не запущен"}</div>
+      ${cs.last_error ? `<div class="sub high">${escapeHtml(cs.last_error)}</div>` : ""}
+      ${cs.last_result?.collected_at ? `<div class="sub">Последний: ${cs.last_result.collected_at}, данные: ${(cs.last_result.keys || []).join(", ")}</div>` : ""}
+      <button class="btn primary" id="collect-now">Собрать данные сейчас</button>
+      ${state.xiaomi2fa ? `
+        <div style="margin-top:8px">
+          <label>Код из email/SMS</label>
+          <input id="xi-code" placeholder="Введите код 2FA" />
+          <button class="btn primary" id="xi-verify">Подтвердить код</button>
+        </div>
+      ` : `
+        <details style="margin-top:8px">
+          <summary>Подключить аккаунт Xiaomi</summary>
+          <input id="xi-user" placeholder="Email / телефон Xiaomi" />
+          <input id="xi-pass" type="password" placeholder="Пароль Xiaomi" />
+          <button class="btn primary" id="xi-login">Подключить</button>
+          <p class="hint">Или введите токены вручную (из Cookie account.xiaomi.com):</p>
+          <input id="xi-uid" placeholder="userId" />
+          <input id="xi-pt" placeholder="passToken" />
+          <button class="btn primary" id="xi-tokens">Сохранить токены</button>
+        </details>
+      `}
+    </div>
+    <div class="card wide form" style="margin-top:10px">
       <h2>Импорт CSV давления</h2>
       <p class="hint">Экспорт из Citizen / «Давление»: колонки Дата,Время,Сис,Диа,Пульс</p>
       <input id="csv-file" type="file" accept=".csv,text/csv,text/plain" />
@@ -461,6 +489,10 @@ function bind() {
     toast("Профиль сохранён");
   });
   document.getElementById("import-csv")?.addEventListener("click", importCsv);
+  document.getElementById("collect-now")?.addEventListener("click", collectNow);
+  document.getElementById("xi-login")?.addEventListener("click", xiaomiLogin);
+  document.getElementById("xi-verify")?.addEventListener("click", xiaomiVerify);
+  document.getElementById("xi-tokens")?.addEventListener("click", xiaomiSetTokens);
 }
 
 async function importCsv() {
@@ -534,6 +566,108 @@ document.querySelectorAll(".tabs button").forEach((btn) => {
     render();
   });
 });
+
+async function fetchCollectorStatus() {
+  try {
+    const r = await fetch("/api/health/collector-status");
+    state.collectorStatus = await r.json();
+  } catch { /* offline */ }
+}
+
+async function collectNow() {
+  toast("Собираю данные из Mi Fitness…");
+  try {
+    const r = await fetch("/api/health/collect-now", { method: "POST" });
+    if (!r.ok) {
+      const e = await r.json();
+      toast(e.detail || "Ошибка сбора");
+      return;
+    }
+    const snap = await r.json();
+    const d = dayFor(snap.date || todayIso());
+    if (snap.steps?.count != null) d.steps = snap.steps.count;
+    if (snap.sleep?.total_min != null) d.sleep_min = snap.sleep.total_min;
+    if (snap.weight?.kg != null) { d.weight_kg = snap.weight.kg; state.profile.weight_kg_latest = snap.weight.kg; }
+    persist();
+    await fetchCollectorStatus();
+    toast("Данные обновлены из Mi Fitness");
+    render();
+  } catch (err) {
+    toast("Ошибка: " + err.message);
+  }
+}
+
+async function xiaomiLogin() {
+  const username = val("xi-user");
+  const password = val("xi-pass");
+  if (!username || !password) return toast("Введите логин и пароль Xiaomi");
+  toast("Подключаюсь к Xiaomi…");
+  try {
+    const r = await fetch("/api/health/xiaomi-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await r.json();
+    if (!r.ok) { toast(data.detail || "Ошибка входа"); return; }
+    if (data.status === "2fa_required") {
+      state.xiaomi2fa = data.session_id;
+      toast("Код отправлен на email/телефон — введите ниже");
+      render();
+      return;
+    }
+    toast("Xiaomi подключён! userId: " + data.user_id);
+    state.xiaomi2fa = null;
+    await fetchCollectorStatus();
+    render();
+  } catch (err) {
+    toast("Ошибка: " + err.message);
+  }
+}
+
+async function xiaomiVerify() {
+  const code = val("xi-code");
+  if (!code || !state.xiaomi2fa) return toast("Введите код из email/SMS");
+  toast("Проверяю код…");
+  try {
+    const r = await fetch("/api/health/xiaomi-verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: state.xiaomi2fa, code }),
+    });
+    const data = await r.json();
+    if (!r.ok) { toast(data.detail || "Ошибка"); return; }
+    toast("Xiaomi подключён! userId: " + data.user_id);
+    state.xiaomi2fa = null;
+    await fetchCollectorStatus();
+    render();
+  } catch (err) {
+    toast("Ошибка: " + err.message);
+  }
+}
+
+async function xiaomiSetTokens() {
+  const uid = val("xi-uid");
+  const pt = val("xi-pt");
+  if (!uid || !pt) return toast("Введите userId и passToken");
+  toast("Сохраняю токены…");
+  try {
+    const r = await fetch("/api/health/xiaomi-tokens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: uid, pass_token: pt }),
+    });
+    const data = await r.json();
+    if (!r.ok) { toast(data.detail || "Ошибка"); return; }
+    toast("Токены сохранены! userId: " + data.user_id);
+    await fetchCollectorStatus();
+    render();
+  } catch (err) {
+    toast("Ошибка: " + err.message);
+  }
+}
+
+fetchCollectorStatus();
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").catch(() => {});

@@ -1,0 +1,203 @@
+"""Background data collector: periodically pulls Mi Fitness data and saves snapshots.
+
+Runs as an asyncio background task inside the FastAPI lifespan.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+from datetime import date, datetime, timedelta, timezone
+from typing import Any
+
+from health_day_store import day_store
+from xiaomi_auth import XiaomiTokens, login_xiaomi
+from xiaomi_fitness import MiFitnessClient
+
+logger = logging.getLogger(__name__)
+
+_INTERVAL_MINUTES = int(os.getenv("COLLECT_INTERVAL_MIN", "30"))
+_REGION = os.getenv("XIAOMI_REGION", "ru")
+
+_collector_task: asyncio.Task | None = None
+_last_result: dict[str, Any] = {}
+_last_error: str | None = None
+_running = False
+
+
+def collector_status() -> dict[str, Any]:
+    return {
+        "running": _running,
+        "interval_min": _INTERVAL_MINUTES,
+        "region": _REGION,
+        "last_result": _last_result,
+        "last_error": _last_error,
+    }
+
+
+def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any]:
+    """Convert raw Mi Fitness API response into our day-snapshot format."""
+    snap: dict[str, Any] = {"date": target_date.isoformat()}
+
+    # Steps
+    steps_list = raw.get("steps") or []
+    if steps_list:
+        total_steps = 0
+        for item in steps_list:
+            val = item.get("value") or item.get("steps")
+            if isinstance(val, (int, float)):
+                total_steps += int(val)
+            elif isinstance(val, str):
+                try:
+                    total_steps += int(val)
+                except ValueError:
+                    pass
+        snap["steps"] = {"count": total_steps}
+
+    # Sleep
+    sleep_list = raw.get("sleep") or []
+    if sleep_list:
+        total_min = 0
+        deep_min = 0
+        for item in sleep_list:
+            dur = item.get("total_duration") or item.get("duration") or item.get("value") or 0
+            if isinstance(dur, str):
+                try:
+                    dur = int(dur)
+                except ValueError:
+                    dur = 0
+            total_min += int(dur)
+            d = item.get("deep_sleep") or item.get("deep") or 0
+            if isinstance(d, str):
+                try:
+                    d = int(d)
+                except ValueError:
+                    d = 0
+            deep_min += int(d)
+        snap["sleep"] = {"total_min": total_min, "deep_min": deep_min}
+
+    # Weight
+    weight_list = raw.get("weight") or []
+    if weight_list:
+        latest = weight_list[-1] if weight_list else {}
+        w = latest.get("weight") or latest.get("value")
+        if w is not None:
+            try:
+                snap["weight"] = {"kg": round(float(w), 1)}
+            except (ValueError, TypeError):
+                pass
+
+    # Heart rate
+    hr_list = raw.get("heart_rate") or []
+    if hr_list:
+        vals = []
+        for item in hr_list:
+            v = item.get("value") or item.get("bpm") or item.get("avg")
+            if v is not None:
+                try:
+                    vals.append(int(v))
+                except (ValueError, TypeError):
+                    pass
+        if vals:
+            snap["heart_rate"] = {
+                "avg": round(sum(vals) / len(vals)),
+                "min": min(vals),
+                "max": max(vals),
+            }
+
+    # Blood pressure
+    bp_list = raw.get("blood_pressure") or []
+    if bp_list:
+        latest = bp_list[-1]
+        sys_val = latest.get("systolic") or latest.get("sys")
+        dia_val = latest.get("diastolic") or latest.get("dia")
+        if sys_val and dia_val:
+            snap["blood_pressure"] = {
+                "latest": {"systolic": int(sys_val), "diastolic": int(dia_val)},
+            }
+
+    snap["source"] = "mi_fitness_auto"
+    snap["generated_at"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return snap
+
+
+async def _get_tokens() -> XiaomiTokens | None:
+    """Load cached tokens or login with env credentials."""
+    tokens = XiaomiTokens.load()
+    if tokens and tokens.service_token:
+        return tokens
+
+    username = os.getenv("XIAOMI_USER")
+    password = os.getenv("XIAOMI_PASS")
+    if not username or not password:
+        return None
+    try:
+        tokens = await login_xiaomi(username, password)
+        return tokens
+    except Exception as exc:
+        logger.error("Xiaomi login failed: %s", exc)
+        return None
+
+
+async def collect_once() -> dict[str, Any]:
+    """Run one collection cycle. Returns the saved snapshot or error dict."""
+    global _last_result, _last_error
+
+    tokens = await _get_tokens()
+    if not tokens:
+        _last_error = "No Xiaomi credentials configured"
+        return {"error": _last_error}
+
+    client = MiFitnessClient(tokens, region=_REGION)
+    try:
+        raw = await client.get_today_summary()
+    except Exception as exc:
+        _last_error = f"Mi Fitness API error: {exc}"
+        logger.error(_last_error)
+        return {"error": _last_error}
+
+    today = date.today()
+    snapshot = _normalize_snapshot(raw, today)
+    try:
+        saved = day_store.upsert(snapshot)
+    except ValueError as exc:
+        _last_error = f"Store error: {exc}"
+        return {"error": _last_error}
+
+    _last_error = None
+    _last_result = {
+        "date": today.isoformat(),
+        "collected_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "keys": [k for k in ("steps", "sleep", "weight", "heart_rate", "blood_pressure") if k in snapshot],
+    }
+    logger.info("Data collected: %s", _last_result)
+    return saved
+
+
+async def _loop() -> None:
+    global _running
+    _running = True
+    while True:
+        try:
+            await collect_once()
+        except Exception as exc:
+            logger.exception("Collector loop error: %s", exc)
+        await asyncio.sleep(_INTERVAL_MINUTES * 60)
+
+
+def start_collector() -> None:
+    """Start the background collection task (call from FastAPI lifespan)."""
+    global _collector_task
+    if _collector_task is not None:
+        return
+    _collector_task = asyncio.create_task(_loop())
+    logger.info("Data collector started (every %d min)", _INTERVAL_MINUTES)
+
+
+def stop_collector() -> None:
+    global _collector_task, _running
+    if _collector_task:
+        _collector_task.cancel()
+        _collector_task = None
+    _running = False
