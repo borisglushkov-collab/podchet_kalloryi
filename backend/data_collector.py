@@ -6,6 +6,7 @@ Runs as an asyncio background task inside the FastAPI lifespan.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from datetime import date, datetime, timedelta, timezone
@@ -36,67 +37,92 @@ def collector_status() -> dict[str, Any]:
     }
 
 
+def _parse_value(item: dict[str, Any]) -> dict[str, Any]:
+    """Parse nested JSON from the 'value' field of a Mi Fitness data item."""
+    val = item.get("value", "")
+    if isinstance(val, str):
+        try:
+            return json.loads(val)
+        except (json.JSONDecodeError, ValueError):
+            return {}
+    if isinstance(val, dict):
+        return val
+    return {}
+
+
 def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any]:
-    """Convert raw Mi Fitness API response into our day-snapshot format."""
+    """Convert raw Mi Fitness API items into our day-snapshot format."""
     snap: dict[str, Any] = {"date": target_date.isoformat()}
 
-    # Steps
+    # Steps — each item.value is JSON like {"steps":10, "distance":5, "calories":2}
     steps_list = raw.get("steps") or []
     if steps_list:
         total_steps = 0
+        total_dist = 0
+        total_cal = 0
         for item in steps_list:
-            val = item.get("value") or item.get("steps")
-            if isinstance(val, (int, float)):
-                total_steps += int(val)
-            elif isinstance(val, str):
-                try:
-                    total_steps += int(val)
-                except ValueError:
-                    pass
-        snap["steps"] = {"count": total_steps}
+            v = _parse_value(item)
+            total_steps += int(v.get("steps", 0))
+            total_dist += int(v.get("distance", 0))
+            total_cal += int(v.get("calories", 0))
+        snap["steps"] = {"count": total_steps, "distance_m": total_dist, "calories": total_cal}
 
-    # Sleep
+    # Sleep — value has bedtime, wake_up_time, sleep_deep_duration, etc.
     sleep_list = raw.get("sleep") or []
     if sleep_list:
         total_min = 0
         deep_min = 0
+        light_min = 0
+        rem_min = 0
+        avg_hr = 0
+        count = 0
         for item in sleep_list:
-            dur = item.get("total_duration") or item.get("duration") or item.get("value") or 0
-            if isinstance(dur, str):
-                try:
-                    dur = int(dur)
-                except ValueError:
-                    dur = 0
-            total_min += int(dur)
-            d = item.get("deep_sleep") or item.get("deep") or 0
-            if isinstance(d, str):
-                try:
-                    d = int(d)
-                except ValueError:
-                    d = 0
-            deep_min += int(d)
-        snap["sleep"] = {"total_min": total_min, "deep_min": deep_min}
+            v = _parse_value(item)
+            bt = v.get("bedtime") or v.get("device_bedtime")
+            wt = v.get("wake_up_time") or v.get("device_wake_up_time")
+            if bt and wt:
+                dur = max(0, int(wt) - int(bt)) // 60
+                total_min += dur
+            deep_min += int(v.get("sleep_deep_duration", 0))
+            light_min += int(v.get("sleep_light_duration", 0))
+            rem_min += int(v.get("sleep_rem_duration", 0))
+            hr = v.get("avg_hr")
+            if hr:
+                avg_hr += int(hr)
+                count += 1
+        snap["sleep"] = {
+            "total_min": total_min,
+            "deep_min": deep_min,
+            "light_min": light_min,
+            "rem_min": rem_min,
+        }
+        if count:
+            snap["sleep"]["avg_hr"] = round(avg_hr / count)
 
-    # Weight
+    # Weight — value has weight, bmi, etc.
     weight_list = raw.get("weight") or []
     if weight_list:
-        latest = weight_list[-1] if weight_list else {}
-        w = latest.get("weight") or latest.get("value")
+        latest_v = _parse_value(weight_list[-1])
+        w = latest_v.get("weight")
         if w is not None:
             try:
                 snap["weight"] = {"kg": round(float(w), 1)}
+                bmi = latest_v.get("bmi")
+                if bmi:
+                    snap["weight"]["bmi"] = round(float(bmi), 1)
             except (ValueError, TypeError):
                 pass
 
-    # Heart rate
+    # Heart rate — value has {"bpm": 70, "type": 0}
     hr_list = raw.get("heart_rate") or []
     if hr_list:
         vals = []
         for item in hr_list:
-            v = item.get("value") or item.get("bpm") or item.get("avg")
-            if v is not None:
+            v = _parse_value(item)
+            bpm = v.get("bpm")
+            if bpm is not None:
                 try:
-                    vals.append(int(v))
+                    vals.append(int(bpm))
                 except (ValueError, TypeError):
                     pass
         if vals:
@@ -104,14 +130,15 @@ def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any
                 "avg": round(sum(vals) / len(vals)),
                 "min": min(vals),
                 "max": max(vals),
+                "samples": len(vals),
             }
 
     # Blood pressure
     bp_list = raw.get("blood_pressure") or []
     if bp_list:
-        latest = bp_list[-1]
-        sys_val = latest.get("systolic") or latest.get("sys")
-        dia_val = latest.get("diastolic") or latest.get("dia")
+        latest_v = _parse_value(bp_list[-1])
+        sys_val = latest_v.get("systolic") or latest_v.get("sys")
+        dia_val = latest_v.get("diastolic") or latest_v.get("dia")
         if sys_val and dia_val:
             snap["blood_pressure"] = {
                 "latest": {"systolic": int(sys_val), "diastolic": int(dia_val)},
@@ -151,6 +178,7 @@ async def collect_once() -> dict[str, Any]:
 
     client = MiFitnessClient(tokens, region=_REGION)
     try:
+        await client.connect()
         raw = await client.get_today_summary()
     except Exception as exc:
         _last_error = f"Mi Fitness API error: {exc}"
