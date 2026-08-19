@@ -237,6 +237,13 @@ function renderToday() {
         <div class="value">${d.weight_kg ?? state.profile.weight_kg_latest ?? "—"}</div>
         <div class="sub">кг</div>
       </div>
+      ${d.heart_rate ? `
+      <div class="card">
+        <h2>Пульс</h2>
+        <div class="value">${d.heart_rate.avg ?? "—"}</div>
+        <div class="sub">мин ${d.heart_rate.min ?? "—"} / макс ${d.heart_rate.max ?? "—"}</div>
+      </div>
+      ` : ""}
       <div class="card wide">
         <h2>Еда</h2>
         <div class="value">${Math.round(totals.calories)} ккал</div>
@@ -667,7 +674,27 @@ async function xiaomiSetTokens() {
   }
 }
 
+async function loadServerDay() {
+  try {
+    const r = await fetch(`/api/health/day/${state.date}`);
+    if (!r.ok) return;
+    const data = await r.json();
+    const snap = data.snapshot || {};
+    const d = day();
+    if (snap.steps?.count != null && (d.steps == null || snap.source === "mi_fitness_auto")) d.steps = snap.steps.count;
+    if (snap.sleep?.total_min != null && (d.sleep_min == null || snap.source === "mi_fitness_auto")) d.sleep_min = snap.sleep.total_min;
+    if (snap.weight?.kg != null && (d.weight_kg == null || snap.source === "mi_fitness_auto")) {
+      d.weight_kg = snap.weight.kg;
+      state.profile.weight_kg_latest = snap.weight.kg;
+    }
+    if (snap.heart_rate) d.heart_rate = snap.heart_rate;
+    saveJson(STORAGE_DAYS, state.days);
+    render();
+  } catch { /* offline */ }
+}
+
 fetchCollectorStatus();
+loadServerDay();
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").catch(() => {});
