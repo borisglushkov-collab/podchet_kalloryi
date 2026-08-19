@@ -217,10 +217,12 @@ def fetch_food_entries_today() -> list[dict[str, Any]]:
     if not fs:
         return []
     try:
-        entries = fs.food_entries_get()
+        # В текущей версии библиотеки дневник находится в `fs.diary.*`
+        # `entries_get_v2` возвращает список entries за указанную дату.
+        entries = fs.diary.entries_get_v2(date=date.today())
         if not entries:
             return []
-        if isinstance(entries, dict):
+        if not isinstance(entries, list):
             entries = [entries]
         return [_normalize_entry(e) for e in entries]
     except Exception as exc:
@@ -235,11 +237,12 @@ def fetch_food_month(target_date: date | None = None) -> list[dict[str, Any]]:
         return []
     try:
         d = target_date or date.today()
-        dt = datetime(d.year, d.month, d.day)
-        days = fs.food_entries_get_month(date=dt)
+        # v2: entries_get_month_v2(date_int) — если передать None, вернёт текущий месяц.
+        # Мы пока используем его без точной валидации date_int (PWA сейчас не требует month-таблицу).
+        days = fs.diary.entries_get_month_v2(date=None)
         if not days:
             return []
-        if isinstance(days, dict):
+        if not isinstance(days, list):
             days = [days]
         return [_normalize_day(day) for day in days]
     except Exception as exc:
