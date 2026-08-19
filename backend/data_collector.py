@@ -81,6 +81,8 @@ def _record_date_iso(record: dict[str, Any]) -> str | None:
             ts = float(val)
             if ts > 1_000_000_000_000:
                 ts /= 1000.0
+            elif ts > 1_000_000_000_00:  # ms timestamps like 1787072405000
+                ts /= 1000.0
             try:
                 return datetime.fromtimestamp(ts, tz=timezone.utc).date().isoformat()
             except (OSError, OverflowError, ValueError):
@@ -127,6 +129,54 @@ def _normalize_workout(item: dict[str, Any]) -> dict[str, Any]:
         "start_at": start_at,
         "source": "mi_fitness",
     }
+
+
+def _parse_scale_body(record: dict[str, Any]) -> dict[str, Any]:
+    """Parse Xiaomi Home scale record (eco/scale format)."""
+    raw = record.get("data")
+    if isinstance(raw, str):
+        try:
+            body = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            body = {}
+    elif isinstance(raw, dict):
+        body = raw
+    else:
+        body = record.get("bodyData") or record
+
+    def _num(key: str, alt: str | None = None) -> float | None:
+        val = body.get(key)
+        if val is None and alt:
+            val = body.get(alt)
+        if val is None:
+            return None
+        try:
+            return round(float(val), 1)
+        except (ValueError, TypeError):
+            return None
+
+    out: dict[str, Any] = {}
+    weight = _num("weight")
+    if weight is not None:
+        out["weight"] = weight
+    for src, dst in (
+        ("bmi", "bmi"),
+        ("bfp", "bodyFat"),
+        ("bwp", "water"),
+        ("bmc", "bone"),
+        ("ma", "bodyAge"),
+        ("slm", "muscle"),
+        ("pm", "protein"),
+        ("vfl", "visceralFat"),
+        ("bmr", "bmr"),
+        ("sbc", "bodyScore"),
+        ("heartRate", "heartRate"),
+        ("smm", "skeletalMuscle"),
+    ):
+        val = _num(src)
+        if val is not None:
+            out[dst] = val
+    return out
 
 
 def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any]:
@@ -181,13 +231,13 @@ def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any
     # Weight from Xiaomi Home scale (body composition)
     home_weight = raw.get("weight_home") or []
     if home_weight:
-        latest_hw = home_weight[-1] if home_weight else {}
-        bd = latest_hw.get("bodyData") or latest_hw
+        latest_hw = home_weight[-1]
+        bd = _parse_scale_body(latest_hw)
         w = bd.get("weight")
         if w is not None:
             try:
-                snap["weight"] = {"kg": round(float(w), 1)}
-                for field in ("bmi", "bodyFat", "muscle", "water", "bone", "visceralFat", "bodyAge", "bmr"):
+                snap["weight"] = {"kg": round(float(w), 1), "source": "xiaomi_home"}
+                for field in ("bmi", "bodyFat", "muscle", "water", "bone", "visceralFat", "bodyAge", "bmr", "bodyScore", "heartRate", "skeletalMuscle", "protein"):
                     val = bd.get(field)
                     if val is not None:
                         snap["weight"][field] = round(float(val), 1)
@@ -332,7 +382,7 @@ async def collect_for_date(target_date: date | None = None) -> dict[str, Any]:
     try:
         home_client = XiaomiHomeClient(tokens, region=_REGION)
         await home_client.connect()
-        scale_data = await home_client.get_scale_data(model="yunmai.scales.ms104")
+        scale_data = await home_client.get_scale_data()
         if scale_data:
             raw["weight_home"] = _filter_scale_for_date(scale_data, day)
             logger.info("Xiaomi Home scale (%s): %d records", day.isoformat(), len(raw["weight_home"]))

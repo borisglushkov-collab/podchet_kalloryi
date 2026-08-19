@@ -190,75 +190,70 @@ class XiaomiHomeClient:
                 logger.warning("Failed to get devices for home %s: %s", home.get("id"), exc)
         return all_devices
 
+    async def get_scale_model(self) -> str | None:
+        """Detect body composition scale model from connected devices."""
+        try:
+            devices = await self.get_all_devices()
+        except Exception as exc:
+            logger.warning("Xiaomi Home device list failed: %s", exc)
+            return None
+        for device in devices:
+            model = str(device.get("model") or "")
+            name = str(device.get("name") or "").lower()
+            if "scales" in model or "scale" in name:
+                return model
+        return None
+
     async def get_scale_data(self, model: str = "", *, page_size: int = 200) -> list[dict[str, Any]]:
-        """Fetch weight/body composition from eco/scale subsystem.
-        
-        The eco/scale API uses the same RC4 encryption as other MIoT
-        endpoints, but the model is passed as an unencrypted form param
-        appended after the encrypted payload.
+        """Fetch weight/body composition from eco/scale subsystem (S400 EU / ms104).
+
+        For non-CN regions (ru/de/us/...) Xiaomi expects paginated requests with
+        beginTime/endTime and the scale model in both JSON payload and header.
         """
         if not self._connected:
             await self.connect()
 
-        base = self._base_url()
+        model = model or (await self.get_scale_model()) or "yunmai.scales.ms104"
         path = "/eco/common/scale/getUserDataByPage"
+        items: list[dict[str, Any]] = []
+        begin_time = int(_time.time() * 1000)
+        max_pages = max(1, (page_size + 19) // 20)
 
-        payload = {
-            "uid": self._user_id,
-            "pageNum": 1,
-            "pageSize": page_size,
-            "startTime": 0,
-        }
-
-        nonce = _gen_nonce()
-        snonce = _signed_nonce(self._ssecurity, nonce)
-
-        data_json = json.dumps(payload, separators=(",", ":"))
-        form = {"data": data_json}
-        sig_base = "POST&" + path + "&data=" + form["data"]
-        if "rc4_hash__" in form:
-            sig_base += "&rc4_hash__=" + form["rc4_hash__"]
-        sig_base += "&" + base64.b64encode(snonce).decode()
-        form["rc4_hash__"] = base64.b64encode(hashlib.sha1(sig_base.encode()).digest()).decode()
-
-        encrypted = {
-            k: base64.b64encode(_rc4_crypt(snonce, v.encode())).decode()
-            for k, v in form.items()
-        }
-        sig_base2 = "POST&" + path
-        for k, v in sorted(encrypted.items()):
-            sig_base2 += f"&{k}={v}"
-        sig_base2 += "&" + base64.b64encode(snonce).decode()
-        encrypted["signature"] = base64.b64encode(hashlib.sha1(sig_base2.encode()).digest()).decode()
-        encrypted["_nonce"] = base64.b64encode(nonce).decode()
-
-        content = urlencode(encrypted)
-        if model:
-            content += f"&model={model}"
-
-        async with httpx.AsyncClient(timeout=30) as c:
-            r = await c.post(
-                base + path,
-                headers={
-                    "Cookie": self._cookies,
-                    "Content-Type": "application/x-www-form-urlencoded",
+        for _ in range(max_pages):
+            payload = json.dumps(
+                {
+                    "endTime": 1,
+                    "beginTime": begin_time,
+                    "model": model,
+                    "uid": str(self._user_id),
+                    "did": 0,
+                    "accountId": 0,
                 },
-                content=content,
+                separators=(",", ":"),
             )
-            r.raise_for_status()
-            plaintext = _rc4_crypt(snonce, base64.b64decode(r.text))
-            body = json.loads(plaintext)
+            result = await self._request(
+                path,
+                {"data": payload},
+                extra_headers={"MIOT-REQUEST-MODEL": model},
+            )
+            page = result if isinstance(result, list) else []
+            if isinstance(result, dict):
+                page = result.get("dataList") or result.get("list") or []
 
-        if body.get("code") != 0:
-            logger.warning("Scale API: %s", body.get("message", body))
-            return []
+            if not page:
+                break
 
-        data = body.get("result", {})
-        if isinstance(data, dict):
-            return data.get("dataList") or data.get("list") or []
-        if isinstance(data, list):
-            return data
-        return []
+            items.extend(page)
+            if len(page) < 20:
+                break
+
+            last = page[-1]
+            next_ts = last.get("createTime")
+            if not next_ts or next_ts == begin_time:
+                break
+            begin_time = int(next_ts)
+
+        return items[:page_size]
 
     async def get_device_data(self, did: str, *, data_type: str = "", limit: int = 50) -> list[dict[str, Any]]:
         """Generic device data fetch via MIoT endpoint."""
