@@ -794,25 +794,25 @@ async def medm_bp_list(limit: int = 50):
 
 
 @app.get("/api/health/fatsecret-auth")
-async def fatsecret_auth_start(request: Request):
+async def fatsecret_auth_start():
     from fatsecret_client import get_authorize_url
-    base = os.getenv("PUBLIC_URL", "http://201.51.22.29")
-    callback = f"{base}/api/health/fatsecret-callback"
-    url, session_id = get_authorize_url(callback)
+    url, session_id = get_authorize_url("oob")
     return {"authorize_url": url, "session_id": session_id}
 
 
-@app.get("/api/health/fatsecret-callback")
-async def fatsecret_callback(oauth_token: str = "", oauth_verifier: str = ""):
+class FatSecretVerifyRequest(BaseModel):
+    session_id: str
+    pin: str
+
+
+@app.post("/api/health/fatsecret-verify")
+async def fatsecret_verify(request: FatSecretVerifyRequest):
     from fatsecret_client import complete_auth
-    if not oauth_verifier:
-        return RedirectResponse(url="/hub/?fatsecret=error")
     try:
-        complete_auth(oauth_token, oauth_verifier)
+        complete_auth(request.session_id, request.pin)
     except Exception as exc:
-        logger.error("FatSecret OAuth error: %s", exc)
-        return RedirectResponse(url="/hub/?fatsecret=error")
-    return RedirectResponse(url="/hub/?fatsecret=ok")
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "ok"}
 
 
 @app.get("/api/health/fatsecret-food")

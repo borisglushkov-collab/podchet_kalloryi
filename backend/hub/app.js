@@ -59,6 +59,7 @@ const state = {
   sending: false,
   collectorStatus: {},
   xiaomi2fa: null,
+  fatsecretSession: null,
 };
 
 function day() {
@@ -356,6 +357,13 @@ function renderMore() {
       <h2>FatSecret (еда)</h2>
       <p class="hint">Подключите FatSecret для автоматического сбора дневника питания</p>
       <button class="btn primary" id="fatsecret-connect">Подключить FatSecret</button>
+      ${state.fatsecretSession ? `
+        <div style="margin-top:8px">
+          <label>PIN-код из FatSecret</label>
+          <input id="fs-pin" placeholder="Введите PIN" />
+          <button class="btn primary" id="fs-verify">Подтвердить</button>
+        </div>
+      ` : ""}
       <div id="fatsecret-status" class="sub"></div>
     </div>
     <div class="card wide form" style="margin-top:10px">
@@ -515,6 +523,7 @@ function bind() {
   document.getElementById("xi-tokens")?.addEventListener("click", xiaomiSetTokens);
   document.getElementById("medm-login")?.addEventListener("click", medmLogin);
   document.getElementById("fatsecret-connect")?.addEventListener("click", fatsecretConnect);
+  document.getElementById("fs-verify")?.addEventListener("click", fatsecretVerify);
 }
 
 async function importCsv() {
@@ -726,10 +735,32 @@ async function fatsecretConnect() {
     const r = await fetch("/api/health/fatsecret-auth");
     const data = await r.json();
     if (data.authorize_url) {
-      window.location.href = data.authorize_url;
+      state.fatsecretSession = data.session_id;
+      window.open(data.authorize_url, "_blank");
+      toast("Откроется FatSecret — разрешите доступ и введите PIN-код ниже");
+      render();
     } else {
-      toast("Ошибка получения ссылки FatSecret");
+      toast("Ошибка: " + (data.detail || "нет ссылки"));
     }
+  } catch (err) {
+    toast("Ошибка: " + err.message);
+  }
+}
+
+async function fatsecretVerify() {
+  const pin = val("fs-pin");
+  if (!pin || !state.fatsecretSession) return toast("Введите PIN-код из FatSecret");
+  try {
+    const r = await fetch("/api/health/fatsecret-verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: state.fatsecretSession, pin }),
+    });
+    const data = await r.json();
+    if (!r.ok) { toast(data.detail || "Ошибка"); return; }
+    toast("FatSecret подключён!");
+    state.fatsecretSession = null;
+    render();
   } catch (err) {
     toast("Ошибка: " + err.message);
   }
