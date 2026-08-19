@@ -81,8 +81,6 @@ def _record_date_iso(record: dict[str, Any]) -> str | None:
             ts = float(val)
             if ts > 1_000_000_000_000:
                 ts /= 1000.0
-            elif ts > 1_000_000_000_00:  # ms timestamps like 1787072405000
-                ts /= 1000.0
             try:
                 return datetime.fromtimestamp(ts, tz=timezone.utc).date().isoformat()
             except (OSError, OverflowError, ValueError):
@@ -90,6 +88,20 @@ def _record_date_iso(record: dict[str, Any]) -> str | None:
         text = str(val).strip()
         if len(text) >= 10 and text[4] == "-" and text[7] == "-":
             return text[:10]
+    nested = record.get("data")
+    if isinstance(nested, str):
+        try:
+            nested = json.loads(nested)
+        except (json.JSONDecodeError, ValueError):
+            nested = None
+    if isinstance(nested, dict) and nested.get("time"):
+        try:
+            ts = float(nested["time"])
+            if ts > 1_000_000_000_000:
+                ts /= 1000.0
+            return datetime.fromtimestamp(ts, tz=timezone.utc).date().isoformat()
+        except (OSError, OverflowError, ValueError):
+            pass
     return None
 
 

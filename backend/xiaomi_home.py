@@ -231,14 +231,21 @@ class XiaomiHomeClient:
                 },
                 separators=(",", ":"),
             )
-            result = await self._request(
+            body = await self._request(
                 path,
                 {"data": payload},
                 extra_headers={"MIOT-REQUEST-MODEL": model},
             )
-            page = result if isinstance(result, list) else []
-            if isinstance(result, dict):
-                page = result.get("dataList") or result.get("list") or []
+            if body.get("code") not in (0, None):
+                logger.warning("Scale API: %s", body.get("message", body))
+                break
+
+            page: list[dict[str, Any]] = []
+            raw_result = body.get("result")
+            if isinstance(raw_result, list):
+                page = raw_result
+            elif isinstance(raw_result, dict):
+                page = raw_result.get("dataList") or raw_result.get("list") or []
 
             if not page:
                 break
