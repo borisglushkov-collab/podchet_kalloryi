@@ -9,7 +9,7 @@ import 'weight_analysis.dart';
 class SettingsService {
   static const _backendUrlKey = 'backend_url';
   static const _cityKey = 'city';
-  static const defaultBackendUrl = 'http://5.42.111.122';
+  static const defaultBackendUrl = 'http://201.51.22.29';
   static const defaultCity = 'Москва';
 
   static Future<String> getBackendUrl() async {
