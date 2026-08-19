@@ -12,6 +12,8 @@ import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
+from zoneinfo import ZoneInfo
+
 from health_day_store import day_store
 from xiaomi_auth import XiaomiTokens, login_xiaomi
 from xiaomi_fitness import MiFitnessClient
@@ -111,6 +113,66 @@ def _filter_scale_for_date(records: list[dict[str, Any]], target_date: date) -> 
     return matched or records
 
 
+def _step_record_date(item: dict[str, Any], tz_name: str = "Europe/Moscow") -> str | None:
+    ts = item.get("time")
+    if ts is None:
+        return None
+    try:
+        instant = datetime.fromtimestamp(int(ts), tz=timezone.utc)
+    except (OSError, OverflowError, TypeError, ValueError):
+        return None
+    zone_offset = item.get("zone_offset")
+    if zone_offset is not None:
+        try:
+            return (instant + timedelta(seconds=int(zone_offset))).date().isoformat()
+        except (TypeError, ValueError, OverflowError):
+            pass
+    try:
+        return instant.astimezone(ZoneInfo(tz_name)).date().isoformat()
+    except Exception:
+        return None
+
+
+def _aggregate_metric_values(values: list[int]) -> int:
+    """Sum incremental buckets; use last value when records look like daily cumulative totals."""
+    if not values:
+        return 0
+    if len(values) == 1:
+        return values[0]
+    total_sum = sum(values)
+    non_decreasing = all(values[i] <= values[i + 1] for i in range(len(values) - 1))
+    if non_decreasing and values[-1] >= total_sum * 0.45:
+        return values[-1]
+    return total_sum
+
+
+def _aggregate_steps_for_day(steps_list: list[dict[str, Any]], target_date: date) -> dict[str, int] | None:
+    iso = target_date.isoformat()
+    buckets: list[tuple[int, dict[str, int]]] = []
+    for item in steps_list:
+        if _step_record_date(item) != iso:
+            continue
+        v = _parse_value(item)
+        steps = int(v.get("steps", 0) or 0)
+        distance = int(v.get("distance", 0) or 0)
+        calories = int(v.get("calories", 0) or 0)
+        if steps <= 0 and distance <= 0 and calories <= 0:
+            continue
+        ts = int(item.get("time") or 0)
+        buckets.append((ts, {"steps": steps, "distance": distance, "calories": calories}))
+    if not buckets:
+        return None
+    buckets.sort(key=lambda pair: pair[0])
+    step_vals = [b["steps"] for _, b in buckets if b["steps"] > 0]
+    dist_vals = [b["distance"] for _, b in buckets if b["distance"] > 0]
+    cal_vals = [b["calories"] for _, b in buckets if b["calories"] > 0]
+    return {
+        "count": _aggregate_metric_values(step_vals),
+        "distance_m": _aggregate_metric_values(dist_vals),
+        "calories": _aggregate_metric_values(cal_vals),
+    }
+
+
 def _filter_medm_for_date(readings: list[dict[str, Any]], target_date: date) -> list[dict[str, Any]]:
     iso = target_date.isoformat()
     return [r for r in readings if str(r.get("measured_at") or "").startswith(iso)]
@@ -195,18 +257,12 @@ def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any
     """Convert raw Mi Fitness API items into our day-snapshot format."""
     snap: dict[str, Any] = {"date": target_date.isoformat()}
 
-    # Steps — each item.value is JSON like {"steps":10, "distance":5, "calories":2}
+    # Steps — Mi Fitness uploads incremental buckets or cumulative daily totals.
     steps_list = raw.get("steps") or []
-    if steps_list:
-        total_steps = 0
-        total_dist = 0
-        total_cal = 0
-        for item in steps_list:
-            v = _parse_value(item)
-            total_steps += int(v.get("steps", 0))
-            total_dist += int(v.get("distance", 0))
-            total_cal += int(v.get("calories", 0))
-        snap["steps"] = {"count": total_steps, "distance_m": total_dist, "calories": total_cal}
+    step_totals = _aggregate_steps_for_day(steps_list, target_date)
+    if step_totals:
+        snap["steps"] = step_totals
+        snap["activity"] = {"steps": step_totals["count"], "source": "mi_fitness"}
 
     # Sleep — value has bedtime, wake_up_time, sleep_deep_duration, etc.
     sleep_list = raw.get("sleep") or []

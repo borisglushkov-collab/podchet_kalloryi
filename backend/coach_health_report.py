@@ -53,13 +53,15 @@ def format_day_report(snapshot: dict[str, Any]) -> str:
         lines.append(line)
 
     sleep = snapshot.get("sleep") or {}
-    sleep_s = _fmt_sleep(sleep.get("duration_min"))
+    sleep_s = _fmt_sleep(sleep.get("duration_min") or sleep.get("total_min"))
     if sleep_s:
         lines.append(f"Сон: {sleep_s}")
 
+    steps_count = (snapshot.get("steps") or {}).get("count")
     activity = snapshot.get("activity") or {}
-    if activity.get("steps") is not None:
-        lines.append(f"Шаги: {activity['steps']}")
+    steps_val = steps_count if steps_count is not None else activity.get("steps")
+    if steps_val is not None:
+        lines.append(f"Шаги: {steps_val}")
 
     workouts = snapshot.get("workouts") or []
     if workouts:

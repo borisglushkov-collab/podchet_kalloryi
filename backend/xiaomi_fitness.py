@@ -14,9 +14,10 @@ import logging
 import os
 import struct
 import time as _time
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -85,6 +86,15 @@ def _encrypt_form(
 
 _KNOWN_REGIONS = ["ru", "cn", "de", "i2", "sg", "us"]
 _LOGIN_PREFIX = b"&&&START&&&"
+_DEFAULT_TZ = "Europe/Moscow"
+
+
+def _api_window(start_date: date, end_date: date, tz_name: str = _DEFAULT_TZ) -> tuple[int, int]:
+    """Inclusive date range using [start 00:00, next-day 00:00) in local timezone."""
+    zone = ZoneInfo(tz_name)
+    start = datetime.combine(start_date, time.min, zone)
+    end = datetime.combine(end_date + timedelta(days=1), time.min, zone)
+    return int(start.timestamp()), int(end.timestamp())
 
 
 def _parse_login(text: str) -> dict[str, Any]:
@@ -169,14 +179,13 @@ class MiFitnessClient:
     async def fetch_key(
         self, key: str, start_date: date, end_date: date
     ) -> list[dict[str, Any]]:
-        tz = timezone(timedelta(hours=3))  # Moscow
-        start_ts = int(datetime.combine(start_date, datetime.min.time(), tzinfo=tz).timestamp())
-        end_ts = int(datetime.combine(end_date, datetime.max.time().replace(microsecond=0), tzinfo=tz).timestamp())
+        start_ts, end_ts = _api_window(start_date, end_date)
 
         items: list[dict[str, Any]] = []
         next_key: str | None = None
+        seen_cursors: set[str] = set()
 
-        for _ in range(10):
+        for _ in range(20):
             payload: dict[str, Any] = {
                 "start_time": start_ts,
                 "end_time": end_ts,
@@ -192,15 +201,17 @@ class MiFitnessClient:
             next_key = result.get("next_key")
             if not next_key:
                 break
+            if next_key in seen_cursors:
+                logger.warning("Mi Fitness pagination cursor repeated for key=%s", key)
+                break
+            seen_cursors.add(next_key)
 
         return items
 
     async def fetch_sport_records(
         self, start_date: date, end_date: date, *, limit: int = 50
     ) -> list[dict[str, Any]]:
-        tz = timezone(timedelta(hours=3))
-        start_ts = int(datetime.combine(start_date, datetime.min.time(), tzinfo=tz).timestamp())
-        end_ts = int(datetime.combine(end_date, datetime.max.time().replace(microsecond=0), tzinfo=tz).timestamp())
+        start_ts, end_ts = _api_window(start_date, end_date)
 
         items: list[dict[str, Any]] = []
         next_key: str | None = None

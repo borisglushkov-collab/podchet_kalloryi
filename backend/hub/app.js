@@ -432,7 +432,9 @@ function renderToday() {
       <div class="card">
         <h2>Шаги</h2>
         <div class="value">${d.steps ?? "—"}</div>
-        <div class="sub">${state.collectorStatus?.running ? "авто из Mi Fitness" : "ручной ввод"}</div>
+        <div class="sub">${state.collectorStatus?.running
+          ? "Mi Fitness (облако). Если на часах больше — откройте Mi Fitness и синхронизируйте браслет"
+          : "ручной ввод"}</div>
       </div>
       <div class="card">
         <h2>Вес</h2>
