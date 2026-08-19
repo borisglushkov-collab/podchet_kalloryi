@@ -111,6 +111,15 @@ class HealthContext(BaseModel):
     coaching_targets: dict | None = None          # рабочие 1900-2100, не Yazio 2402
 ```
 
+### Альтернатива для MVP коучинга: читать snapshot напрямую из hub
+
+Так как внешний `hub` уже умеет хранить/агрегировать параметры за день, backend Podchet Kalloriy может:
+1) сделать `GET http://201.51.22.29/api/health/day/{date}`
+2) взять `snapshot` + (опционально) `report`
+3) встроить “здоровье” в промпт коуча (в `weight_insight` / отдельный блок)
+
+Это уменьшает объём работ в MVP: меньше зависимостей от Citizen CSV / Health Connect, если hub уже подключён к источникам.
+
 ## Health Connect — настройка Mi Fitness
 
 Пользователь (Android):

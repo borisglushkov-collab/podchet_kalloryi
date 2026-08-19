@@ -42,6 +42,28 @@
 - [x] Таблицы SQLite: `blood_pressure`, `sleep_sessions`, `activity_daily`, `body_composition`
 - [ ] API контракт: `POST /api/health/sync`, `GET /api/health/day/{date}`
 
+### Важно: интеграция с внешним hub (201.51.22.29)
+
+На стороне `hub/app.js` обнаружено, что он формирует объект `snapshot()` и отправляет его на сервер:
+• `POST http://201.51.22.29/api/health/sync`
+• тело: `{ "snapshot": <DailyHealthSnapshot-like> }`
+• ответ: JSON + поле `report` (текстовый дайджест)
+
+Для чтения готового снимка дня:
+• `GET http://201.51.22.29/api/health/day/{date}` → `{ snapshot, report }`
+
+Минимальные поля `snapshot`, которые реально используются hub:
+• `date`, `generated_at`
+• `profile`: `height_cm`, `weight_kg_latest`, `medications[]`, `coaching_calorie_target{kcal_min,kcal_max,protein_g}`
+• `nutrition`: `calories`, `protein_g`, `fat_g`, `carbs_g`, `meals[]`
+• `blood_pressure`: `readings_today[]`, `latest`, `avg_7d`
+• `activity`: `steps`, `source`
+• `sleep`: `duration_min`, `source`
+• `body_composition`: `weight_kg`
+• `notes`
+
+То есть: для коучинга можно **не собирать всё снова локально**, а забирать готовый `snapshot` прямо из hub и подставлять в AI.
+
 ### Фаза 1 — ручной ввод + CSV (1 неделя)
 
 **Backend**
