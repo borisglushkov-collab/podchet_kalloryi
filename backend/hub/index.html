@@ -3,26 +3,31 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#6BCB77" />
+  <meta name="theme-color" content="#1d3557" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="Сбор для коуча" />
+  <meta name="apple-mobile-web-app-title" content="Сбор" />
   <title>Сбор для коуча</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon.svg" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800&display=swap" />
-  <link rel="stylesheet" href="styles.css?v=7" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,600;7..72,700&family=Sora:wght@500;600;700;800&display=swap" />
+  <link rel="stylesheet" href="styles.css?v=8" />
 </head>
 <body>
-  <header class="top">
-    <div>
-      <p class="eyebrow">Отдельное приложение</p>
-      <h1>Сбор для коуча</h1>
-      <p id="refresh-status" class="refresh-status" aria-live="polite"></p>
+  <header class="stage">
+    <div class="stage-top">
+      <div>
+        <p class="eyebrow">для коуча</p>
+        <h1 class="brand">Сбор</h1>
+        <p class="lead">День ясно и по делу</p>
+        <p id="refresh-status" class="refresh-status" aria-live="polite"></p>
+      </div>
+      <div class="top-actions">
+        <input id="date" type="date" />
+      </div>
     </div>
-    <div class="top-actions">
-      <button class="btn ghost refresh-btn" id="refresh-data" type="button">Обновить</button>
-      <input id="date" type="date" />
+    <div class="row-cta">
+      <button class="btn primary refresh-btn" id="refresh-data" type="button">Обновить</button>
     </div>
   </header>
 
@@ -36,6 +41,6 @@
     <button data-tab="more">Ещё</button>
   </nav>
 
-  <script src="app.js?v=11"></script>
+  <script src="app.js?v=12"></script>
 </body>
 </html>

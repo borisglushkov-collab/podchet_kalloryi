@@ -568,13 +568,20 @@ function renderToday() {
   const weightSub = bc?.bmi != null ? `ИМТ ${bc.bmi} · Xiaomi Home` : (bc?.source === "xiaomi_home" ? "Xiaomi Home" : "кг");
   const target = state.profile.coaching_calorie_target || {};
   let kcalVs = "";
+  let goalClass = "goal-pill";
   if (totals.calories && (target.kcal_min || target.kcal_max)) {
     const lo = Number(target.kcal_min || 0);
     const hi = Number(target.kcal_max || lo);
     const cal = Math.round(totals.calories);
-    if (cal < lo) kcalVs = `ниже цели на ${lo - cal}`;
-    else if (cal > hi) kcalVs = `выше цели на ${cal - hi}`;
-    else kcalVs = `в цели ${lo}–${hi}`;
+    if (cal < lo) {
+      kcalVs = `ниже цели на ${lo - cal} — запас до вечера`;
+      goalClass = "goal-pill warn";
+    } else if (cal > hi) {
+      kcalVs = `выше цели на ${cal - hi}`;
+      goalClass = "goal-pill warn";
+    } else {
+      kcalVs = `в цели ${lo}–${hi}`;
+    }
   }
   const fs = d.sources_status?.fatsecret;
   const foodSync = fs
@@ -642,7 +649,8 @@ function renderToday() {
       <div class="card wide">
         <h2>Еда</h2>
         <div class="value">${Math.round(totals.calories)} ккал</div>
-        <div class="sub">Б ${Math.round(totals.protein_g)} · Ж ${Math.round(totals.fat_g)} · У ${Math.round(totals.carbs_g)}${kcalVs ? ` · ${kcalVs}` : ""}</div>
+        <div class="sub">Б ${Math.round(totals.protein_g)} · Ж ${Math.round(totals.fat_g)} · У ${Math.round(totals.carbs_g)}</div>
+        ${kcalVs ? `<div class="${goalClass}">● ${kcalVs}</div>` : ""}
         <ul class="list">${
           d.meals.length
             ? d.meals.map((m, i) => {
@@ -1503,7 +1511,7 @@ async function boot() {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js?v=8").then((reg) => {
+  navigator.serviceWorker.register("sw.js?v=9").then((reg) => {
     reg.update().catch(() => {});
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       toast("Обновление установлено — перезагрузка…");

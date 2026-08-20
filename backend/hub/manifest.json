@@ -1,10 +1,10 @@
 {
   "name": "Сбор для коуча",
-  "short_name": "Коучу",
+  "short_name": "Сбор",
   "start_url": "/hub/",
   "display": "standalone",
-  "background_color": "#FFF9F0",
-  "theme_color": "#6BCB77",
+  "background_color": "#FFF6EF",
+  "theme_color": "#1D3557",
   "lang": "ru",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
