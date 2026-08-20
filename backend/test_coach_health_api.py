@@ -16,9 +16,36 @@ def test_hub_app_is_served():
     response = client.get("/hub/")
     assert response.status_code == 200
     assert "Сбор для коуча" in response.text
+    assert "Неделя" in response.text
+    assert "app.js?v=9" in response.text
 
 
-def test_sync_and_report():
+def test_week_endpoint_returns_report():
+    health_day_store.day_store.upsert(
+        {
+            "date": "2026-08-19",
+            "nutrition": {"calories": 1551, "meals": []},
+            "activity": {"steps": 7000},
+            "profile": {"coaching_calorie_target": {"kcal_min": 1900, "kcal_max": 2100}},
+        }
+    )
+    response = client.get("/api/health/week?days=7&end=2026-08-19")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["days"]) == 7
+    assert data["days"][-1]["date"] == "2026-08-19"
+    assert "Неделя для коуча" in data["report"]
+    assert "1551" in data["report"]
+
+
+def test_collector_status_includes_connections():
+    response = client.get("/api/health/collector-status")
+    assert response.status_code == 200
+    data = response.json()
+    assert "connections" in data
+    assert "xiaomi" in data["connections"]
+    assert "fatsecret" in data["connections"]
+    assert "medm" in data["connections"]
     snapshot = {
         "date": "2026-08-19",
         "nutrition": {"calories": 385, "protein_g": 28, "meals": []},

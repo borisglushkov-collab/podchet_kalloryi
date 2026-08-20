@@ -10,9 +10,9 @@ const MEAL_RU = {
 };
 
 const defaultProfile = () => ({
-  height_cm: 165,
-  weight_kg_latest: 109,
-  medications: ["Edarbi 80"],
+  height_cm: null,
+  weight_kg_latest: null,
+  medications: [],
   coaching_calorie_target: {
     kcal_min: 1900,
     kcal_max: 2100,
@@ -26,10 +26,15 @@ const emptyDay = (date) => ({
   bp: [],
   workouts: [],
   sleep_min: null,
+  sleep_deep_min: null,
+  sleep_light_min: null,
+  sleep_rem_min: null,
   steps: null,
   weight_kg: null,
   body_composition: null,
   notes: "",
+  sources_status: null,
+  last_synced_at: null,
 });
 
 function bodyCompositionFromWeight(w) {
@@ -109,6 +114,9 @@ function applySnapshotToDay(d, snap, { force = false } = {}) {
   const sleepMin = snap.sleep?.total_min ?? snap.sleep?.duration_min;
   if (sleepMin != null && (force || d.sleep_min == null || snap.source === "mi_fitness_auto")) {
     d.sleep_min = Number(sleepMin);
+    if (snap.sleep?.deep_min != null) d.sleep_deep_min = Number(snap.sleep.deep_min);
+    if (snap.sleep?.light_min != null) d.sleep_light_min = Number(snap.sleep.light_min);
+    if (snap.sleep?.rem_min != null) d.sleep_rem_min = Number(snap.sleep.rem_min);
   }
   if (snap.weight?.kg != null && (force || d.weight_kg == null || snap.weight.source === "xiaomi_home")) {
     applyBodyComposition(d, snap.weight);
@@ -119,6 +127,9 @@ function applySnapshotToDay(d, snap, { force = false } = {}) {
   } else if (Array.isArray(snap.workouts) && snap.workouts.length && !d.workouts?.length) {
     d.workouts = snap.workouts;
   }
+
+  if (snap.sources_status) d.sources_status = snap.sources_status;
+  if (snap.generated_at) d.last_synced_at = snap.generated_at;
 
   if (force && Array.isArray(snap.blood_pressure?.readings_today) && snap.blood_pressure.readings_today.length) {
     d.bp = snap.blood_pressure.readings_today.map((r) => ({
@@ -245,6 +256,8 @@ const state = {
   xiaomi2fa: null,
   fatsecretSession: null,
   refreshing: false,
+  weekSeries: null,
+  weekReport: "",
 };
 
 function day() {
@@ -323,7 +336,16 @@ function snapshot() {
       avg_7d: avgBp(7),
     },
     activity: d.steps == null ? {} : { steps: Number(d.steps), source: "manual" },
-    sleep: d.sleep_min == null ? {} : { duration_min: Number(d.sleep_min), source: "manual" },
+    sleep: d.sleep_min == null
+      ? {}
+      : {
+          duration_min: Number(d.sleep_min),
+          total_min: Number(d.sleep_min),
+          deep_min: d.sleep_deep_min,
+          light_min: d.sleep_light_min,
+          rem_min: d.sleep_rem_min,
+          source: "manual",
+        },
     body_composition: d.body_composition || (d.weight_kg == null ? {} : { weight_kg: Number(d.weight_kg) }),
     weight: d.body_composition ? {
       kg: d.body_composition.weight_kg,
@@ -356,10 +378,17 @@ function formatReport(snap) {
     if (avg) line += `, avg 7d: ${avg.systolic}/${avg.diastolic}`;
     lines.push(line);
   }
-  if (snap.sleep?.duration_min) {
-    const h = Math.floor(snap.sleep.duration_min / 60);
-    const m = snap.sleep.duration_min % 60;
-    lines.push(`Сон: ${h}h${String(m).padStart(2, "0")}`);
+  if (snap.sleep?.duration_min || snap.sleep?.total_min) {
+    const mins = snap.sleep.duration_min || snap.sleep.total_min;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    let line = `Сон: ${h}h${String(m).padStart(2, "0")}`;
+    const stages = [];
+    if (snap.sleep.deep_min != null) stages.push(`глубокий ${snap.sleep.deep_min}м`);
+    if (snap.sleep.light_min != null) stages.push(`лёгкий ${snap.sleep.light_min}м`);
+    if (snap.sleep.rem_min != null) stages.push(`REM ${snap.sleep.rem_min}м`);
+    if (stages.length) line += ` (${stages.join(", ")})`;
+    lines.push(line);
   }
   if (snap.activity?.steps != null) lines.push(`Шаги: ${snap.activity.steps}`);
   const workouts = snap.workouts || [];
@@ -389,6 +418,15 @@ function formatReport(snap) {
     lines.push(`Еда: ${Math.round(n.calories || 0)} kcal${mealBits.length ? ` (${mealBits.join("; ")})` : ""}`);
     if (n.protein_g || n.fat_g || n.carbs_g) {
       lines.push(`КБЖУ: Б ${Math.round(n.protein_g || 0)} · Ж ${Math.round(n.fat_g || 0)} · У ${Math.round(n.carbs_g || 0)}`);
+    }
+    const t0 = snap.profile?.coaching_calorie_target || {};
+    if (n.calories && (t0.kcal_min || t0.kcal_max)) {
+      const lo = Number(t0.kcal_min || 0);
+      const hi = Number(t0.kcal_max || lo);
+      const cal = Math.round(n.calories);
+      if (cal < lo) lines.push(`Vs цель: ниже на ${lo - cal} ккал (цель ${lo}–${hi})`);
+      else if (cal > hi) lines.push(`Vs цель: выше на ${cal - hi} ккал (цель ${lo}–${hi})`);
+      else lines.push(`Vs цель: в диапазоне ${lo}–${hi} ккал`);
     }
   }
   const meds = snap.profile?.medications || [];
@@ -425,6 +463,63 @@ function val(id) {
   return document.getElementById(id)?.value?.trim() || "";
 }
 
+function sourceLabel(key, status) {
+  const names = {
+    mi_fitness: "Mi Fitness",
+    xiaomi_home: "Весы",
+    fatsecret: "FatSecret",
+    medm: "MedM",
+  };
+  const name = names[key] || key;
+  if (!status) return `${name}: —`;
+  if (status.ok === false) {
+    if (status.error === "not_connected") return `${name}: не подключён`;
+    return `${name}: ошибка`;
+  }
+  if (status.count != null) return `${name}: ${status.count}`;
+  return `${name}: ок`;
+}
+
+function connectionBadge(ok, label) {
+  return `<span class="badge ${ok ? "ok" : "off"}">${label}: ${ok ? "подключён" : "нет"}</span>`;
+}
+
+function sparkBars(values, maxHint) {
+  const nums = values.map((v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v)));
+  const present = nums.filter((v) => v != null);
+  const max = Math.max(maxHint || 0, ...(present.length ? present : [1]));
+  return `<div class="spark">${nums
+    .map((v) => {
+      if (v == null) return `<span class="bar empty" title="нет данных"></span>`;
+      const h = Math.max(8, Math.round((v / max) * 56));
+      return `<span class="bar" style="height:${h}px" title="${Math.round(v)}"></span>`;
+    })
+    .join("")}</div>`;
+}
+
+function weekSeriesFromLocal(daysCount = 7) {
+  const end = new Date(`${state.date}T12:00:00`);
+  const series = [];
+  for (let i = daysCount - 1; i >= 0; i--) {
+    const d = new Date(end);
+    d.setDate(end.getDate() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const dayData = state.days[key] || emptyDay(key);
+    const totals = nutritionTotals(dayData.meals || []);
+    const bp = [...(dayData.bp || [])].sort((a, b) => String(b.measured_at).localeCompare(String(a.measured_at)))[0];
+    series.push({
+      date: key,
+      label: `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`,
+      calories: totals.calories || null,
+      steps: dayData.steps,
+      weight: dayData.body_composition?.weight_kg ?? dayData.weight_kg,
+      bp_sys: bp?.systolic ?? null,
+      sleep_min: dayData.sleep_min,
+    });
+  }
+  return series;
+}
+
 function renderToday() {
   const d = day();
   const bp = latestBp();
@@ -432,27 +527,54 @@ function renderToday() {
   const totals = nutritionTotals(d.meals);
   const high = bp && (bp.systolic >= 140 || bp.diastolic >= 90);
   const sleepH = d.sleep_min ? `${Math.floor(d.sleep_min / 60)}ч ${d.sleep_min % 60}м` : "—";
+  const sleepStages = [
+    d.sleep_deep_min != null ? `глуб. ${d.sleep_deep_min}м` : null,
+    d.sleep_light_min != null ? `лёгк. ${d.sleep_light_min}м` : null,
+    d.sleep_rem_min != null ? `REM ${d.sleep_rem_min}м` : null,
+  ].filter(Boolean).join(" · ");
   const bc = d.body_composition;
   const weightVal = bc?.weight_kg ?? d.weight_kg ?? state.profile.weight_kg_latest ?? "—";
   const weightSub = bc?.bmi != null ? `ИМТ ${bc.bmi} · Xiaomi Home` : (bc?.source === "xiaomi_home" ? "Xiaomi Home" : "кг");
+  const target = state.profile.coaching_calorie_target || {};
+  let kcalVs = "";
+  if (totals.calories && (target.kcal_min || target.kcal_max)) {
+    const lo = Number(target.kcal_min || 0);
+    const hi = Number(target.kcal_max || lo);
+    const cal = Math.round(totals.calories);
+    if (cal < lo) kcalVs = `ниже цели на ${lo - cal}`;
+    else if (cal > hi) kcalVs = `выше цели на ${cal - hi}`;
+    else kcalVs = `в цели ${lo}–${hi}`;
+  }
+  const fs = d.sources_status?.fatsecret;
+  const foodSync = fs
+    ? (fs.ok === false
+      ? (fs.error === "not_connected" ? "FatSecret не подключён" : "FatSecret: ошибка обновления")
+      : `FatSecret · ${fs.count ?? d.meals.length} · ${d.last_synced_at ? new Date(d.last_synced_at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "ок"}`)
+    : (d.meals.length ? "FatSecret (облако). Новые записи — после «Обновить»" : "Подключите FatSecret и нажмите «Обновить»");
+  const bpList = [...(d.bp || [])].sort((a, b) => String(b.measured_at).localeCompare(String(a.measured_at)));
   return `
     <div class="cards">
       <div class="card">
         <h2>Давление</h2>
         <div class="value ${high ? "high" : ""}">${bp ? `${bp.systolic}/${bp.diastolic}` : "—"}</div>
         <div class="sub">${avg ? `среднее 7д ${avg.systolic}/${avg.diastolic}` : "нет среднего"}</div>
+        ${bpList.length > 1 ? `<ul class="list compact">${bpList.slice(0, 4).map((r) => {
+          const t = String(r.measured_at || "");
+          const hh = t.includes("T") ? t.split("T")[1].slice(0, 5) : "";
+          return `<li><span>${r.systolic}/${r.diastolic}${r.pulse ? ` · ${r.pulse}` : ""}${hh ? ` · ${hh}` : ""}</span></li>`;
+        }).join("")}</ul>` : ""}
       </div>
       <div class="card">
         <h2>Сон</h2>
         <div class="value">${sleepH}</div>
-        <div class="sub">цель около 7–8 часов</div>
+        <div class="sub">${sleepStages || "цель около 7–8 часов"}</div>
       </div>
       <div class="card">
         <h2>Шаги</h2>
         <div class="value">${d.steps ?? "—"}</div>
-        <div class="sub">${state.collectorStatus?.running
-          ? "Mi Fitness (облако). Если на часах больше — откройте Mi Fitness и синхронизируйте браслет"
-          : "ручной ввод"}</div>
+        <div class="sub">${state.collectorStatus?.connections?.xiaomi?.connected
+          ? "Mi Fitness (облако). Если на часах больше — синхронизируйте браслет"
+          : "ручной ввод / Xiaomi не подключён"}</div>
       </div>
       <div class="card">
         <h2>Вес</h2>
@@ -489,21 +611,59 @@ function renderToday() {
       <div class="card wide">
         <h2>Еда</h2>
         <div class="value">${Math.round(totals.calories)} ккал</div>
-        <div class="sub">Б ${Math.round(totals.protein_g)} · Ж ${Math.round(totals.fat_g)} · У ${Math.round(totals.carbs_g)}</div>
+        <div class="sub">Б ${Math.round(totals.protein_g)} · Ж ${Math.round(totals.fat_g)} · У ${Math.round(totals.carbs_g)}${kcalVs ? ` · ${kcalVs}` : ""}</div>
         <ul class="list">${
           d.meals.length
             ? d.meals.map((m, i) => `<li><span>${MEAL_RU[m.meal_type] || m.meal_type}: ${m.name}</span><button class="btn ghost" data-del-meal="${i}">×</button></li>`).join("")
             : `<li class="empty">Пока пусто — подключите FatSecret и нажмите «Обновить»</li>`
         }</ul>
-        <div class="sub">FatSecret (облако). Новые записи появятся после «Обновить»</div>
+        <div class="sub">${foodSync}</div>
       </div>
     </div>
     <div class="actions">
       <button class="btn ghost" id="refresh-data-tab">Обновить данные</button>
       <button class="btn primary" id="copy-report">Скопировать отчёт коучу</button>
+      <button class="btn ghost" id="share-report">Поделиться отчётом</button>
       <button class="btn ghost" id="ask-coach">Спросить коуча по этому дню</button>
     </div>
     <p class="hint">Это не вкладка в «Подсчёте калорий». Сюда вы складываете день, кнопка копирует текст или отправляет коучу.</p>
+  `;
+}
+
+function renderWeek() {
+  const series = state.weekSeries?.length ? state.weekSeries : weekSeriesFromLocal(7);
+  const target = state.profile.coaching_calorie_target || {};
+  const report = state.weekReport || "";
+  return `
+    <div class="card wide">
+      <h2>Неделя</h2>
+      <div class="sub">Тренды относительно ${state.date}</div>
+      <div class="week-block">
+        <div class="week-label">Калории</div>
+        ${sparkBars(series.map((s) => s.calories), Number(target.kcal_max || 2100))}
+        <div class="week-axis">${series.map((s) => `<span>${s.label}</span>`).join("")}</div>
+      </div>
+      <div class="week-block">
+        <div class="week-label">Шаги</div>
+        ${sparkBars(series.map((s) => s.steps), 10000)}
+        <div class="week-axis">${series.map((s) => `<span>${s.label}</span>`).join("")}</div>
+      </div>
+      <div class="week-block">
+        <div class="week-label">Вес</div>
+        ${sparkBars(series.map((s) => s.weight), 120)}
+        <div class="week-axis">${series.map((s) => `<span>${s.label}</span>`).join("")}</div>
+      </div>
+      <div class="week-block">
+        <div class="week-label">АД (систол)</div>
+        ${sparkBars(series.map((s) => s.bp_sys), 160)}
+        <div class="week-axis">${series.map((s) => `<span>${s.label}</span>`).join("")}</div>
+      </div>
+    </div>
+    <div class="report" style="margin-top:10px">${escapeHtml(report || "Загрузка недельного отчёта…")}</div>
+    <div class="actions">
+      <button class="btn primary" id="copy-week-report">Скопировать неделю коучу</button>
+      <button class="btn ghost" id="share-week-report">Поделиться неделей</button>
+    </div>
   `;
 }
 
@@ -543,6 +703,11 @@ function renderAdd() {
         <input id="meal-kcal" inputmode="decimal" placeholder="ккал" />
         <input id="meal-p" inputmode="decimal" placeholder="Б" />
       </div>
+      <div class="row">
+        <input id="meal-f" inputmode="decimal" placeholder="Ж" />
+        <input id="meal-c" inputmode="decimal" placeholder="У" />
+        <span></span>
+      </div>
       <button class="btn primary" id="save-meal">Добавить еду</button>
     </div>
   `;
@@ -556,38 +721,51 @@ function renderCoach() {
   return `
     <div class="report">${escapeHtml(report)}</div>
     <div class="actions">
-      <button class="btn ghost" id="copy-report">Скопировать этот текст</button>
+      <button class="btn primary" id="copy-report">Скопировать отчёт коучу</button>
+      <button class="btn ghost" id="share-report">Поделиться отчётом</button>
+      <button class="btn ghost" id="clear-chat">Очистить чат</button>
     </div>
     <div class="chat" style="margin-top:12px">${bubbles}</div>
     <div class="form" style="margin-top:12px">
       <textarea id="coach-msg" rows="3" placeholder="Вопрос коучу, например: что урезать сегодня?"></textarea>
       <button class="btn primary" id="send-coach" ${state.sending ? "disabled" : ""}>${state.sending ? "Отправка…" : "Передать коучу"}</button>
     </div>
-    <p class="hint">Коуч видит весь снимок дня: АД, сон, шаги, вес, еду и рабочие цели 1900–2100 ккал. Не нужно слать скрины.</p>
+    <p class="hint">Коуч видит весь снимок дня: АД, сон, шаги, вес, еду и рабочие цели. Не нужно слать скрины.</p>
   `;
 }
 
 function renderMore() {
   const t = state.profile.coaching_calorie_target || {};
   const cs = state.collectorStatus || {};
+  const conn = cs.connections || {};
+  const lastSources = cs.last_sources || cs.last_result?.sources || {};
   return `
-    <div class="card wide form">
-      <h2>Авто-сбор Mi Fitness</h2>
-      <div class="sub" id="collector-info">${cs.running ? "✓ Сбор активен, каждые " + cs.interval_min + " мин" : "Сбор не запущен"}</div>
+    <div class="card wide">
+      <h2>Статус подключений</h2>
+      <div class="badges">
+        ${connectionBadge(!!conn.xiaomi?.connected, "Xiaomi")}
+        ${connectionBadge(!!conn.fatsecret?.connected, "FatSecret")}
+        ${connectionBadge(!!conn.medm?.connected, "MedM")}
+      </div>
+      <div class="sub" style="margin-top:8px">${cs.running ? `Авто-сбор каждые ${cs.interval_min} мин` : "Авто-сбор не запущен"}</div>
+      ${cs.last_result?.collected_at ? `<div class="sub">Последний сбор: ${new Date(cs.last_result.collected_at).toLocaleString("ru-RU")}</div>` : ""}
+      ${Object.keys(lastSources).length ? `<div class="sub">${Object.entries(lastSources).map(([k, v]) => sourceLabel(k, v)).join(" · ")}</div>` : ""}
       ${cs.last_error ? `<div class="sub high">${escapeHtml(cs.last_error)}</div>` : ""}
-      ${cs.last_result?.collected_at ? `<div class="sub">Последний: ${cs.last_result.collected_at}, данные: ${(cs.last_result.keys || []).join(", ")}</div>` : ""}
-      <button class="btn primary" id="collect-now">Собрать данные сейчас</button>
+      <button class="btn primary" id="collect-now" style="margin-top:10px">Собрать данные сейчас</button>
+    </div>
+    <div class="card wide form" style="margin-top:10px">
+      <h2>Xiaomi / Mi Fitness</h2>
       ${state.xiaomi2fa ? `
-        <div style="margin-top:8px">
+        <div>
           <label>Код из email/SMS</label>
-          <input id="xi-code" placeholder="Введите код 2FA" />
+          <input id="xi-code" placeholder="Введите код 2FA" autocomplete="one-time-code" />
           <button class="btn primary" id="xi-verify">Подтвердить код</button>
         </div>
       ` : `
-        <details style="margin-top:8px">
+        <details>
           <summary>Подключить аккаунт Xiaomi</summary>
-          <input id="xi-user" placeholder="Email / телефон Xiaomi" />
-          <input id="xi-pass" type="password" placeholder="Пароль Xiaomi" />
+          <input id="xi-user" placeholder="Email / телефон Xiaomi" autocomplete="username" />
+          <input id="xi-pass" type="password" placeholder="Пароль Xiaomi" autocomplete="current-password" />
           <button class="btn primary" id="xi-login">Подключить</button>
           <p class="hint">Или введите токены вручную (из Cookie account.xiaomi.com):</p>
           <input id="xi-uid" placeholder="userId" />
@@ -598,7 +776,7 @@ function renderMore() {
     </div>
     <div class="card wide form" style="margin-top:10px">
       <h2>FatSecret (еда)</h2>
-      <p class="hint">Подключите FatSecret для автоматического сбора дневника питания</p>
+      <p class="hint">${conn.fatsecret?.connected ? "Подключён — дневник подтянется при «Обновить»" : "Подключите FatSecret для автоматического сбора дневника питания"}</p>
       <button class="btn primary" id="fatsecret-connect">Подключить FatSecret</button>
       ${state.fatsecretSession ? `
         <div style="margin-top:8px">
@@ -611,9 +789,9 @@ function renderMore() {
     </div>
     <div class="card wide form" style="margin-top:10px">
       <h2>MedM BP (давление)</h2>
-      <p class="hint">Подключите аккаунт MedM для автоматического сбора данных АД</p>
-      <input id="medm-email" placeholder="Email MedM" />
-      <input id="medm-pass" type="password" placeholder="Пароль MedM" />
+      <p class="hint">${conn.medm?.connected ? "Подключён" : "Подключите аккаунт MedM для автоматического сбора АД"}</p>
+      <input id="medm-email" placeholder="Email MedM" autocomplete="username" />
+      <input id="medm-pass" type="password" placeholder="Пароль MedM" autocomplete="current-password" />
       <button class="btn primary" id="medm-login">Подключить MedM</button>
     </div>
     <div class="card wide form" style="margin-top:10px">
@@ -624,6 +802,8 @@ function renderMore() {
     </div>
     <div class="card wide form" style="margin-top:10px">
       <h2>Профиль для коуча</h2>
+      <label>Рост, см</label>
+      <input id="height" inputmode="numeric" value="${state.profile.height_cm ?? ""}" placeholder="165" />
       <label>Лекарства (через запятую)</label>
       <input id="meds" value="${escapeAttr((state.profile.medications || []).join(", "))}" />
       <label>Рабочая цель ккал мин–макс</label>
@@ -654,10 +834,30 @@ function escapeAttr(text) {
 function render() {
   const view = document.getElementById("view");
   if (state.tab === "add") view.innerHTML = renderAdd();
+  else if (state.tab === "week") view.innerHTML = renderWeek();
   else if (state.tab === "coach") view.innerHTML = renderCoach();
   else if (state.tab === "more") view.innerHTML = renderMore();
   else view.innerHTML = renderToday();
   bind();
+}
+
+async function shareText(text, title = "Отчёт коучу") {
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, text });
+      return true;
+    } catch {
+      /* user cancelled or share failed — fall through */
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Скопировано — вставьте коучу");
+    return true;
+  } catch {
+    prompt("Скопируйте отчёт", text);
+    return false;
+  }
 }
 
 async function copyReport() {
@@ -668,6 +868,27 @@ async function copyReport() {
   } catch {
     prompt("Скопируйте отчёт", text);
   }
+}
+
+async function shareReport() {
+  await shareText(formatReport(snapshot()));
+}
+
+async function copyWeekReport() {
+  const text = state.weekReport || (await loadWeek(true)) || "";
+  if (!text) return toast("Нет данных за неделю");
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Недельный отчёт скопирован");
+  } catch {
+    prompt("Скопируйте отчёт", text);
+  }
+}
+
+async function shareWeekReport() {
+  const text = state.weekReport || (await loadWeek(true)) || "";
+  if (!text) return toast("Нет данных за неделю");
+  await shareText(text, "Неделя для коуча");
 }
 
 async function sendCoach() {
@@ -695,6 +916,15 @@ async function sendCoach() {
 
 function bind() {
   document.getElementById("copy-report")?.addEventListener("click", copyReport);
+  document.getElementById("share-report")?.addEventListener("click", shareReport);
+  document.getElementById("copy-week-report")?.addEventListener("click", copyWeekReport);
+  document.getElementById("share-week-report")?.addEventListener("click", shareWeekReport);
+  document.getElementById("clear-chat")?.addEventListener("click", () => {
+    state.chat = [];
+    persist();
+    toast("Чат очищен");
+    render();
+  });
   document.getElementById("ask-coach")?.addEventListener("click", () => {
     state.tab = "coach";
     document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "coach"));
@@ -730,8 +960,8 @@ function bind() {
       grams: Number(val("meal-grams") || 0),
       calories: Number(val("meal-kcal") || 0),
       protein: Number(val("meal-p") || 0),
-      fat: 0,
-      carbs: 0,
+      fat: Number(val("meal-f") || 0),
+      carbs: Number(val("meal-c") || 0),
     });
     persist();
     toast("Еда добавлена");
@@ -746,6 +976,8 @@ function bind() {
   });
   document.getElementById("send-coach")?.addEventListener("click", sendCoach);
   document.getElementById("save-profile")?.addEventListener("click", () => {
+    const height = val("height");
+    state.profile.height_cm = height ? Number(height) : null;
     state.profile.medications = val("meds")
       .split(",")
       .map((s) => s.trim())
@@ -832,6 +1064,7 @@ document.getElementById("date").value = state.date;
 document.getElementById("date").addEventListener("change", async (e) => {
   state.date = e.target.value || todayIso();
   await loadServerDay(true);
+  if (state.tab === "week") await loadWeek();
   render();
 });
 document.body.addEventListener("click", (e) => {
@@ -842,9 +1075,10 @@ document.body.addEventListener("click", (e) => {
   }
 });
 document.querySelectorAll(".tabs button").forEach((btn) => {
-  btn.addEventListener("click", () => {
+  btn.addEventListener("click", async () => {
     state.tab = btn.dataset.tab;
     document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("active", b === btn));
+    if (state.tab === "week") await loadWeek();
     render();
   });
 });
@@ -854,6 +1088,40 @@ async function fetchCollectorStatus() {
     const r = await fetch("/api/health/collector-status");
     state.collectorStatus = await r.json();
   } catch { /* offline */ }
+}
+
+async function loadWeek(returnOnly = false) {
+  try {
+    const r = await fetch(`/api/health/week?days=7&end=${encodeURIComponent(state.date)}`);
+    if (!r.ok) {
+      state.weekSeries = weekSeriesFromLocal(7);
+      state.weekReport = "Не удалось загрузить неделю с сервера";
+      return state.weekReport;
+    }
+    const data = await r.json();
+    state.weekReport = data.report || "";
+    state.weekSeries = (data.days || []).map((snap) => {
+      const d = new Date(`${snap.date}T12:00:00`);
+      const nutrition = snap.nutrition || {};
+      const bp = snap.blood_pressure?.latest || {};
+      const sleep = snap.sleep || {};
+      return {
+        date: snap.date,
+        label: `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`,
+        calories: nutrition.calories ?? null,
+        steps: snap.steps?.count ?? snap.activity?.steps ?? null,
+        weight: snap.weight?.kg ?? snap.body_composition?.weight_kg ?? null,
+        bp_sys: bp.systolic ?? null,
+        sleep_min: sleep.total_min ?? sleep.duration_min ?? null,
+      };
+    });
+    if (!returnOnly && state.tab === "week") render();
+    return state.weekReport;
+  } catch {
+    state.weekSeries = weekSeriesFromLocal(7);
+    state.weekReport = "Офлайн — показаны локальные данные";
+    return state.weekReport;
+  }
 }
 
 async function loadServerDay(options = false) {
@@ -915,6 +1183,11 @@ function summarizeCollectedSnapshot(snap) {
   const workoutCount = snap.workouts?.length || 0;
   if (workoutCount) parts.push(`тренировки ${workoutCount}`);
   if (snap.weight?.kg != null) parts.push(`вес ${snap.weight.kg} кг`);
+  const sources = snap.sources_status || {};
+  const failed = Object.entries(sources)
+    .filter(([, s]) => s && s.ok === false && s.error !== "not_connected")
+    .map(([k]) => k);
+  if (failed.length) parts.push(`ошибки: ${failed.join(", ")}`);
   return parts.length ? parts.join(", ") : "нет записей за день";
 }
 
@@ -927,15 +1200,17 @@ async function refreshData() {
     const r = await fetch(`/api/health/collect-now?date=${encodeURIComponent(state.date)}`, { method: "POST" });
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
-      const msg = e.detail || "Ошибка сбора данных";
+      const msg = typeof e.detail === "string" ? e.detail : e.detail?.message || "Ошибка сбора данных";
       setRefreshStatus(msg, true);
       toast(msg);
+      await fetchCollectorStatus();
       return;
     }
     const snap = await r.json();
     applySnapshotToDay(day(), snap, { force: true });
     saveJson(STORAGE_DAYS, state.days);
     await fetchCollectorStatus();
+    if (state.tab === "week") await loadWeek();
     const t = new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
     const summary = summarizeCollectedSnapshot(snap);
     setRefreshStatus(`Обновлено в ${t}: ${summary}`);
@@ -974,6 +1249,8 @@ async function xiaomiLogin() {
     }
     toast("Xiaomi подключён! userId: " + data.user_id);
     state.xiaomi2fa = null;
+    const passEl = document.getElementById("xi-pass");
+    if (passEl) passEl.value = "";
     await fetchCollectorStatus();
     render();
   } catch (err) {
@@ -1072,7 +1349,11 @@ async function medmLogin() {
     });
     const data = await r.json();
     if (!r.ok) { toast(data.detail || "Ошибка"); return; }
+    const passEl = document.getElementById("medm-pass");
+    if (passEl) passEl.value = "";
     toast("MedM подключён!");
+    await fetchCollectorStatus();
+    await refreshData();
   } catch (err) {
     toast("Ошибка: " + err.message);
   }
@@ -1085,8 +1366,12 @@ async function boot() {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js?v=5").then((reg) => {
+  navigator.serviceWorker.register("sw.js?v=6").then((reg) => {
     reg.update().catch(() => {});
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      toast("Обновление установлено — перезагрузка…");
+      window.location.reload();
+    });
   }).catch(() => {});
 }
 

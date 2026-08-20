@@ -38,7 +38,7 @@ from coach_chat_fallback import build_coach_chat_fallback
 from coach_chat_prompt import COACH_CHAT_SYSTEM_PROMPT, build_coach_chat_prompt
 from coach_health_fallback import build_coach_health_fallback
 from coach_health_prompt import COACH_HEALTH_SYSTEM_PROMPT, build_coach_health_prompt
-from coach_health_report import format_day_report
+from coach_health_report import format_day_report, format_week_report
 from cursor_client import CursorClient
 from data_collector import backfill_days, collect_for_date, collect_once, collector_status, start_collector, stop_collector
 from food_search_service import search_food
@@ -220,6 +220,7 @@ async def root():
             "coach_health_chat": "POST /api/coach-health-chat",
             "health_sync": "POST /api/health/sync",
             "health_day": "GET /api/health/day/{date}",
+            "health_week": "GET /api/health/week",
             "health_report": "GET /api/health/day/{date}/report",
             "xiaomi_login": "POST /api/health/xiaomi-login",
             "collect_now": "POST /api/health/collect-now",
@@ -673,6 +674,53 @@ async def health_day_report(date: str):
     return {"report": format_day_report(merged)}
 
 
+@app.get("/api/health/week")
+async def health_week(days: int = Query(7, ge=1, le=31), end: str | None = Query(None)):
+    end_day = Date.today()
+    if end:
+        try:
+            end_day = Date.fromisoformat(end)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="end must be YYYY-MM-DD") from exc
+    snaps = day_store.list_range(end=end_day, days=days)
+    merged = [_attach_bp(s, str(s.get("date") or "")) for s in snaps]
+    profile = {}
+    for s in reversed(merged):
+        if s.get("profile"):
+            profile = s["profile"]
+            break
+    return {
+        "days": merged,
+        "report": format_week_report(merged, profile),
+    }
+
+
+@app.post("/api/health/collect-now")
+async def collect_now(target_date: str | None = Query(None, alias="date")):
+    day = None
+    if target_date:
+        try:
+            day = Date.fromisoformat(target_date)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
+    result = await collect_for_date(day)
+    if "error" in result:
+        raise HTTPException(status_code=502, detail=result["error"])
+    return result
+
+
+@app.post("/api/health/backfill")
+async def backfill(days: int = 7):
+    if days < 1 or days > 31:
+        raise HTTPException(status_code=400, detail="days must be between 1 and 31")
+    return {"results": await backfill_days(days)}
+
+
+@app.get("/api/health/collector-status")
+async def get_collector_status():
+    return collector_status()
+
+
 @app.post("/api/coach-health-chat", response_model=CoachChatResponse)
 async def coach_health_chat(request: CoachHealthChatRequest):
     message = (request.message or "").strip() or "Что улучшить по этому дню?"
@@ -776,32 +824,6 @@ async def xiaomi_set_tokens(request: XiaomiTokensRequest):
         "user_id": tokens.user_id,
         "has_service_token": bool(tokens.service_token),
     }
-
-
-@app.post("/api/health/collect-now")
-async def collect_now(target_date: str | None = Query(None, alias="date")):
-    day = None
-    if target_date:
-        try:
-            day = Date.fromisoformat(target_date)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
-    result = await collect_for_date(day)
-    if "error" in result:
-        raise HTTPException(status_code=502, detail=result["error"])
-    return result
-
-
-@app.post("/api/health/backfill")
-async def backfill(days: int = 7):
-    if days < 1 or days > 31:
-        raise HTTPException(status_code=400, detail="days must be between 1 and 31")
-    return {"results": await backfill_days(days)}
-
-
-@app.get("/api/health/collector-status")
-async def get_collector_status():
-    return collector_status()
 
 
 class MedMLoginRequest(BaseModel):

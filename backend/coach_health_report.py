@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any
 
 
@@ -34,8 +35,8 @@ def _meal_names(nutrition: dict[str, Any]) -> str:
 
 def format_day_report(snapshot: dict[str, Any]) -> str:
     """Human-readable day card the user can paste into any coach chat."""
-    date = snapshot.get("date") or "—"
-    lines = [f"Дата: {date}"]
+    date_s = snapshot.get("date") or "—"
+    lines = [f"Дата: {date_s}"]
 
     bp = snapshot.get("blood_pressure") or {}
     latest = bp.get("latest") or {}
@@ -52,10 +53,32 @@ def format_day_report(snapshot: dict[str, Any]) -> str:
             line += f", avg 7d: {avg['systolic']}/{avg['diastolic']}"
         lines.append(line)
 
+    readings = bp.get("readings_today") or []
+    if len(readings) > 1:
+        bits = []
+        for r in readings:
+            if not r.get("systolic") or not r.get("diastolic"):
+                continue
+            t = str(r.get("measured_at") or "")
+            t_s = t.split("T", 1)[1][:5] if "T" in t else ""
+            bits.append(f"{r['systolic']}/{r['diastolic']}" + (f" {t_s}" if t_s else ""))
+        if bits:
+            lines.append("АД за день: " + "; ".join(bits))
+
     sleep = snapshot.get("sleep") or {}
     sleep_s = _fmt_sleep(sleep.get("duration_min") or sleep.get("total_min"))
     if sleep_s:
-        lines.append(f"Сон: {sleep_s}")
+        stages = []
+        if sleep.get("deep_min") is not None:
+            stages.append(f"глубокий {sleep['deep_min']}м")
+        if sleep.get("light_min") is not None:
+            stages.append(f"лёгкий {sleep['light_min']}м")
+        if sleep.get("rem_min") is not None:
+            stages.append(f"REM {sleep['rem_min']}м")
+        line = f"Сон: {sleep_s}"
+        if stages:
+            line += f" ({', '.join(stages)})"
+        lines.append(line)
 
     steps_count = (snapshot.get("steps") or {}).get("count")
     activity = snapshot.get("activity") or {}
@@ -123,6 +146,8 @@ def format_day_report(snapshot: dict[str, Any]) -> str:
     nutrition = snapshot.get("nutrition") or {}
     kcal = nutrition.get("calories")
     meal_s = _meal_names(nutrition)
+    profile = snapshot.get("profile") or {}
+    targets = profile.get("coaching_calorie_target") or {}
     if kcal is not None or meal_s:
         food = f"Еда: {kcal:.0f} kcal" if kcal is not None else "Еда:"
         if meal_s:
@@ -137,12 +162,21 @@ def format_day_report(snapshot: dict[str, Any]) -> str:
             macros.append(f"У {nutrition['carbs_g']:.0f}")
         if macros:
             lines.append("КБЖУ: " + " · ".join(macros))
+        kcal_min = targets.get("kcal_min")
+        kcal_max = targets.get("kcal_max")
+        if kcal is not None and (kcal_min or kcal_max):
+            lo = int(kcal_min or 0)
+            hi = int(kcal_max or lo)
+            if kcal < lo:
+                lines.append(f"Vs цель: ниже на {lo - int(kcal)} ккал (цель {lo}–{hi})")
+            elif kcal > hi:
+                lines.append(f"Vs цель: выше на {int(kcal) - hi} ккал (цель {lo}–{hi})")
+            else:
+                lines.append(f"Vs цель: в диапазоне {lo}–{hi} ккал")
 
-    profile = snapshot.get("profile") or {}
     meds = [str(m) for m in (profile.get("medications") or []) if str(m).strip()]
     if meds:
         lines.append("Лекарства: " + ", ".join(meds))
-    targets = profile.get("coaching_calorie_target") or {}
     if targets.get("kcal_min") or targets.get("kcal_max"):
         lines.append(
             f"Рабочая цель: {targets.get('kcal_min', '?')}–{targets.get('kcal_max', '?')} ккал"
@@ -153,4 +187,67 @@ def format_day_report(snapshot: dict[str, Any]) -> str:
     if notes:
         lines.append(f"Заметки: {notes}")
 
+    return "\n".join(lines)
+
+
+def _day_metric(snapshot: dict[str, Any]) -> dict[str, Any]:
+    nutrition = snapshot.get("nutrition") or {}
+    sleep = snapshot.get("sleep") or {}
+    steps = (snapshot.get("steps") or {}).get("count")
+    if steps is None:
+        steps = (snapshot.get("activity") or {}).get("steps")
+    weight = (snapshot.get("weight") or {}).get("kg")
+    if weight is None:
+        weight = (snapshot.get("body_composition") or {}).get("weight_kg")
+    bp = ((snapshot.get("blood_pressure") or {}).get("latest") or {})
+    return {
+        "date": snapshot.get("date"),
+        "calories": nutrition.get("calories"),
+        "protein_g": nutrition.get("protein_g"),
+        "steps": steps,
+        "sleep_min": sleep.get("total_min") or sleep.get("duration_min"),
+        "weight_kg": weight,
+        "bp_sys": bp.get("systolic"),
+        "bp_dia": bp.get("diastolic"),
+    }
+
+
+def format_week_report(snapshots: list[dict[str, Any]], profile: dict[str, Any] | None = None) -> str:
+    """Compact 7-day summary for the coach."""
+    if not snapshots:
+        return "Неделя: нет данных"
+    profile = profile or {}
+    targets = profile.get("coaching_calorie_target") or {}
+    lines = ["Неделя для коуча"]
+    cal_vals = []
+    step_vals = []
+    weight_vals = []
+    for snap in snapshots:
+        m = _day_metric(snap)
+        bits = [m["date"] or "—"]
+        if m["calories"] is not None:
+            bits.append(f"{int(m['calories'])} ккал")
+            cal_vals.append(float(m["calories"]))
+        if m["steps"] is not None:
+            bits.append(f"{int(m['steps'])} шагов")
+            step_vals.append(float(m["steps"]))
+        if m["weight_kg"] is not None:
+            bits.append(f"{m['weight_kg']} кг")
+            weight_vals.append(float(m["weight_kg"]))
+        if m["bp_sys"] and m["bp_dia"]:
+            bits.append(f"АД {m['bp_sys']}/{m['bp_dia']}")
+        if m["sleep_min"]:
+            bits.append(f"сон {_fmt_sleep(int(m['sleep_min']))}")
+        lines.append(" · ".join(bits) if len(bits) > 1 else f"{bits[0]}: нет данных")
+
+    if cal_vals:
+        avg = sum(cal_vals) / len(cal_vals)
+        lines.append(f"Средние ккал: {avg:.0f} ({len(cal_vals)} дн.)")
+        lo, hi = targets.get("kcal_min"), targets.get("kcal_max")
+        if lo or hi:
+            lines.append(f"Цель: {lo or '?'}–{hi or '?'} ккал")
+    if step_vals:
+        lines.append(f"Средние шаги: {sum(step_vals) / len(step_vals):.0f}")
+    if weight_vals:
+        lines.append(f"Вес: {weight_vals[0]:.1f} → {weight_vals[-1]:.1f} кг")
     return "\n".join(lines)

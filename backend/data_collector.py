@@ -35,7 +35,7 @@ _SPORT_NAMES: dict[int, str] = {
     8: "HIIT",
     9: "Тренажёр",
     10: "Футбол",
-    11: "Бasketball",
+    11: "Баскетбол",
     12: "Теннис",
     13: "Гребля",
     14: "Скакалка",
@@ -45,7 +45,35 @@ _SPORT_NAMES: dict[int, str] = {
 _collector_task: asyncio.Task | None = None
 _last_result: dict[str, Any] = {}
 _last_error: str | None = None
+_last_sources: dict[str, Any] = {}
 _running = False
+
+
+def _connection_status() -> dict[str, Any]:
+    """Lightweight connected/not flags for hub UI (no secrets)."""
+    xiaomi = XiaomiTokens.load()
+    xiaomi_ok = bool(xiaomi and xiaomi.service_token)
+    fatsecret_ok = False
+    try:
+        from fatsecret_client import load_tokens
+
+        tokens = load_tokens()
+        fatsecret_ok = bool(tokens and tokens[0])
+    except Exception:
+        fatsecret_ok = False
+    medm_ok = False
+    try:
+        from medm_bp import load_creds
+
+        creds = load_creds()
+        medm_ok = bool(creds and creds[0])
+    except Exception:
+        medm_ok = False
+    return {
+        "xiaomi": {"connected": xiaomi_ok},
+        "fatsecret": {"connected": fatsecret_ok},
+        "medm": {"connected": medm_ok},
+    }
 
 
 def collector_status() -> dict[str, Any]:
@@ -55,6 +83,8 @@ def collector_status() -> dict[str, Any]:
         "region": _REGION,
         "last_result": _last_result,
         "last_error": _last_error,
+        "last_sources": _last_sources,
+        "connections": _connection_status(),
     }
 
 
@@ -455,73 +485,106 @@ async def _get_tokens() -> XiaomiTokens | None:
 
 
 async def collect_for_date(target_date: date | None = None) -> dict[str, Any]:
-    """Run one collection cycle for a specific day. Defaults to today."""
-    global _last_result, _last_error
+    """Collect from each source independently. Xiaomi is optional."""
+    global _last_result, _last_error, _last_sources
 
     day = target_date or date.today()
+    raw: dict[str, Any] = {}
+    sources: dict[str, Any] = {}
+
     tokens = await _get_tokens()
-    if not tokens:
-        _last_error = "No Xiaomi credentials configured"
-        return {"error": _last_error}
+    if tokens:
+        try:
+            client = MiFitnessClient(tokens, region=_REGION)
+            await client.connect()
+            raw = await client.get_day_summary(day) or {}
+            sources["mi_fitness"] = {"ok": True, "keys": [k for k in raw.keys() if k != "date"]}
+        except Exception as exc:
+            logger.error("Mi Fitness API error: %s", exc)
+            sources["mi_fitness"] = {"ok": False, "error": str(exc)}
+            raw = {}
+        try:
+            home_client = XiaomiHomeClient(tokens, region=_REGION)
+            await home_client.connect()
+            scale_data = await home_client.get_scale_data()
+            if scale_data:
+                filtered = _filter_scale_for_date(scale_data, day)
+                raw["weight_home"] = filtered
+                sources["xiaomi_home"] = {"ok": True, "count": len(filtered)}
+                logger.info("Xiaomi Home scale (%s): %d records", day.isoformat(), len(filtered))
+            else:
+                sources["xiaomi_home"] = {"ok": True, "count": 0}
+        except Exception as exc:
+            logger.warning("Xiaomi Home scale fetch failed: %s", exc)
+            sources["xiaomi_home"] = {"ok": False, "error": str(exc)}
+    else:
+        sources["mi_fitness"] = {"ok": False, "error": "not_connected"}
+        sources["xiaomi_home"] = {"ok": False, "error": "not_connected"}
 
-    client = MiFitnessClient(tokens, region=_REGION)
     try:
-        await client.connect()
-        raw = await client.get_day_summary(day)
-    except Exception as exc:
-        _last_error = f"Mi Fitness API error: {exc}"
-        logger.error(_last_error)
-        return {"error": _last_error}
+        from medm_bp import fetch_bp_readings, load_creds
 
-    # Try Xiaomi Home for scale data (weight/body composition)
-    try:
-        home_client = XiaomiHomeClient(tokens, region=_REGION)
-        await home_client.connect()
-        scale_data = await home_client.get_scale_data()
-        if scale_data:
-            raw["weight_home"] = _filter_scale_for_date(scale_data, day)
-            logger.info("Xiaomi Home scale (%s): %d records", day.isoformat(), len(raw["weight_home"]))
-    except Exception as exc:
-        logger.warning("Xiaomi Home scale fetch failed: %s", exc)
-
-    # Try MedM BP
-    try:
-        from medm_bp import fetch_bp_readings
-        bp_readings = await fetch_bp_readings(limit=50)
-        bp_for_day = _filter_medm_for_date(bp_readings, day)
-        if bp_for_day:
-            raw["medm_bp"] = bp_for_day
+        if not load_creds():
+            sources["medm"] = {"ok": False, "error": "not_connected"}
+        else:
+            bp_readings = await fetch_bp_readings(limit=50)
+            bp_for_day = _filter_medm_for_date(bp_readings, day)
+            if bp_for_day:
+                raw["medm_bp"] = bp_for_day
+            sources["medm"] = {"ok": True, "count": len(bp_for_day)}
             logger.info("MedM BP (%s): %d readings", day.isoformat(), len(bp_for_day))
     except Exception as exc:
         logger.warning("MedM BP fetch failed: %s", exc)
+        sources["medm"] = {"ok": False, "error": str(exc)}
 
-    # Try FatSecret food diary
     try:
-        from fatsecret_client import fetch_food_entries_for_date
-        food_entries = fetch_food_entries_for_date(day)
-        if food_entries:
-            raw["fatsecret_food"] = food_entries
-            logger.info("FatSecret (%s): %d food entries", day.isoformat(), len(food_entries))
+        from fatsecret_client import fetch_food_entries_for_date, load_tokens
+
+        if not load_tokens():
+            sources["fatsecret"] = {"ok": False, "error": "not_connected"}
+        else:
+            food_entries = fetch_food_entries_for_date(day)
+            if food_entries:
+                raw["fatsecret_food"] = food_entries
+            sources["fatsecret"] = {"ok": True, "count": len(food_entries or [])}
+            logger.info("FatSecret (%s): %d food entries", day.isoformat(), len(food_entries or []))
     except Exception as exc:
         logger.warning("FatSecret fetch failed: %s", exc)
+        sources["fatsecret"] = {"ok": False, "error": str(exc)}
 
+    any_ok = any(bool(s.get("ok")) for s in sources.values())
     snapshot = _normalize_snapshot(raw, day)
+    snapshot["sources_status"] = sources
+
+    useful_keys = [
+        k
+        for k in ("steps", "sleep", "weight", "heart_rate", "blood_pressure", "nutrition", "workouts")
+        if k in snapshot
+    ]
+    if not useful_keys and not any_ok:
+        msg = "Не удалось собрать данные ни из одного источника"
+        _last_error = msg
+        _last_sources = sources
+        return {"error": msg, "sources_status": sources}
+
     try:
         saved = day_store.upsert(snapshot, merge=True)
     except ValueError as exc:
         _last_error = f"Store error: {exc}"
-        return {"error": _last_error}
+        _last_sources = sources
+        return {"error": _last_error, "sources_status": sources}
 
-    if day == date.today():
-        _last_error = None
-        _last_result = {
-            "date": day.isoformat(),
-            "collected_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
-            "keys": [k for k in ("steps", "sleep", "weight", "heart_rate", "blood_pressure", "nutrition") if k in snapshot],
-        }
-        logger.info("Data collected: %s", _last_result)
-    else:
-        logger.info("Backfilled data for %s: keys=%s", day.isoformat(), list(snapshot.keys()))
+    saved["sources_status"] = sources
+    collected_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    _last_sources = sources
+    _last_error = None if any_ok else _last_error
+    _last_result = {
+        "date": day.isoformat(),
+        "collected_at": collected_at,
+        "keys": useful_keys,
+        "sources": sources,
+    }
+    logger.info("Data collected: %s", _last_result)
     return saved
 
 
