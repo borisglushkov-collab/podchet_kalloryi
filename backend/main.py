@@ -40,7 +40,7 @@ from coach_health_fallback import build_coach_health_fallback
 from coach_health_prompt import COACH_HEALTH_SYSTEM_PROMPT, build_coach_health_prompt
 from coach_health_report import format_day_report, format_week_report
 from cursor_client import CursorClient
-from data_collector import backfill_days, collect_for_date, collect_once, collector_status, start_collector, stop_collector
+from data_collector import backfill_days, collect_for_date, collect_once, collector_status, start_collector, stop_collector, user_local_date
 from food_search_service import search_food
 from food_vision_service import FoodVisionNotConfiguredError, analyze_food_image
 from nutrition_prompt import (
@@ -676,7 +676,7 @@ async def health_day_report(date: str):
 
 @app.get("/api/health/week")
 async def health_week(days: int = Query(7, ge=1, le=31), end: str | None = Query(None)):
-    end_day = Date.today()
+    end_day = user_local_date()
     if end:
         try:
             end_day = Date.fromisoformat(end)

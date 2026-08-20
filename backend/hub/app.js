@@ -101,7 +101,7 @@ function importNutritionMeals(d, nutrition, force = false) {
     for (const it of items) {
       const row = normalizeNutritionItem(it);
       if (!row) continue;
-      d.meals.push({ meal_type: mt, ...row });
+      d.meals.push({ meal_type: mt, source: n.source || "auto", ...row });
     }
   }
 }
@@ -239,10 +239,13 @@ function saveJson(key, value) {
 }
 
 function todayIso() {
-  const d = new Date();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${day}`;
+  // Keep diary day aligned with FatSecret / collector (Europe/Moscow).
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
 const state = {
@@ -614,10 +617,19 @@ function renderToday() {
         <div class="sub">Б ${Math.round(totals.protein_g)} · Ж ${Math.round(totals.fat_g)} · У ${Math.round(totals.carbs_g)}${kcalVs ? ` · ${kcalVs}` : ""}</div>
         <ul class="list">${
           d.meals.length
-            ? d.meals.map((m, i) => `<li><span>${MEAL_RU[m.meal_type] || m.meal_type}: ${m.name}</span><button class="btn ghost" data-del-meal="${i}">×</button></li>`).join("")
+            ? d.meals.map((m, i) => {
+                const label = `${MEAL_RU[m.meal_type] || m.meal_type}: ${m.name}`;
+                if (m.source === "fatsecret") {
+                  return `<li><span>${label}</span></li>`;
+                }
+                return `<li><span>${label}</span><button class="btn ghost" data-del-meal="${i}">×</button></li>`;
+              }).join("")
             : `<li class="empty">Пока пусто — подключите FatSecret и нажмите «Обновить»</li>`
         }</ul>
         <div class="sub">${foodSync}</div>
+        ${d.meals.some((m) => m.source === "fatsecret")
+          ? `<div class="sub">Блюда FatSecret нельзя удалить здесь — измените дневник в FatSecret и нажмите «Обновить»</div>`
+          : ""}
       </div>
     </div>
     <div class="actions">
@@ -962,6 +974,7 @@ function bind() {
       protein: Number(val("meal-p") || 0),
       fat: Number(val("meal-f") || 0),
       carbs: Number(val("meal-c") || 0),
+      source: "manual",
     });
     persist();
     toast("Еда добавлена");
@@ -969,7 +982,13 @@ function bind() {
   });
   document.querySelectorAll("[data-del-meal]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      day().meals.splice(Number(btn.dataset.delMeal), 1);
+      const idx = Number(btn.dataset.delMeal);
+      const meal = day().meals[idx];
+      if (meal?.source === "fatsecret") {
+        toast("Это блюдо из FatSecret — измените дневник там и нажмите «Обновить»");
+        return;
+      }
+      day().meals.splice(idx, 1);
       persist();
       render();
     });
@@ -1366,7 +1385,7 @@ async function boot() {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js?v=6").then((reg) => {
+  navigator.serviceWorker.register("sw.js?v=7").then((reg) => {
     reg.update().catch(() => {});
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       toast("Обновление установлено — перезагрузка…");

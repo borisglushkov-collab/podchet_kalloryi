@@ -78,7 +78,15 @@ class HealthDayStore:
 
     def list_range(self, end: date | None = None, days: int = 7) -> list[dict[str, Any]]:
         """Return snapshots for end-days+1 .. end inclusive (newest last)."""
-        end_day = end or date.today()
+        if end is None:
+            try:
+                from data_collector import user_local_date
+
+                end_day = user_local_date()
+            except Exception:
+                end_day = date.today()
+        else:
+            end_day = end
         out: list[dict[str, Any]] = []
         with self._lock:
             for offset in range(days - 1, -1, -1):

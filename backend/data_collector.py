@@ -23,6 +23,13 @@ logger = logging.getLogger(__name__)
 
 _INTERVAL_MINUTES = int(os.getenv("COLLECT_INTERVAL_MIN", "30"))
 _REGION = os.getenv("XIAOMI_REGION", "ru")
+_USER_TZ = ZoneInfo(os.getenv("USER_TZ", "Europe/Moscow"))
+
+
+def user_local_date() -> date:
+    """Calendar day for diary/collect (Europe/Moscow by default)."""
+    return datetime.now(_USER_TZ).date()
+
 
 _SPORT_NAMES: dict[int, str] = {
     1: "Бег",
@@ -138,9 +145,104 @@ def _record_date_iso(record: dict[str, Any]) -> str | None:
 
 
 def _filter_scale_for_date(records: list[dict[str, Any]], target_date: date) -> list[dict[str, Any]]:
+    """Return only scale readings for the target local day. Never fall back to other days."""
     iso = target_date.isoformat()
-    matched = [r for r in records if _record_date_iso(r) == iso]
-    return matched or records
+    return [r for r in records if _record_date_iso(r) == iso]
+
+
+def _as_minutes(value: Any, *, total_min: int | None = None) -> int:
+    """Normalize a duration that may be seconds or minutes."""
+    try:
+        n = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    if n <= 0:
+        return 0
+    if total_min and n > max(total_min * 1.2, 90):
+        return n // 60
+    if n > 16 * 60:
+        return n // 60
+    return n
+
+
+def _sleep_session(item: dict[str, Any]) -> dict[str, Any] | None:
+    """Parse one Mi Fitness sleep record into minutes for a single night."""
+    v = _parse_value(item)
+    bt = v.get("bedtime") or v.get("device_bedtime")
+    wt = v.get("wake_up_time") or v.get("device_wake_up_time")
+    total_min = 0
+    wake_date = None
+    bed_date = None
+    try:
+        if bt and wt:
+            bt_i = int(bt)
+            wt_i = int(wt)
+            if bt_i > 1_000_000_000_000:
+                bt_i //= 1000
+                wt_i //= 1000
+            total_min = max(0, (wt_i - bt_i) // 60)
+            wake_date = datetime.fromtimestamp(wt_i, tz=timezone.utc).astimezone(_USER_TZ).date()
+            bed_date = datetime.fromtimestamp(bt_i, tz=timezone.utc).astimezone(_USER_TZ).date()
+    except (OSError, OverflowError, TypeError, ValueError):
+        total_min = 0
+        wake_date = None
+        bed_date = None
+
+    if not total_min:
+        for key in ("sleep_duration", "duration", "total_minutes"):
+            if v.get(key) is not None:
+                total_min = _as_minutes(v.get(key))
+                break
+    if not total_min:
+        return None
+
+    deep = _as_minutes(v.get("sleep_deep_duration", 0), total_min=total_min)
+    light = _as_minutes(v.get("sleep_light_duration", 0), total_min=total_min)
+    rem = _as_minutes(v.get("sleep_rem_duration", 0), total_min=total_min)
+
+    avg_hr = None
+    if v.get("avg_hr") is not None:
+        try:
+            avg_hr = int(v.get("avg_hr"))
+        except (TypeError, ValueError):
+            avg_hr = None
+
+    return {
+        "total_min": total_min,
+        "deep_min": deep,
+        "light_min": light,
+        "rem_min": rem,
+        "avg_hr": avg_hr,
+        "wake_date": wake_date,
+        "bed_date": bed_date,
+    }
+
+
+def _pick_sleep_for_day(sleep_list: list[dict[str, Any]], target_date: date) -> dict[str, Any] | None:
+    """Choose the night that ends on target_date (wake-up morning). Never sum two nights."""
+    sessions = [s for s in (_sleep_session(i) for i in sleep_list) if s]
+    if not sessions:
+        return None
+    preferred = [s for s in sessions if s.get("wake_date") == target_date]
+    if not preferred:
+        preferred = [
+            s
+            for s in sessions
+            if s.get("bed_date") in {target_date - timedelta(days=1), target_date}
+        ]
+    pool = preferred or ([sessions[-1]] if len(sessions) == 1 else [])
+    if not pool:
+        return None
+    best = max(pool, key=lambda s: int(s.get("total_min") or 0))
+    out = {
+        "total_min": int(best["total_min"]),
+        "deep_min": int(best.get("deep_min") or 0),
+        "light_min": int(best.get("light_min") or 0),
+        "rem_min": int(best.get("rem_min") or 0),
+    }
+    if best.get("avg_hr") is not None:
+        out["avg_hr"] = best["avg_hr"]
+    return out
 
 
 def _step_record_date(item: dict[str, Any], tz_name: str = "Europe/Moscow") -> str | None:
@@ -318,37 +420,11 @@ def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any
         snap["steps"] = step_totals
         snap["activity"] = {"steps": step_totals["count"], "source": "mi_fitness"}
 
-    # Sleep — value has bedtime, wake_up_time, sleep_deep_duration, etc.
+    # Sleep — pick the night ending on target_date (do not sum two nights).
     sleep_list = raw.get("sleep") or []
-    if sleep_list:
-        total_min = 0
-        deep_min = 0
-        light_min = 0
-        rem_min = 0
-        avg_hr = 0
-        count = 0
-        for item in sleep_list:
-            v = _parse_value(item)
-            bt = v.get("bedtime") or v.get("device_bedtime")
-            wt = v.get("wake_up_time") or v.get("device_wake_up_time")
-            if bt and wt:
-                dur = max(0, int(wt) - int(bt)) // 60
-                total_min += dur
-            deep_min += int(v.get("sleep_deep_duration", 0))
-            light_min += int(v.get("sleep_light_duration", 0))
-            rem_min += int(v.get("sleep_rem_duration", 0))
-            hr = v.get("avg_hr")
-            if hr:
-                avg_hr += int(hr)
-                count += 1
-        snap["sleep"] = {
-            "total_min": total_min,
-            "deep_min": deep_min,
-            "light_min": light_min,
-            "rem_min": rem_min,
-        }
-        if count:
-            snap["sleep"]["avg_hr"] = round(avg_hr / count)
+    sleep = _pick_sleep_for_day(sleep_list, target_date)
+    if sleep:
+        snap["sleep"] = sleep
 
     # Weight from Xiaomi Home scale (body composition)
     home_weight = raw.get("weight_home") or []
@@ -488,7 +564,7 @@ async def collect_for_date(target_date: date | None = None) -> dict[str, Any]:
     """Collect from each source independently. Xiaomi is optional."""
     global _last_result, _last_error, _last_sources
 
-    day = target_date or date.today()
+    day = target_date or user_local_date()
     raw: dict[str, Any] = {}
     sources: dict[str, Any] = {}
 
@@ -589,14 +665,14 @@ async def collect_for_date(target_date: date | None = None) -> dict[str, Any]:
 
 
 async def collect_once() -> dict[str, Any]:
-    """Run one collection cycle for today."""
-    return await collect_for_date(date.today())
+    """Run one collection cycle for today (user local timezone)."""
+    return await collect_for_date(user_local_date())
 
 
 async def backfill_days(days: int = 7) -> list[dict[str, Any]]:
     """Collect and store snapshots for today and previous days."""
     results: list[dict[str, Any]] = []
-    today = date.today()
+    today = user_local_date()
     for offset in range(days):
         target = today - timedelta(days=offset)
         result = await collect_for_date(target)

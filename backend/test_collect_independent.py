@@ -33,9 +33,7 @@ def test_collect_works_without_xiaomi(monkeypatch):
     monkeypatch.setattr("fatsecret_client.fetch_food_entries_for_date", fake_food)
     monkeypatch.setattr("medm_bp.load_creds", lambda: None)
 
-    result = asyncio.get_event_loop().run_until_complete(
-        data_collector.collect_for_date(date(2026, 8, 19))
-    )
+    result = asyncio.run(data_collector.collect_for_date(date(2026, 8, 19)))
     assert "error" not in result
     assert result["nutrition"]["source"] == "fatsecret"
     assert result["sources_status"]["mi_fitness"]["ok"] is False

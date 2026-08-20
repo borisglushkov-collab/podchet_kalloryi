@@ -17,7 +17,7 @@ def test_hub_app_is_served():
     assert response.status_code == 200
     assert "Сбор для коуча" in response.text
     assert "Неделя" in response.text
-    assert "app.js?v=9" in response.text
+    assert "app.js?v=10" in response.text
 
 
 def test_week_endpoint_returns_report():
