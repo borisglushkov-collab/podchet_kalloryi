@@ -35,6 +35,7 @@ const emptyDay = (date) => ({
   notes: "",
   sources_status: null,
   last_synced_at: null,
+  locks: { steps: false, sleep: false, weight: false },
 });
 
 function bodyCompositionFromWeight(w) {
@@ -107,18 +108,31 @@ function importNutritionMeals(d, nutrition, force = false) {
 }
 
 function applySnapshotToDay(d, snap, { force = false } = {}) {
+  d.locks = d.locks || { steps: false, sleep: false, weight: false };
   const stepCount = snap.steps?.count ?? snap.activity?.steps;
-  if (stepCount != null && (force || d.steps == null || snap.source === "mi_fitness_auto")) {
+  if (
+    stepCount != null
+    && !d.locks.steps
+    && (force || d.steps == null || snap.source === "mi_fitness_auto")
+  ) {
     d.steps = Number(stepCount);
   }
   const sleepMin = snap.sleep?.total_min ?? snap.sleep?.duration_min;
-  if (sleepMin != null && (force || d.sleep_min == null || snap.source === "mi_fitness_auto")) {
+  if (
+    sleepMin != null
+    && !d.locks.sleep
+    && (force || d.sleep_min == null || snap.source === "mi_fitness_auto")
+  ) {
     d.sleep_min = Number(sleepMin);
     if (snap.sleep?.deep_min != null) d.sleep_deep_min = Number(snap.sleep.deep_min);
     if (snap.sleep?.light_min != null) d.sleep_light_min = Number(snap.sleep.light_min);
     if (snap.sleep?.rem_min != null) d.sleep_rem_min = Number(snap.sleep.rem_min);
   }
-  if (snap.weight?.kg != null && (force || d.weight_kg == null || snap.weight.source === "xiaomi_home")) {
+  if (
+    snap.weight?.kg != null
+    && !d.locks.weight
+    && (force || d.weight_kg == null || snap.weight.source === "xiaomi_home")
+  ) {
     applyBodyComposition(d, snap.weight);
   }
   if (snap.heart_rate && (force || !d.heart_rate)) d.heart_rate = snap.heart_rate;
@@ -131,39 +145,32 @@ function applySnapshotToDay(d, snap, { force = false } = {}) {
   if (snap.sources_status) d.sources_status = snap.sources_status;
   if (snap.generated_at) d.last_synced_at = snap.generated_at;
 
-  if (force && Array.isArray(snap.blood_pressure?.readings_today) && snap.blood_pressure.readings_today.length) {
-    d.bp = snap.blood_pressure.readings_today.map((r) => ({
-      systolic: r.systolic,
-      diastolic: r.diastolic,
-      pulse: r.pulse,
-      measured_at: r.measured_at,
-      source: r.source || "auto",
-    }));
-  } else {
-    if (snap.blood_pressure?.latest) {
-      const bp = snap.blood_pressure.latest;
-      if (bp.systolic && bp.diastolic && !d.bp.length) {
-        d.bp.push({
-          systolic: bp.systolic,
-          diastolic: bp.diastolic,
-          pulse: bp.pulse,
-          measured_at: bp.measured_at || new Date().toISOString(),
-          source: bp.source || "auto",
-        });
-      }
+  // Merge BP: never wipe manual readings on force refresh.
+  const incoming = [];
+  if (Array.isArray(snap.blood_pressure?.readings_today)) {
+    for (const r of snap.blood_pressure.readings_today) {
+      if (!r?.systolic || !r?.diastolic) continue;
+      incoming.push({
+        systolic: r.systolic,
+        diastolic: r.diastolic,
+        pulse: r.pulse,
+        measured_at: r.measured_at,
+        source: r.source || "auto",
+      });
     }
-    if (snap.blood_pressure?.readings_today) {
-      for (const r of snap.blood_pressure.readings_today) {
-        if (r.systolic && r.diastolic && !d.bp.some((b) => b.systolic === r.systolic && b.diastolic === r.diastolic && b.measured_at === r.measured_at)) {
-          d.bp.push({
-            systolic: r.systolic,
-            diastolic: r.diastolic,
-            pulse: r.pulse,
-            measured_at: r.measured_at,
-            source: r.source || "auto",
-          });
-        }
-      }
+  } else if (snap.blood_pressure?.latest?.systolic && snap.blood_pressure?.latest?.diastolic) {
+    const bp = snap.blood_pressure.latest;
+    incoming.push({
+      systolic: bp.systolic,
+      diastolic: bp.diastolic,
+      pulse: bp.pulse,
+      measured_at: bp.measured_at || new Date().toISOString(),
+      source: bp.source || "auto",
+    });
+  }
+  for (const r of incoming) {
+    if (!d.bp.some((b) => b.systolic === r.systolic && b.diastolic === r.diastolic && b.measured_at === r.measured_at)) {
+      d.bp.push(r);
     }
   }
 
@@ -487,17 +494,38 @@ function connectionBadge(ok, label) {
   return `<span class="badge ${ok ? "ok" : "off"}">${label}: ${ok ? "подключён" : "нет"}</span>`;
 }
 
-function sparkBars(values, maxHint) {
+function sparkBars(values, maxHint, { relative = false } = {}) {
   const nums = values.map((v) => (v == null || Number.isNaN(Number(v)) ? null : Number(v)));
   const present = nums.filter((v) => v != null);
-  const max = Math.max(maxHint || 0, ...(present.length ? present : [1]));
+  let min = 0;
+  let max = Math.max(maxHint || 0, ...(present.length ? present : [1]));
+  if (relative && present.length) {
+    min = Math.min(...present);
+    max = Math.max(...present);
+    if (max <= min) max = min + 1;
+  }
+  const span = Math.max(max - min, 1);
   return `<div class="spark">${nums
     .map((v) => {
       if (v == null) return `<span class="bar empty" title="нет данных"></span>`;
-      const h = Math.max(8, Math.round((v / max) * 56));
-      return `<span class="bar" style="height:${h}px" title="${Math.round(v)}"></span>`;
+      const h = Math.max(8, Math.round(((v - min) / span) * 56));
+      return `<span class="bar" style="height:${h}px" title="${Math.round(v * 10) / 10}"></span>`;
     })
     .join("")}</div>`;
+}
+
+function freshnessLine(d) {
+  const parts = [];
+  if (d.steps != null) parts.push(`шаги${d.locks?.steps ? " · руч." : ""}`);
+  if (d.sleep_min != null) parts.push(`сон${d.locks?.sleep ? " · руч." : ""}`);
+  if ((d.body_composition?.weight_kg ?? d.weight_kg) != null) parts.push(`вес${d.locks?.weight ? " · руч." : ""}`);
+  if (d.meals?.length) parts.push(`еда ${d.meals.length}`);
+  if (d.bp?.length) parts.push(`АД ${d.bp.length}`);
+  if (!d.last_synced_at && !parts.length) return "";
+  const t = d.last_synced_at
+    ? new Date(d.last_synced_at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })
+    : null;
+  return t ? `Синхронизация ${t}${parts.length ? `: ${parts.join(" · ")}` : ""}` : parts.join(" · ");
 }
 
 function weekSeriesFromLocal(daysCount = 7) {
@@ -638,6 +666,7 @@ function renderToday() {
       <button class="btn ghost" id="share-report">Поделиться отчётом</button>
       <button class="btn ghost" id="ask-coach">Спросить коуча по этому дню</button>
     </div>
+    <p class="hint">${freshnessLine(d) || "Нажмите «Обновить», чтобы подтянуть облако."}</p>
     <p class="hint">Это не вкладка в «Подсчёте калорий». Сюда вы складываете день, кнопка копирует текст или отправляет коучу.</p>
   `;
 }
@@ -646,6 +675,7 @@ function renderWeek() {
   const series = state.weekSeries?.length ? state.weekSeries : weekSeriesFromLocal(7);
   const target = state.profile.coaching_calorie_target || {};
   const report = state.weekReport || "";
+  const axis = series.map((s) => `<span>${s.label}</span>`).join("");
   return `
     <div class="card wide">
       <h2>Неделя</h2>
@@ -653,27 +683,33 @@ function renderWeek() {
       <div class="week-block">
         <div class="week-label">Калории</div>
         ${sparkBars(series.map((s) => s.calories), Number(target.kcal_max || 2100))}
-        <div class="week-axis">${series.map((s) => `<span>${s.label}</span>`).join("")}</div>
+        <div class="week-axis">${axis}</div>
       </div>
       <div class="week-block">
         <div class="week-label">Шаги</div>
         ${sparkBars(series.map((s) => s.steps), 10000)}
-        <div class="week-axis">${series.map((s) => `<span>${s.label}</span>`).join("")}</div>
+        <div class="week-axis">${axis}</div>
       </div>
       <div class="week-block">
-        <div class="week-label">Вес</div>
-        ${sparkBars(series.map((s) => s.weight), 120)}
-        <div class="week-axis">${series.map((s) => `<span>${s.label}</span>`).join("")}</div>
+        <div class="week-label">Сон (мин)</div>
+        ${sparkBars(series.map((s) => s.sleep_min), 540)}
+        <div class="week-axis">${axis}</div>
+      </div>
+      <div class="week-block">
+        <div class="week-label">Вес (относительно)</div>
+        ${sparkBars(series.map((s) => s.weight), null, { relative: true })}
+        <div class="week-axis">${axis}</div>
       </div>
       <div class="week-block">
         <div class="week-label">АД (систол)</div>
-        ${sparkBars(series.map((s) => s.bp_sys), 160)}
-        <div class="week-axis">${series.map((s) => `<span>${s.label}</span>`).join("")}</div>
+        ${sparkBars(series.map((s) => s.bp_sys), null, { relative: true })}
+        <div class="week-axis">${axis}</div>
       </div>
     </div>
     <div class="report" style="margin-top:10px">${escapeHtml(report || "Загрузка недельного отчёта…")}</div>
     <div class="actions">
-      <button class="btn primary" id="copy-week-report">Скопировать неделю коучу</button>
+      <button class="btn primary" id="backfill-week">Заполнить неделю (сбор 7 дней)</button>
+      <button class="btn ghost" id="copy-week-report">Скопировать неделю коучу</button>
       <button class="btn ghost" id="share-week-report">Поделиться неделей</button>
     </div>
   `;
@@ -742,7 +778,7 @@ function renderCoach() {
       <textarea id="coach-msg" rows="3" placeholder="Вопрос коучу, например: что урезать сегодня?"></textarea>
       <button class="btn primary" id="send-coach" ${state.sending ? "disabled" : ""}>${state.sending ? "Отправка…" : "Передать коучу"}</button>
     </div>
-    <p class="hint">Коуч видит весь снимок дня: АД, сон, шаги, вес, еду и рабочие цели. Не нужно слать скрины.</p>
+    <p class="hint">Коуч видит снимок дня и недельный контекст. Не нужно слать скрины.</p>
   `;
 }
 
@@ -764,9 +800,11 @@ function renderMore() {
       ${Object.keys(lastSources).length ? `<div class="sub">${Object.entries(lastSources).map(([k, v]) => sourceLabel(k, v)).join(" · ")}</div>` : ""}
       ${cs.last_error ? `<div class="sub high">${escapeHtml(cs.last_error)}</div>` : ""}
       <button class="btn primary" id="collect-now" style="margin-top:10px">Собрать данные сейчас</button>
+      <button class="btn ghost" id="backfill-week" style="margin-top:8px">Заполнить неделю (7 дней)</button>
     </div>
     <div class="card wide form" style="margin-top:10px">
       <h2>Xiaomi / Mi Fitness</h2>
+      ${conn.xiaomi?.connected ? `<button class="btn ghost" id="disconnect-xiaomi">Отключить Xiaomi</button>` : ""}
       ${state.xiaomi2fa ? `
         <div>
           <label>Код из email/SMS</label>
@@ -790,6 +828,7 @@ function renderMore() {
       <h2>FatSecret (еда)</h2>
       <p class="hint">${conn.fatsecret?.connected ? "Подключён — дневник подтянется при «Обновить»" : "Подключите FatSecret для автоматического сбора дневника питания"}</p>
       <button class="btn primary" id="fatsecret-connect">Подключить FatSecret</button>
+      ${conn.fatsecret?.connected ? `<button class="btn ghost" id="disconnect-fatsecret">Отключить FatSecret</button>` : ""}
       ${state.fatsecretSession ? `
         <div style="margin-top:8px">
           <label>PIN-код из FatSecret</label>
@@ -805,6 +844,7 @@ function renderMore() {
       <input id="medm-email" placeholder="Email MedM" autocomplete="username" />
       <input id="medm-pass" type="password" placeholder="Пароль MedM" autocomplete="current-password" />
       <button class="btn primary" id="medm-login">Подключить MedM</button>
+      ${conn.medm?.connected ? `<button class="btn ghost" id="disconnect-medm">Отключить MedM</button>` : ""}
     </div>
     <div class="card wide form" style="margin-top:10px">
       <h2>Импорт CSV давления</h2>
@@ -910,11 +950,17 @@ async function sendCoach() {
   persist();
   render();
   try {
+    if (!state.weekReport) await loadWeek(true);
     const history = state.chat.slice(0, -1).map((m) => ({ role: m.role, content: m.content }));
     const res = await fetch("/api/coach-health-chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, snapshot: snapshot(), history }),
+      body: JSON.stringify({
+        message,
+        snapshot: snapshot(),
+        history,
+        week_report: state.weekReport || "",
+      }),
     });
     const data = await res.json();
     state.chat.push({ role: "assistant", content: data.reply || "Нет ответа" });
@@ -942,26 +988,46 @@ function bind() {
     document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "coach"));
     render();
   });
-  document.getElementById("save-bp")?.addEventListener("click", () => {
+  document.getElementById("save-bp")?.addEventListener("click", async () => {
     const systolic = Number(val("sys"));
     const diastolic = Number(val("dia"));
     const pulse = val("pulse") ? Number(val("pulse")) : null;
     if (!systolic || !diastolic) return toast("Нужны систол и диастол");
     const now = new Date();
     const iso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
-    day().bp.push({ measured_at: iso, systolic, diastolic, pulse, source: "manual" });
+    const reading = { measured_at: iso, systolic, diastolic, pulse, source: "manual" };
+    day().bp.push(reading);
     persist();
+    try {
+      await fetch("/api/health/blood-pressure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reading),
+      });
+    } catch {
+      /* offline — local day still has it */
+    }
     toast("АД записано");
     render();
   });
   document.getElementById("save-vitals")?.addEventListener("click", () => {
     const d = day();
-    d.sleep_min = val("sleep") ? Number(val("sleep")) : null;
-    d.steps = val("steps") ? Number(val("steps")) : null;
-    d.weight_kg = val("weight") ? Number(val("weight").replace(",", ".")) : null;
-    if (d.weight_kg) state.profile.weight_kg_latest = d.weight_kg;
+    d.locks = d.locks || { steps: false, sleep: false, weight: false };
+    if (val("sleep")) {
+      d.sleep_min = Number(val("sleep"));
+      d.locks.sleep = true;
+    }
+    if (val("steps")) {
+      d.steps = Number(val("steps"));
+      d.locks.steps = true;
+    }
+    if (val("weight")) {
+      d.weight_kg = Number(val("weight").replace(",", "."));
+      state.profile.weight_kg_latest = d.weight_kg;
+      d.locks.weight = true;
+    }
     persist();
-    toast("Сохранено");
+    toast("Сохранено (ручные правки защищены от «Обновить»)");
   });
   document.getElementById("save-meal")?.addEventListener("click", () => {
     const name = val("meal-name");
@@ -1012,12 +1078,16 @@ function bind() {
   });
   document.getElementById("import-csv")?.addEventListener("click", importCsv);
   document.getElementById("collect-now")?.addEventListener("click", collectNow);
+  document.getElementById("backfill-week")?.addEventListener("click", backfillWeek);
   document.getElementById("xi-login")?.addEventListener("click", xiaomiLogin);
   document.getElementById("xi-verify")?.addEventListener("click", xiaomiVerify);
   document.getElementById("xi-tokens")?.addEventListener("click", xiaomiSetTokens);
   document.getElementById("medm-login")?.addEventListener("click", medmLogin);
   document.getElementById("fatsecret-connect")?.addEventListener("click", fatsecretConnect);
   document.getElementById("fs-verify")?.addEventListener("click", fatsecretVerify);
+  document.getElementById("disconnect-xiaomi")?.addEventListener("click", () => disconnectSource("xiaomi"));
+  document.getElementById("disconnect-fatsecret")?.addEventListener("click", () => disconnectSource("fatsecret"));
+  document.getElementById("disconnect-medm")?.addEventListener("click", () => disconnectSource("medm"));
 }
 
 async function importCsv() {
@@ -1178,13 +1248,14 @@ function setRefreshStatus(text, isError = false) {
 
 function setRefreshBusy(busy) {
   state.refreshing = busy;
-  for (const id of ["refresh-data", "refresh-data-tab", "collect-now"]) {
+  for (const id of ["refresh-data", "refresh-data-tab", "collect-now", "backfill-week"]) {
     const btn = document.getElementById(id);
     if (!btn) continue;
     btn.disabled = busy;
     if (id === "refresh-data") btn.textContent = busy ? "…" : "Обновить";
     if (id === "refresh-data-tab") btn.textContent = busy ? "Обновляю…" : "Обновить данные";
     if (id === "collect-now") btn.textContent = busy ? "Обновляю…" : "Собрать данные сейчас";
+    if (id === "backfill-week") btn.textContent = busy ? "Собираю неделю…" : "Заполнить неделю (сбор 7 дней)";
   }
 }
 
@@ -1245,6 +1316,53 @@ async function refreshData() {
 
 async function collectNow() {
   await refreshData();
+}
+
+async function backfillWeek() {
+  if (state.refreshing) return;
+  setRefreshBusy(true);
+  setRefreshStatus("Собираю 7 дней… это может занять минуту");
+  toast("Заполняю неделю…");
+  try {
+    const r = await fetch("/api/health/backfill?days=7", { method: "POST" });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      const msg = e.detail || "Ошибка backfill";
+      setRefreshStatus(msg, true);
+      toast(msg);
+      return;
+    }
+    const data = await r.json();
+    const ok = (data.results || []).filter((x) => x.ok).length;
+    await loadServerDay({ force: false });
+    await loadWeek();
+    await fetchCollectorStatus();
+    setRefreshStatus(`Неделя: собрано ${ok} из ${(data.results || []).length} дней`);
+    toast(`Неделя обновлена (${ok} дн.)`);
+    render();
+  } catch (err) {
+    setRefreshStatus(String(err.message || err), true);
+    toast("Ошибка: " + err.message);
+  } finally {
+    setRefreshBusy(false);
+  }
+}
+
+async function disconnectSource(source) {
+  if (!confirm(`Отключить ${source}?`)) return;
+  try {
+    const r = await fetch(`/api/health/disconnect/${encodeURIComponent(source)}`, { method: "POST" });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      toast(data.detail || "Не удалось отключить");
+      return;
+    }
+    toast(`${source} отключён`);
+    await fetchCollectorStatus();
+    render();
+  } catch (err) {
+    toast("Ошибка: " + err.message);
+  }
 }
 
 async function xiaomiLogin() {
@@ -1385,7 +1503,7 @@ async function boot() {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js?v=7").then((reg) => {
+  navigator.serviceWorker.register("sw.js?v=8").then((reg) => {
     reg.update().catch(() => {});
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       toast("Обновление установлено — перезагрузка…");

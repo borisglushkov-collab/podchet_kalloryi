@@ -187,6 +187,7 @@ class CoachHealthChatRequest(BaseModel):
     message: str = "Что улучшить по этому дню?"
     snapshot: dict = Field(default_factory=dict)
     history: list[ChatMessage] = Field(default_factory=list)
+    week_report: str | None = None
 
 
 class HealthSyncRequest(BaseModel):
@@ -706,7 +707,8 @@ async def collect_now(target_date: str | None = Query(None, alias="date")):
     result = await collect_for_date(day)
     if "error" in result:
         raise HTTPException(status_code=502, detail=result["error"])
-    return result
+    date_s = str(result.get("date") or (day.isoformat() if day else user_local_date().isoformat()))
+    return _attach_bp(result, date_s)
 
 
 @app.post("/api/health/backfill")
@@ -739,7 +741,12 @@ async def coach_health_chat(request: CoachHealthChatRequest):
         for m in request.history
         if m.content.strip()
     ]
-    user_prompt = build_coach_health_prompt(message, snapshot, history=history)
+    user_prompt = build_coach_health_prompt(
+        message,
+        snapshot,
+        history=history,
+        week_report=request.week_report,
+    )
 
     if cursor_client and os.getenv("CURSOR_API_KEY"):
         try:
@@ -877,6 +884,27 @@ async def fatsecret_food():
     entries = fetch_food_entries_today() if has_tokens else []
     month = fetch_food_month() if has_tokens else []
     return {"connected": has_tokens, "today": entries, "month": month}
+
+
+@app.post("/api/health/disconnect/{source}")
+async def disconnect_source(source: str):
+    key = (source or "").strip().lower()
+    if key in {"xiaomi", "mi_fitness", "mi"}:
+        from xiaomi_auth import XiaomiTokens
+
+        cleared = XiaomiTokens.clear()
+        return {"status": "ok", "source": "xiaomi", "cleared": cleared}
+    if key in {"fatsecret", "food"}:
+        from fatsecret_client import clear_tokens
+
+        cleared = clear_tokens()
+        return {"status": "ok", "source": "fatsecret", "cleared": cleared}
+    if key in {"medm", "bp"}:
+        from medm_bp import clear_creds
+
+        cleared = clear_creds()
+        return {"status": "ok", "source": "medm", "cleared": cleared}
+    raise HTTPException(status_code=400, detail="source must be xiaomi|fatsecret|medm")
 
 
 @app.get("/api/health/xiaomi-devices")

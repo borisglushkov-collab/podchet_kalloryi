@@ -17,7 +17,7 @@ def test_hub_app_is_served():
     assert response.status_code == 200
     assert "Сбор для коуча" in response.text
     assert "Неделя" in response.text
-    assert "app.js?v=10" in response.text
+    assert "app.js?v=11" in response.text
 
 
 def test_week_endpoint_returns_report():
@@ -149,3 +149,19 @@ def test_coach_health_chat_fallback_without_api_key(monkeypatch):
     assert response.status_code == 200
     reply = response.json()["reply"]
     assert "142/95" in reply or "Диастол" in reply or "соли" in reply
+
+
+def test_manual_bp_goes_to_store():
+    response = client.post(
+        "/api/health/blood-pressure",
+        json={"systolic": 125, "diastolic": 80, "pulse": 70, "measured_at": "2026-08-20T10:00:00", "source": "manual"},
+    )
+    assert response.status_code == 200
+    listed = client.get("/api/health/blood-pressure?from=2026-08-20&to=2026-08-20")
+    assert listed.status_code == 200
+    assert listed.json()["count"] >= 1
+
+
+def test_disconnect_unknown_source():
+    response = client.post("/api/health/disconnect/twitter")
+    assert response.status_code == 400

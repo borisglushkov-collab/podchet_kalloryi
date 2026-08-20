@@ -607,6 +607,24 @@ async def collect_for_date(target_date: date | None = None) -> dict[str, Any]:
             bp_for_day = _filter_medm_for_date(bp_readings, day)
             if bp_for_day:
                 raw["medm_bp"] = bp_for_day
+                try:
+                    from blood_pressure_store import store as bp_store
+
+                    bp_store.add_many(
+                        [
+                            {
+                                "systolic": r["systolic"],
+                                "diastolic": r["diastolic"],
+                                "pulse": r.get("pulse"),
+                                "measured_at": r.get("measured_at"),
+                                "source": "medm_bp",
+                            }
+                            for r in bp_for_day
+                            if r.get("systolic") and r.get("diastolic")
+                        ]
+                    )
+                except Exception as bp_exc:
+                    logger.warning("MedM BP store persist failed: %s", bp_exc)
             sources["medm"] = {"ok": True, "count": len(bp_for_day)}
             logger.info("MedM BP (%s): %d readings", day.isoformat(), len(bp_for_day))
     except Exception as exc:

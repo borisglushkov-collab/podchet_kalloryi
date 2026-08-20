@@ -81,6 +81,14 @@ class XiaomiTokens:
         data = json.loads(p.read_text(encoding="utf-8"))
         return cls(**data)
 
+    @classmethod
+    def clear(cls, path: Path | None = None) -> bool:
+        p = path or TOKEN_PATH
+        if p.is_file():
+            p.unlink()
+            return True
+        return False
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "user_id": self.user_id,

@@ -112,6 +112,13 @@ def load_tokens() -> tuple[str, str] | None:
     return data.get("access_token") or "", data.get("access_token_secret") or ""
 
 
+def clear_tokens() -> bool:
+    if _CREDS_PATH.is_file():
+        _CREDS_PATH.unlink()
+        return True
+    return False
+
+
 def _parse_querystring_response(text: str) -> dict[str, str]:
     parsed = urllib.parse.parse_qs(text, strict_parsing=False)
     return {k: (v[0] if v else "") for k, v in parsed.items()}

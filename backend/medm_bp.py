@@ -38,6 +38,13 @@ def load_creds() -> tuple[str, str] | None:
     return data.get("email", ""), data.get("password", "")
 
 
+def clear_creds() -> bool:
+    if _CREDS_PATH.is_file():
+        _CREDS_PATH.unlink()
+        return True
+    return False
+
+
 async def medm_login(email: str, password: str) -> str:
     """Login to MedM web portal. Returns the record_id."""
     async with httpx.AsyncClient(follow_redirects=True, timeout=20) as c:
