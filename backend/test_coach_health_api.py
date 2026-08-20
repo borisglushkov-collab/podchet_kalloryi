@@ -17,7 +17,8 @@ def test_hub_app_is_served():
     assert response.status_code == 200
     assert "Сбор для коуча" in response.text
     assert "Неделя" in response.text
-    assert "app.js?v=12" in response.text
+    assert "js/main.js?v=" in response.text
+    assert 'type="module"' in response.text
     assert "Сбор" in response.text
 
 

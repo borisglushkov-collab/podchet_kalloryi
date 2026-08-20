@@ -11,9 +11,13 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+
+import hub_auth
+from hub_auth import COOKIE_NAME as HUB_SESSION_COOKIE
+from hub_auth import issue_token, path_is_public, pin_configured, token_valid
 
 
 def _read_api_version() -> str:
@@ -89,6 +93,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def hub_pin_guard(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith("/api/health/"):
+        return await call_next(request)
+    if path_is_public(path) or not pin_configured():
+        return await call_next(request)
+    token = request.cookies.get(HUB_SESSION_COOKIE)
+    if token_valid(token):
+        return await call_next(request)
+    return JSONResponse({"detail": "PIN required"}, status_code=401)
 
 
 class Macros(BaseModel):
@@ -200,6 +217,7 @@ class HubProfileIn(BaseModel):
     weight_kg_latest: float | None = None
     medications: list[str] | str | None = None
     coaching_calorie_target: dict | None = None
+    updated_at: str | None = None
 
 
 class HubUnlockIn(BaseModel):
@@ -686,18 +704,27 @@ async def put_hub_profile(payload: HubProfileIn):
 
 @app.get("/api/health/gate")
 async def hub_gate():
-    pin = (os.getenv("HUB_PIN") or "").strip()
-    return {"pin_required": bool(pin)}
+    return {"pin_required": pin_configured()}
 
 
 @app.post("/api/health/unlock")
 async def hub_unlock(payload: HubUnlockIn):
-    expected = (os.getenv("HUB_PIN") or "").strip()
-    if not expected:
-        return {"ok": True, "pin_required": False}
-    if (payload.pin or "").strip() != expected:
+    if not pin_configured():
+        response = JSONResponse({"ok": True, "pin_required": False})
+        response.delete_cookie(HUB_SESSION_COOKIE)
+        return response
+    if (payload.pin or "").strip() != hub_auth.expected_pin():
         raise HTTPException(status_code=401, detail="Неверный PIN")
-    return {"ok": True, "pin_required": True}
+    response = JSONResponse({"ok": True, "pin_required": True})
+    response.set_cookie(
+        key=HUB_SESSION_COOKIE,
+        value=issue_token(),
+        httponly=True,
+        samesite="lax",
+        max_age=hub_auth.TTL_SEC,
+        path="/",
+    )
+    return response
 
 
 @app.get("/api/health/day/{date}")
@@ -974,6 +1001,23 @@ async def hub_redirect():
     return RedirectResponse(url="/hub/")
 
 
+def _hub_index_html() -> str:
+    path = Path(__file__).resolve().parent / "hub" / "index.html"
+    raw = path.read_text(encoding="utf-8")
+    version = app.version
+    return (
+        raw.replace("{{HUB_VERSION}}", version)
+        .replace("styles.css?v=ASSET", f"styles.css?v={version}")
+        .replace("js/main.js?v=ASSET", f"js/main.js?v={version}")
+    )
+
+
+@app.get("/hub/", response_class=HTMLResponse)
+@app.get("/hub/index.html", response_class=HTMLResponse)
+async def hub_index():
+    return HTMLResponse(_hub_index_html())
+
+
 @app.post("/api/reset-session")
 async def reset_session():
     if cursor_client:
@@ -983,7 +1027,7 @@ async def reset_session():
 
 HUB_DIR = Path(__file__).resolve().parent / "hub"
 if HUB_DIR.is_dir():
-    app.mount("/hub", StaticFiles(directory=str(HUB_DIR), html=True), name="hub")
+    app.mount("/hub", StaticFiles(directory=str(HUB_DIR), html=False), name="hub")
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,12 @@ _DEFAULT = {
         "kcal_max": 2100,
         "protein_g": 130,
     },
+    "updated_at": None,
 }
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 class HubProfileStore:
@@ -72,6 +78,12 @@ class HubProfileStore:
                     if key in incoming and incoming[key] not in (None, ""):
                         target[key] = int(incoming[key])
                 next_profile["coaching_calorie_target"] = target
+            # Last-write-wins: client may send updated_at; otherwise stamp now.
+            client_ts = payload.get("updated_at")
+            if client_ts:
+                next_profile["updated_at"] = str(client_ts)
+            else:
+                next_profile["updated_at"] = _now_iso()
             self._profile = next_profile
             self._persist()
             return json.loads(json.dumps(self._profile))

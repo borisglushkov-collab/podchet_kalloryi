@@ -1,6 +1,18 @@
-const CACHE = "hub-v8";
+const CACHE = "hub-v9";
 
-const SHELL = ["/hub/", "/hub/index.html", "/hub/styles.css", "/hub/app.js", "/hub/manifest.json", "/hub/icon.svg"];
+const SHELL = [
+  "/hub/",
+  "/hub/index.html",
+  "/hub/styles.css",
+  "/hub/js/main.js",
+  "/hub/js/logic.js",
+  "/hub/js/api.js",
+  "/hub/js/state.js",
+  "/hub/js/ui.js",
+  "/hub/js/render.js",
+  "/hub/manifest.json",
+  "/hub/icon.svg",
+];
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
