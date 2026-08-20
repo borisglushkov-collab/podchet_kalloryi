@@ -34,6 +34,7 @@ from barcode_service import lookup_barcode
 from blood_pressure_csv import CsvImportError, parse_citizen_csv
 from blood_pressure_store import store as bp_store
 from health_day_store import day_store
+from hub_profile_store import profile_store
 from coach_chat_fallback import build_coach_chat_fallback
 from coach_chat_prompt import COACH_CHAT_SYSTEM_PROMPT, build_coach_chat_prompt
 from coach_health_fallback import build_coach_health_fallback
@@ -192,6 +193,17 @@ class CoachHealthChatRequest(BaseModel):
 
 class HealthSyncRequest(BaseModel):
     snapshot: dict
+
+
+class HubProfileIn(BaseModel):
+    height_cm: int | float | None = None
+    weight_kg_latest: float | None = None
+    medications: list[str] | str | None = None
+    coaching_calorie_target: dict | None = None
+
+
+class HubUnlockIn(BaseModel):
+    pin: str
 
 
 class CoachChatResponse(BaseModel):
@@ -661,6 +673,33 @@ async def health_sync(request: HealthSyncRequest):
     return {"snapshot": _attach_bp(saved, date), "report": format_day_report(_attach_bp(saved, date))}
 
 
+@app.get("/api/health/profile")
+async def get_hub_profile():
+    return {"profile": profile_store.get()}
+
+
+@app.put("/api/health/profile")
+async def put_hub_profile(payload: HubProfileIn):
+    saved = profile_store.save(payload.model_dump(exclude_unset=True))
+    return {"profile": saved}
+
+
+@app.get("/api/health/gate")
+async def hub_gate():
+    pin = (os.getenv("HUB_PIN") or "").strip()
+    return {"pin_required": bool(pin)}
+
+
+@app.post("/api/health/unlock")
+async def hub_unlock(payload: HubUnlockIn):
+    expected = (os.getenv("HUB_PIN") or "").strip()
+    if not expected:
+        return {"ok": True, "pin_required": False}
+    if (payload.pin or "").strip() != expected:
+        raise HTTPException(status_code=401, detail="Неверный PIN")
+    return {"ok": True, "pin_required": True}
+
+
 @app.get("/api/health/day/{date}")
 async def health_day(date: str):
     snapshot = day_store.get(date) or {"date": date, "generated_at": None}
@@ -685,13 +724,17 @@ async def health_week(days: int = Query(7, ge=1, le=31), end: str | None = Query
             raise HTTPException(status_code=400, detail="end must be YYYY-MM-DD") from exc
     snaps = day_store.list_range(end=end_day, days=days)
     merged = [_attach_bp(s, str(s.get("date") or "")) for s in snaps]
-    profile = {}
+    profile = profile_store.get()
     for s in reversed(merged):
         if s.get("profile"):
-            profile = s["profile"]
+            # prefer explicit day profile fields when present, else server profile
+            day_profile = dict(profile)
+            day_profile.update(s["profile"])
+            profile = day_profile
             break
     return {
         "days": merged,
+        "profile": profile,
         "report": format_week_report(merged, profile),
     }
 

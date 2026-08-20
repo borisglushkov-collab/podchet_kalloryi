@@ -246,6 +246,14 @@ def format_week_report(snapshots: list[dict[str, Any]], profile: dict[str, Any] 
         lo, hi = targets.get("kcal_min"), targets.get("kcal_max")
         if lo or hi:
             lines.append(f"Цель: {lo or '?'}–{hi or '?'} ккал")
+            in_range = 0
+            for snap in snapshots:
+                kcal = (snap.get("nutrition") or {}).get("calories")
+                if kcal is None:
+                    continue
+                if (lo is None or float(kcal) >= float(lo)) and (hi is None or float(kcal) <= float(hi)):
+                    in_range += 1
+            lines.append(f"Дней в цели: {in_range} из {len(cal_vals)}")
     if step_vals:
         lines.append(f"Средние шаги: {sum(step_vals) / len(step_vals):.0f}")
     if weight_vals:

@@ -57,4 +57,5 @@ def test_format_week_report_averages():
     )
     assert "Неделя для коуча" in text
     assert "Средние ккал: 1900" in text
+    assert "Дней в цели: 1 из 2" in text
     assert "110.0 → 109.5" in text

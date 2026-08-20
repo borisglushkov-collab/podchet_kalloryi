@@ -268,6 +268,8 @@ const state = {
   refreshing: false,
   weekSeries: null,
   weekReport: "",
+  unlocked: false,
+  pinRequired: false,
 };
 
 function day() {
@@ -528,6 +530,91 @@ function freshnessLine(d) {
   return t ? `Синхронизация ${t}${parts.length ? `: ${parts.join(" · ")}` : ""}` : parts.join(" · ");
 }
 
+
+function emptyState(title, hint, ctaId, ctaLabel) {
+  return `<div class="empty-state">
+    <p class="empty-title">${title}</p>
+    <p class="empty-hint">${hint}</p>
+    ${ctaId ? `<button class="btn primary" id="${ctaId}">${ctaLabel || "Обновить"}</button>` : ""}
+  </div>`;
+}
+
+function sourceStatusCards(d) {
+  const conn = state.collectorStatus?.connections || {};
+  const ss = d.sources_status || {};
+  const synced = d.last_synced_at
+    ? new Date(d.last_synced_at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })
+    : null;
+  const rows = [
+    {
+      key: "xiaomi",
+      label: "Mi Fitness",
+      connected: !!conn.xiaomi?.connected,
+      st: ss.mi_fitness || ss.xiaomi_home,
+      detail: d.steps != null ? `шаги ${d.steps}` : (d.sleep_min != null ? "сон есть" : "нет данных"),
+    },
+    {
+      key: "fatsecret",
+      label: "FatSecret",
+      connected: !!conn.fatsecret?.connected,
+      st: ss.fatsecret,
+      detail: d.meals?.length ? `${d.meals.length} записей` : "пусто",
+    },
+    {
+      key: "medm",
+      label: "MedM",
+      connected: !!conn.medm?.connected,
+      st: ss.medm,
+      detail: d.bp?.length ? `АД ${d.bp.length}` : "пусто",
+    },
+  ];
+  return `<div class="source-grid">${rows.map((r) => {
+    let tone = "off";
+    let status = "не подключён";
+    if (r.connected) {
+      if (r.st?.ok === false && r.st.error !== "not_connected") {
+        tone = "err";
+        status = "ошибка";
+      } else {
+        tone = "ok";
+        status = synced ? `ок · ${synced}` : "подключён";
+      }
+    }
+    return `<div class="source-card ${tone}">
+      <div class="source-label">${r.label}</div>
+      <div class="source-status">${status}</div>
+      <div class="source-detail">${r.detail}</div>
+    </div>`;
+  }).join("")}</div>`;
+}
+
+function weekGoalStrip(series) {
+  const target = state.profile.coaching_calorie_target || {};
+  const lo = Number(target.kcal_min || 0);
+  const hi = Number(target.kcal_max || lo);
+  const withCal = (series || []).filter((s) => s.calories != null);
+  let inGoal = 0;
+  if (lo || hi) {
+    for (const s of withCal) {
+      const cal = Number(s.calories);
+      if ((!lo || cal >= lo) && (!hi || cal <= hi)) inGoal += 1;
+    }
+  }
+  const sleepVals = (series || []).map((s) => s.sleep_min).filter((v) => v != null);
+  const avgSleep = sleepVals.length ? Math.round(sleepVals.reduce((a, b) => a + b, 0) / sleepVals.length) : null;
+  const sleepTxt = avgSleep != null ? `${Math.floor(avgSleep / 60)}ч ${avgSleep % 60}м` : "—";
+  return `<div class="goal-strip">
+    <div class="goal-item"><span class="goal-k">В цели</span><span class="goal-v">${inGoal} / ${withCal.length || 0}</span></div>
+    <div class="goal-item"><span class="goal-k">Сон ср.</span><span class="goal-v">${sleepTxt}</span></div>
+    <div class="goal-item"><span class="goal-k">Цель</span><span class="goal-v">${lo || "?"}–${hi || "?"}</span></div>
+  </div>`;
+}
+
+function hasManualLocks(d) {
+  const locks = d.locks || {};
+  return Boolean(locks.steps || locks.sleep || locks.weight);
+}
+
 function weekSeriesFromLocal(daysCount = 7) {
   const end = new Date(`${state.date}T12:00:00`);
   const series = [];
@@ -583,14 +670,18 @@ function renderToday() {
       kcalVs = `в цели ${lo}–${hi}`;
     }
   }
-  const fs = d.sources_status?.fatsecret;
-  const foodSync = fs
-    ? (fs.ok === false
-      ? (fs.error === "not_connected" ? "FatSecret не подключён" : "FatSecret: ошибка обновления")
-      : `FatSecret · ${fs.count ?? d.meals.length} · ${d.last_synced_at ? new Date(d.last_synced_at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "ок"}`)
-    : (d.meals.length ? "FatSecret (облако). Новые записи — после «Обновить»" : "Подключите FatSecret и нажмите «Обновить»");
   const bpList = [...(d.bp || [])].sort((a, b) => String(b.measured_at).localeCompare(String(a.measured_at)));
+  const isEmptyDay = !totals.calories && d.steps == null && d.sleep_min == null && !bp && weightVal === "—";
   return `
+    <section class="panel stack-gap">
+      <div class="panel-head">
+        <h2 class="panel-title">Сегодня</h2>
+        <p class="panel-sub">${freshnessLine(d) || "Нажмите «Обновить», чтобы подтянуть облако."}</p>
+      </div>
+      ${sourceStatusCards(d)}
+      ${hasManualLocks(d) ? `<button class="btn soft" id="unlock-cloud">Снова из облака (снять ручные правки)</button>` : ""}
+      ${isEmptyDay ? emptyState("День пока пустой", "Подключите источники во вкладке «Ещё» и нажмите «Обновить».", "refresh-data-tab", "Обновить данные") : ""}
+    </section>
     <div class="cards">
       <div class="card">
         <h2>Давление</h2>
@@ -611,7 +702,7 @@ function renderToday() {
         <h2>Шаги</h2>
         <div class="value">${d.steps ?? "—"}</div>
         <div class="sub">${state.collectorStatus?.connections?.xiaomi?.connected
-          ? "Mi Fitness (облако). Если на часах больше — синхронизируйте браслет"
+          ? "Mi Fitness · облако"
           : "ручной ввод / Xiaomi не подключён"}</div>
       </div>
       <div class="card">
@@ -643,7 +734,6 @@ function renderToday() {
           const sub = [dur, cal, hr].filter(Boolean).join(" · ");
           return `<li><span>${w.name || "Тренировка"}${sub ? ` — ${sub}` : ""}</span></li>`;
         }).join("")}</ul>
-        <div class="sub">из Mi Fitness</div>
       </div>
       ` : ""}
       <div class="card wide">
@@ -660,34 +750,39 @@ function renderToday() {
                 }
                 return `<li><span>${label}</span><button class="btn ghost" data-del-meal="${i}">×</button></li>`;
               }).join("")
-            : `<li class="empty">Пока пусто — подключите FatSecret и нажмите «Обновить»</li>`
+            : `<li class="empty">Пока пусто — FatSecret + «Обновить»</li>`
         }</ul>
-        <div class="sub">${foodSync}</div>
-        ${d.meals.some((m) => m.source === "fatsecret")
-          ? `<div class="sub">Блюда FatSecret нельзя удалить здесь — измените дневник в FatSecret и нажмите «Обновить»</div>`
-          : ""}
       </div>
     </div>
-    <div class="actions">
-      <button class="btn ghost" id="refresh-data-tab">Обновить данные</button>
-      <button class="btn primary" id="copy-report">Скопировать отчёт коучу</button>
-      <button class="btn ghost" id="share-report">Поделиться отчётом</button>
-      <button class="btn ghost" id="ask-coach">Спросить коуча по этому дню</button>
+    <div class="coach-cta">
+      <p class="coach-cta-kicker">Главное действие</p>
+      <button class="btn primary btn-xl" id="ask-coach">Отправить день коучу</button>
+      <div class="actions compact">
+        <button class="btn soft" id="copy-report">Скопировать отчёт</button>
+        <button class="btn ghost" id="share-report">Поделиться</button>
+        <button class="btn ghost" id="refresh-data-tab">Обновить данные</button>
+      </div>
     </div>
-    <p class="hint">${freshnessLine(d) || "Нажмите «Обновить», чтобы подтянуть облако."}</p>
-    <p class="hint">Это не вкладка в «Подсчёте калорий». Сюда вы складываете день, кнопка копирует текст или отправляет коучу.</p>
   `;
 }
+
 
 function renderWeek() {
   const series = state.weekSeries?.length ? state.weekSeries : weekSeriesFromLocal(7);
   const target = state.profile.coaching_calorie_target || {};
   const report = state.weekReport || "";
   const axis = series.map((s) => `<span>${s.label}</span>`).join("");
+  const empty = !(series || []).some((s) => s.calories != null || s.steps != null || s.sleep_min != null);
   return `
-    <div class="card wide">
-      <h2>Неделя</h2>
-      <div class="sub">Тренды относительно ${state.date}</div>
+    <section class="panel stack-gap">
+      <div class="panel-head">
+        <h2 class="panel-title">Неделя</h2>
+        <p class="panel-sub">Тренды относительно ${state.date}</p>
+      </div>
+      ${weekGoalStrip(series)}
+      ${empty ? emptyState("Неделя ещё пустая", "Соберите 7 дней одной кнопкой — коуч увидит тренд.", "backfill-week", "Заполнить неделю") : ""}
+    </section>
+    <div class="card wide lift">
       <div class="week-block">
         <div class="week-label">Калории</div>
         ${sparkBars(series.map((s) => s.calories), Number(target.kcal_max || 2100))}
@@ -699,34 +794,41 @@ function renderWeek() {
         <div class="week-axis">${axis}</div>
       </div>
       <div class="week-block">
-        <div class="week-label">Сон (мин)</div>
+        <div class="week-label">Сон</div>
         ${sparkBars(series.map((s) => s.sleep_min), 540)}
         <div class="week-axis">${axis}</div>
       </div>
       <div class="week-block">
-        <div class="week-label">Вес (относительно)</div>
+        <div class="week-label">Вес</div>
         ${sparkBars(series.map((s) => s.weight), null, { relative: true })}
         <div class="week-axis">${axis}</div>
       </div>
       <div class="week-block">
-        <div class="week-label">АД (систол)</div>
+        <div class="week-label">АД</div>
         ${sparkBars(series.map((s) => s.bp_sys), null, { relative: true })}
         <div class="week-axis">${axis}</div>
       </div>
     </div>
-    <div class="report" style="margin-top:10px">${escapeHtml(report || "Загрузка недельного отчёта…")}</div>
+    <div class="report lift">${escapeHtml(report || "Загрузка недельного отчёта…")}</div>
     <div class="actions">
-      <button class="btn primary" id="backfill-week">Заполнить неделю (сбор 7 дней)</button>
-      <button class="btn ghost" id="copy-week-report">Скопировать неделю коучу</button>
+      <button class="btn primary btn-xl" id="backfill-week">Заполнить неделю</button>
+      <button class="btn soft" id="copy-week-report">Скопировать неделю коучу</button>
       <button class="btn ghost" id="share-week-report">Поделиться неделей</button>
     </div>
   `;
 }
 
+
 function renderAdd() {
   const d = day();
   return `
-    <div class="card wide form">
+    <section class="panel stack-gap">
+      <div class="panel-head">
+        <h2 class="panel-title">Добавить</h2>
+        <p class="panel-sub">Ручные правки перекрывают облако до «Снова из облака»</p>
+      </div>
+    </section>
+    <div class="card wide form lift">
       <h2>Давление</h2>
       <div class="row">
         <input id="sys" inputmode="numeric" placeholder="Сис" />
@@ -735,17 +837,18 @@ function renderAdd() {
       </div>
       <button class="btn primary" id="save-bp">Записать АД</button>
     </div>
-    <div class="card wide form" style="margin-top:10px">
+    <div class="card wide form lift">
       <h2>Сон / шаги / вес</h2>
-      <label>Сон, минут (например 419 = 6ч59)</label>
+      <label>Сон, минут</label>
       <input id="sleep" inputmode="numeric" value="${d.sleep_min ?? ""}" placeholder="419" />
       <label>Шаги</label>
       <input id="steps" inputmode="numeric" value="${d.steps ?? ""}" placeholder="871" />
       <label>Вес, кг</label>
       <input id="weight" inputmode="decimal" value="${d.weight_kg ?? ""}" placeholder="109.0" />
       <button class="btn primary" id="save-vitals">Сохранить</button>
+      ${hasManualLocks(d) ? `<button class="btn soft" id="unlock-cloud">Снова из облака</button>` : ""}
     </div>
-    <div class="card wide form" style="margin-top:10px">
+    <div class="card wide form lift">
       <h2>Еда</h2>
       <select id="meal-type">
         <option value="breakfast">Завтрак</option>
@@ -753,7 +856,7 @@ function renderAdd() {
         <option value="dinner">Ужин</option>
         <option value="snack">Перекус</option>
       </select>
-      <input id="meal-name" placeholder="Что ели, например омлет" />
+      <input id="meal-name" placeholder="Что ели" />
       <div class="row">
         <input id="meal-grams" inputmode="decimal" placeholder="г" />
         <input id="meal-kcal" inputmode="decimal" placeholder="ккал" />
@@ -769,26 +872,33 @@ function renderAdd() {
   `;
 }
 
+
 function renderCoach() {
   const report = formatReport(snapshot());
   const bubbles = state.chat
     .map((m) => `<div class="bubble ${m.role}">${escapeHtml(m.content)}</div>`)
     .join("");
   return `
-    <div class="report">${escapeHtml(report)}</div>
-    <div class="actions">
-      <button class="btn primary" id="copy-report">Скопировать отчёт коучу</button>
-      <button class="btn ghost" id="share-report">Поделиться отчётом</button>
-      <button class="btn ghost" id="clear-chat">Очистить чат</button>
+    <section class="panel coach-hero stack-gap">
+      <div class="panel-head">
+        <h2 class="panel-title">Коучу</h2>
+        <p class="panel-sub">Один экран — отчёт и вопрос без скринов</p>
+      </div>
+      <button class="btn primary btn-xl" id="copy-report">Скопировать отчёт</button>
+      <div class="actions compact">
+        <button class="btn soft" id="share-report">Поделиться</button>
+        <button class="btn ghost" id="clear-chat">Очистить чат</button>
+      </div>
+    </section>
+    <div class="report lift">${escapeHtml(report)}</div>
+    <div class="chat lift">${bubbles || emptyState("Пока тишина", "Спросите, что урезать сегодня или как дотянуть белок.", null)}</div>
+    <div class="form card wide lift">
+      <textarea id="coach-msg" rows="3" placeholder="Вопрос коучу…"></textarea>
+      <button class="btn primary btn-xl" id="send-coach" ${state.sending ? "disabled" : ""}>${state.sending ? "Отправка…" : "Передать коучу"}</button>
     </div>
-    <div class="chat" style="margin-top:12px">${bubbles}</div>
-    <div class="form" style="margin-top:12px">
-      <textarea id="coach-msg" rows="3" placeholder="Вопрос коучу, например: что урезать сегодня?"></textarea>
-      <button class="btn primary" id="send-coach" ${state.sending ? "disabled" : ""}>${state.sending ? "Отправка…" : "Передать коучу"}</button>
-    </div>
-    <p class="hint">Коуч видит снимок дня и недельный контекст. Не нужно слать скрины.</p>
   `;
 }
+
 
 function renderMore() {
   const t = state.profile.coaching_calorie_target || {};
@@ -796,8 +906,15 @@ function renderMore() {
   const conn = cs.connections || {};
   const lastSources = cs.last_sources || cs.last_result?.sources || {};
   return `
-    <div class="card wide">
-      <h2>Статус подключений</h2>
+    <section class="panel stack-gap">
+      <div class="panel-head">
+        <h2 class="panel-title">Ещё</h2>
+        <p class="panel-sub">Источники, профиль и импорт</p>
+      </div>
+      ${sourceStatusCards(day())}
+    </section>
+    <div class="card wide lift">
+      <h2>Статус</h2>
       <div class="badges">
         ${connectionBadge(!!conn.xiaomi?.connected, "Xiaomi")}
         ${connectionBadge(!!conn.fatsecret?.connected, "FatSecret")}
@@ -807,10 +924,12 @@ function renderMore() {
       ${cs.last_result?.collected_at ? `<div class="sub">Последний сбор: ${new Date(cs.last_result.collected_at).toLocaleString("ru-RU")}</div>` : ""}
       ${Object.keys(lastSources).length ? `<div class="sub">${Object.entries(lastSources).map(([k, v]) => sourceLabel(k, v)).join(" · ")}</div>` : ""}
       ${cs.last_error ? `<div class="sub high">${escapeHtml(cs.last_error)}</div>` : ""}
-      <button class="btn primary" id="collect-now" style="margin-top:10px">Собрать данные сейчас</button>
-      <button class="btn ghost" id="backfill-week" style="margin-top:8px">Заполнить неделю (7 дней)</button>
+      <div class="actions compact" style="margin-top:10px">
+        <button class="btn primary" id="collect-now">Собрать сейчас</button>
+        <button class="btn soft" id="backfill-week">Заполнить неделю</button>
+      </div>
     </div>
-    <div class="card wide form" style="margin-top:10px">
+    <div class="card wide form lift">
       <h2>Xiaomi / Mi Fitness</h2>
       ${conn.xiaomi?.connected ? `<button class="btn ghost" id="disconnect-xiaomi">Отключить Xiaomi</button>` : ""}
       ${state.xiaomi2fa ? `
@@ -825,43 +944,44 @@ function renderMore() {
           <input id="xi-user" placeholder="Email / телефон Xiaomi" autocomplete="username" />
           <input id="xi-pass" type="password" placeholder="Пароль Xiaomi" autocomplete="current-password" />
           <button class="btn primary" id="xi-login">Подключить</button>
-          <p class="hint">Или введите токены вручную (из Cookie account.xiaomi.com):</p>
+          <p class="hint">Или токены вручную:</p>
           <input id="xi-uid" placeholder="userId" />
           <input id="xi-pt" placeholder="passToken" />
           <button class="btn primary" id="xi-tokens">Сохранить токены</button>
         </details>
       `}
     </div>
-    <div class="card wide form" style="margin-top:10px">
-      <h2>FatSecret (еда)</h2>
-      <p class="hint">${conn.fatsecret?.connected ? "Подключён — дневник подтянется при «Обновить»" : "Подключите FatSecret для автоматического сбора дневника питания"}</p>
+    <div class="card wide form lift">
+      <h2>FatSecret</h2>
+      <p class="hint">${conn.fatsecret?.connected ? "Подключён — дневник при «Обновить»" : "Подключите FatSecret для дневника питания"}</p>
       <button class="btn primary" id="fatsecret-connect">Подключить FatSecret</button>
       ${conn.fatsecret?.connected ? `<button class="btn ghost" id="disconnect-fatsecret">Отключить FatSecret</button>` : ""}
       ${state.fatsecretSession ? `
-        <div style="margin-top:8px">
-          <label>PIN-код из FatSecret</label>
+        <div>
+          <label>PIN из FatSecret</label>
           <input id="fs-pin" placeholder="Введите PIN" />
           <button class="btn primary" id="fs-verify">Подтвердить</button>
         </div>
       ` : ""}
       <div id="fatsecret-status" class="sub"></div>
     </div>
-    <div class="card wide form" style="margin-top:10px">
-      <h2>MedM BP (давление)</h2>
-      <p class="hint">${conn.medm?.connected ? "Подключён" : "Подключите аккаунт MedM для автоматического сбора АД"}</p>
+    <div class="card wide form lift">
+      <h2>MedM BP</h2>
+      <p class="hint">${conn.medm?.connected ? "Подключён" : "Аккаунт MedM для АД"}</p>
       <input id="medm-email" placeholder="Email MedM" autocomplete="username" />
       <input id="medm-pass" type="password" placeholder="Пароль MedM" autocomplete="current-password" />
       <button class="btn primary" id="medm-login">Подключить MedM</button>
       ${conn.medm?.connected ? `<button class="btn ghost" id="disconnect-medm">Отключить MedM</button>` : ""}
     </div>
-    <div class="card wide form" style="margin-top:10px">
+    <div class="card wide form lift">
       <h2>Импорт CSV давления</h2>
-      <p class="hint">Экспорт из Citizen / «Давление»: колонки Дата,Время,Сис,Диа,Пульс</p>
+      <p class="hint">Citizen / «Давление»: Дата,Время,Сис,Диа,Пульс</p>
       <input id="csv-file" type="file" accept=".csv,text/csv,text/plain" />
       <button class="btn primary" id="import-csv">Импортировать CSV</button>
     </div>
-    <div class="card wide form" style="margin-top:10px">
+    <div class="card wide form lift">
       <h2>Профиль для коуча</h2>
+      <p class="hint">Хранится на сервере — доступен с любого устройства</p>
       <label>Рост, см</label>
       <input id="height" inputmode="numeric" value="${state.profile.height_cm ?? ""}" placeholder="165" />
       <label>Лекарства (через запятую)</label>
@@ -876,9 +996,10 @@ function renderMore() {
       <textarea id="notes" rows="2">${escapeAttr(day().notes || "")}</textarea>
       <button class="btn primary" id="save-profile">Сохранить профиль</button>
     </div>
-    <p class="hint">На Android: меню Chrome → «Добавить на главный экран» — будет как отдельное приложение.</p>
+    <p class="hint">Android: Chrome → «Добавить на главный экран»</p>
   `;
 }
+
 
 function escapeHtml(text) {
   return String(text)
@@ -1068,7 +1189,7 @@ function bind() {
     });
   });
   document.getElementById("send-coach")?.addEventListener("click", sendCoach);
-  document.getElementById("save-profile")?.addEventListener("click", () => {
+  document.getElementById("save-profile")?.addEventListener("click", async () => {
     const height = val("height");
     state.profile.height_cm = height ? Number(height) : null;
     state.profile.medications = val("meds")
@@ -1082,7 +1203,15 @@ function bind() {
     };
     day().notes = val("notes");
     persist();
-    toast("Профиль сохранён");
+    const ok = await saveServerProfile();
+    toast(ok ? "Профиль сохранён на сервере" : "Сохранено локально (сервер недоступен)");
+  });
+  document.getElementById("unlock-cloud")?.addEventListener("click", async () => {
+    const d = day();
+    d.locks = { steps: false, sleep: false, weight: false };
+    persist();
+    toast("Ручные правки сняты — тяну облако…");
+    await refreshData();
   });
   document.getElementById("import-csv")?.addEventListener("click", importCsv);
   document.getElementById("collect-now")?.addEventListener("click", collectNow);
@@ -1157,6 +1286,10 @@ function parseCitizenCsv(text) {
   return out;
 }
 
+document.getElementById("hub-pin-go")?.addEventListener("click", submitPin);
+document.getElementById("hub-pin")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") submitPin();
+});
 document.getElementById("date").value = state.date;
 document.getElementById("date").addEventListener("change", async (e) => {
   state.date = e.target.value || todayIso();
@@ -1196,6 +1329,10 @@ async function loadWeek(returnOnly = false) {
       return state.weekReport;
     }
     const data = await r.json();
+    if (data.profile) {
+      state.profile = { ...defaultProfile(), ...data.profile };
+      saveJson(STORAGE_PROFILE, state.profile);
+    }
     state.weekReport = data.report || "";
     state.weekSeries = (data.days || []).map((snap) => {
       const d = new Date(`${snap.date}T12:00:00`);
@@ -1504,14 +1641,93 @@ async function medmLogin() {
   }
 }
 
+
+async function loadServerProfile() {
+  try {
+    const r = await fetch("/api/health/profile");
+    if (!r.ok) return;
+    const data = await r.json();
+    if (data.profile) {
+      state.profile = { ...defaultProfile(), ...data.profile };
+      saveJson(STORAGE_PROFILE, state.profile);
+    }
+  } catch { /* offline — local profile */ }
+}
+
+async function saveServerProfile() {
+  try {
+    const r = await fetch("/api/health/profile", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        height_cm: state.profile.height_cm,
+        weight_kg_latest: state.profile.weight_kg_latest,
+        medications: state.profile.medications,
+        coaching_calorie_target: state.profile.coaching_calorie_target,
+      }),
+    });
+    if (!r.ok) throw new Error("save failed");
+    const data = await r.json();
+    if (data.profile) state.profile = { ...defaultProfile(), ...data.profile };
+    saveJson(STORAGE_PROFILE, state.profile);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function checkPinGate() {
+  try {
+    const r = await fetch("/api/health/gate");
+    if (!r.ok) return;
+    const data = await r.json();
+    state.pinRequired = !!data.pin_required;
+    if (!state.pinRequired) {
+      state.unlocked = true;
+      document.getElementById("pin-gate")?.classList.add("hidden");
+      return;
+    }
+    if (sessionStorage.getItem("hub.unlocked") === "1") {
+      state.unlocked = true;
+      document.getElementById("pin-gate")?.classList.add("hidden");
+      return;
+    }
+    document.getElementById("pin-gate")?.classList.remove("hidden");
+  } catch { /* offline — skip gate */ }
+}
+
+async function submitPin() {
+  const pin = val("hub-pin");
+  if (!pin) return toast("Введите PIN");
+  try {
+    const r = await fetch("/api/health/unlock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin }),
+    });
+    if (!r.ok) {
+      toast("Неверный PIN");
+      return;
+    }
+    state.unlocked = true;
+    sessionStorage.setItem("hub.unlocked", "1");
+    document.getElementById("pin-gate")?.classList.add("hidden");
+    toast("Доступ открыт");
+  } catch (err) {
+    toast("Ошибка: " + err.message);
+  }
+}
+
 async function boot() {
+  await checkPinGate();
+  await loadServerProfile();
   await fetchCollectorStatus();
   await loadServerDay();
   render();
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js?v=9").then((reg) => {
+  navigator.serviceWorker.register("sw.js?v=10").then((reg) => {
     reg.update().catch(() => {});
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       toast("Обновление установлено — перезагрузка…");

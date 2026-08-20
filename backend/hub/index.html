@@ -11,9 +11,19 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon.svg" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,600;7..72,700&family=Sora:wght@500;600;700;800&display=swap" />
-  <link rel="stylesheet" href="styles.css?v=8" />
+  <link rel="stylesheet" href="styles.css?v=9" />
 </head>
 <body>
+  <div id="pin-gate" class="pin-gate hidden" aria-modal="true" role="dialog">
+    <div class="pin-card">
+      <p class="eyebrow">Сбор</p>
+      <h2 class="pin-title">Вход</h2>
+      <p class="panel-sub">Введите PIN, чтобы открыть данные</p>
+      <input id="hub-pin" type="password" inputmode="numeric" autocomplete="one-time-code" placeholder="PIN" />
+      <button class="btn primary btn-xl" id="hub-pin-go" type="button">Открыть</button>
+    </div>
+  </div>
+
   <header class="stage">
     <div class="stage-top">
       <div>
@@ -34,13 +44,38 @@
   <main id="view"></main>
 
   <nav class="tabs">
-    <button data-tab="today" class="active">Сегодня</button>
-    <button data-tab="week">Неделя</button>
-    <button data-tab="add">Добавить</button>
-    <button data-tab="coach">Коучу</button>
-    <button data-tab="more">Ещё</button>
+    <button data-tab="today" class="active" aria-label="Сегодня">
+      <span class="tab-ico" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="7.5" stroke="currentColor" stroke-width="1.8"/><path d="M12 8.2v4.1l2.4 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </span>
+      <span class="tab-lbl">День</span>
+    </button>
+    <button data-tab="week" aria-label="Неделя">
+      <span class="tab-ico" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M5 16V9.5M10 16V7M15 16v-5.5M19 16V5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </span>
+      <span class="tab-lbl">Неделя</span>
+    </button>
+    <button data-tab="add" aria-label="Добавить">
+      <span class="tab-ico" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 6.5v11M6.5 12h11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </span>
+      <span class="tab-lbl">Плюс</span>
+    </button>
+    <button data-tab="coach" aria-label="Коучу">
+      <span class="tab-ico" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M7 16.5 12 8l5 8.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="18" r="1.2" fill="currentColor"/></svg>
+      </span>
+      <span class="tab-lbl">Коуч</span>
+    </button>
+    <button data-tab="more" aria-label="Ещё">
+      <span class="tab-ico" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="6.5" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="17.5" cy="12" r="1.4" fill="currentColor"/></svg>
+      </span>
+      <span class="tab-lbl">Ещё</span>
+    </button>
   </nav>
 
-  <script src="app.js?v=12"></script>
+  <script src="app.js?v=13"></script>
 </body>
 </html>
