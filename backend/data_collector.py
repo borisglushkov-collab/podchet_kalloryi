@@ -166,11 +166,16 @@ def _as_minutes(value: Any, *, total_min: int | None = None) -> int:
 
 
 def _sleep_session(item: dict[str, Any]) -> dict[str, Any] | None:
-    """Parse one Mi Fitness sleep record into minutes for a single night."""
+    """Parse one Mi Fitness sleep record into minutes for a single night.
+
+    `total_min` matches the Mi Fitness app "sleep duration" (asleep time), not
+    bed→wake wall-clock which includes awake-in-bed. Prefer `sleep_duration`,
+    then deep+light+REM, then in-bed minutes as last resort.
+    """
     v = _parse_value(item)
     bt = v.get("bedtime") or v.get("device_bedtime")
     wt = v.get("wake_up_time") or v.get("device_wake_up_time")
-    total_min = 0
+    in_bed_min = 0
     wake_date = None
     bed_date = None
     try:
@@ -180,25 +185,33 @@ def _sleep_session(item: dict[str, Any]) -> dict[str, Any] | None:
             if bt_i > 1_000_000_000_000:
                 bt_i //= 1000
                 wt_i //= 1000
-            total_min = max(0, (wt_i - bt_i) // 60)
+            in_bed_min = max(0, (wt_i - bt_i) // 60)
             wake_date = datetime.fromtimestamp(wt_i, tz=timezone.utc).astimezone(_USER_TZ).date()
             bed_date = datetime.fromtimestamp(bt_i, tz=timezone.utc).astimezone(_USER_TZ).date()
     except (OSError, OverflowError, TypeError, ValueError):
-        total_min = 0
+        in_bed_min = 0
         wake_date = None
         bed_date = None
 
-    if not total_min:
-        for key in ("sleep_duration", "duration", "total_minutes"):
-            if v.get(key) is not None:
-                total_min = _as_minutes(v.get(key))
-                break
-    if not total_min:
-        return None
+    # Provisional scale for seconds→minutes heuristic on stage fields.
+    provisional = in_bed_min or 8 * 60
+    deep = _as_minutes(v.get("sleep_deep_duration", 0), total_min=provisional)
+    light = _as_minutes(v.get("sleep_light_duration", 0), total_min=provisional)
+    rem = _as_minutes(v.get("sleep_rem_duration", 0), total_min=provisional)
+    stages_sum = deep + light + rem
 
-    deep = _as_minutes(v.get("sleep_deep_duration", 0), total_min=total_min)
-    light = _as_minutes(v.get("sleep_light_duration", 0), total_min=total_min)
-    rem = _as_minutes(v.get("sleep_rem_duration", 0), total_min=total_min)
+    asleep_min = 0
+    for key in ("sleep_duration", "duration", "total_minutes"):
+        if v.get(key) is not None:
+            asleep_min = _as_minutes(v.get(key), total_min=provisional)
+            if asleep_min:
+                break
+    if not asleep_min and stages_sum > 0:
+        asleep_min = stages_sum
+    if not asleep_min and in_bed_min:
+        asleep_min = in_bed_min
+    if not asleep_min:
+        return None
 
     avg_hr = None
     if v.get("avg_hr") is not None:
@@ -207,8 +220,8 @@ def _sleep_session(item: dict[str, Any]) -> dict[str, Any] | None:
         except (TypeError, ValueError):
             avg_hr = None
 
-    return {
-        "total_min": total_min,
+    out = {
+        "total_min": asleep_min,
         "deep_min": deep,
         "light_min": light,
         "rem_min": rem,
@@ -216,6 +229,9 @@ def _sleep_session(item: dict[str, Any]) -> dict[str, Any] | None:
         "wake_date": wake_date,
         "bed_date": bed_date,
     }
+    if in_bed_min and in_bed_min != asleep_min:
+        out["in_bed_min"] = in_bed_min
+    return out
 
 
 def _pick_sleep_for_day(sleep_list: list[dict[str, Any]], target_date: date) -> dict[str, Any] | None:
@@ -242,6 +258,8 @@ def _pick_sleep_for_day(sleep_list: list[dict[str, Any]], target_date: date) -> 
     }
     if best.get("avg_hr") is not None:
         out["avg_hr"] = best["avg_hr"]
+    if best.get("in_bed_min") is not None:
+        out["in_bed_min"] = int(best["in_bed_min"])
     return out
 
 

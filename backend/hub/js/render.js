@@ -193,6 +193,10 @@ export function renderToday() {
     d.sleep_light_min != null ? `лёгк. ${d.sleep_light_min}м` : null,
     d.sleep_rem_min != null ? `REM ${d.sleep_rem_min}м` : null,
   ].filter(Boolean).join(" · ");
+  const inBed = d.sleep_in_bed_min != null && d.sleep_min != null && d.sleep_in_bed_min !== d.sleep_min
+    ? `в кровати ${Math.floor(d.sleep_in_bed_min / 60)}ч ${d.sleep_in_bed_min % 60}м`
+    : null;
+  const sleepSub = [sleepStages || "как в Mi Fitness (время сна)", inBed].filter(Boolean).join(" · ");
   const bc = d.body_composition;
   const weightVal = bc?.weight_kg ?? d.weight_kg ?? state.profile.weight_kg_latest ?? "—";
   const weightSub = bc?.bmi != null ? `ИМТ ${bc.bmi} · Xiaomi Home` : (bc?.source === "xiaomi_home" ? "Xiaomi Home" : "кг");
@@ -228,7 +232,7 @@ export function renderToday() {
           return `<li><span>${r.systolic}/${r.diastolic}${r.pulse ? ` · ${r.pulse}` : ""}${hh ? ` · ${hh}` : ""}</span></li>`;
         }).join("")}</ul>` : ""}
       </div>
-      <div class="card"><h2>Сон</h2><div class="value">${sleepH}</div><div class="sub">${sleepStages || "цель около 7–8 часов"}</div></div>
+      <div class="card"><h2>Сон</h2><div class="value">${sleepH}</div><div class="sub">${sleepSub}</div></div>
       <div class="card"><h2>Шаги</h2><div class="value">${d.steps ?? "—"}</div>
         <div class="sub">${state.collectorStatus?.connections?.xiaomi?.connected ? "Mi Fitness · облако" : "ручной ввод / Xiaomi нет"}</div></div>
       <div class="card"><h2>Вес</h2><div class="value">${weightVal}</div><div class="sub">${weightSub}</div></div>

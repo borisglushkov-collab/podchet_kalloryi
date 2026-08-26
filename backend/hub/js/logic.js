@@ -29,6 +29,7 @@ export const emptyDay = (date) => ({
   sleep_deep_min: null,
   sleep_light_min: null,
   sleep_rem_min: null,
+  sleep_in_bed_min: null,
   steps: null,
   weight_kg: null,
   body_composition: null,
@@ -120,6 +121,8 @@ export function applySnapshotToDay(d, snap, { force = false, onWeight } = {}) {
     if (snap.sleep?.deep_min != null) d.sleep_deep_min = Number(snap.sleep.deep_min);
     if (snap.sleep?.light_min != null) d.sleep_light_min = Number(snap.sleep.light_min);
     if (snap.sleep?.rem_min != null) d.sleep_rem_min = Number(snap.sleep.rem_min);
+    if (snap.sleep?.in_bed_min != null) d.sleep_in_bed_min = Number(snap.sleep.in_bed_min);
+    else d.sleep_in_bed_min = null;
   }
   if (
     snap.weight?.kg != null

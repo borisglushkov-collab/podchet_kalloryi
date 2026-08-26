@@ -37,9 +37,48 @@ def test_pick_sleep_does_not_sum_two_nights():
     ]
     sleep = _pick_sleep_for_day(items, date(2026, 8, 20))
     assert sleep is not None
-    assert sleep["total_min"] == 8 * 60
+    # Asleep = stages sum (matches Mi Fitness), not longer in-bed window.
+    assert sleep["total_min"] == 480
     assert sleep["deep_min"] == 100
     assert sleep["avg_hr"] == 65
+
+
+def test_pick_sleep_prefers_asleep_over_in_bed():
+    """Mi Fitness shows asleep time; bed→wake includes awake-in-bed."""
+    items = [
+        {
+            "value": {
+                "bedtime": _ts(2026, 8, 25, 23, 0),
+                "wake_up_time": _ts(2026, 8, 26, 5, 8),  # 368 min in bed
+                "sleep_deep_duration": 70,
+                "sleep_light_duration": 217,
+                "sleep_rem_duration": 65,  # 352 asleep
+                "avg_hr": 59,
+            }
+        }
+    ]
+    sleep = _pick_sleep_for_day(items, date(2026, 8, 26))
+    assert sleep["total_min"] == 352
+    assert sleep["in_bed_min"] == 368
+    assert sleep["deep_min"] == 70
+
+
+def test_pick_sleep_prefers_explicit_sleep_duration():
+    items = [
+        {
+            "value": {
+                "bedtime": _ts(2026, 8, 25, 23, 0),
+                "wake_up_time": _ts(2026, 8, 26, 7, 0),
+                "sleep_duration": 350,
+                "sleep_deep_duration": 70,
+                "sleep_light_duration": 200,
+                "sleep_rem_duration": 60,
+            }
+        }
+    ]
+    sleep = _pick_sleep_for_day(items, date(2026, 8, 26))
+    assert sleep["total_min"] == 350
+    assert sleep["in_bed_min"] == 8 * 60
 
 
 def test_pick_sleep_converts_stage_seconds():
@@ -55,10 +94,11 @@ def test_pick_sleep_converts_stage_seconds():
         }
     ]
     sleep = _pick_sleep_for_day(items, date(2026, 8, 20))
-    assert sleep["total_min"] == 8 * 60
+    assert sleep["total_min"] == 90 + 250 + 80
     assert sleep["deep_min"] == 90
     assert sleep["light_min"] == 250
     assert sleep["rem_min"] == 80
+    assert sleep["in_bed_min"] == 8 * 60
 
 
 def test_filter_scale_never_falls_back_to_other_days():
