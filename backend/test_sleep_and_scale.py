@@ -72,13 +72,32 @@ def test_pick_sleep_prefers_explicit_sleep_duration():
                 "sleep_duration": 350,
                 "sleep_deep_duration": 70,
                 "sleep_light_duration": 200,
-                "sleep_rem_duration": 60,
+                "sleep_rem_duration": 80,  # stages 350
             }
         }
     ]
     sleep = _pick_sleep_for_day(items, date(2026, 8, 26))
     assert sleep["total_min"] == 350
     assert sleep["in_bed_min"] == 8 * 60
+
+
+def test_pick_sleep_ignores_bogus_short_sleep_duration():
+    """Some Mi payloads put a short unrelated value in sleep_duration."""
+    items = [
+        {
+            "value": {
+                "bedtime": _ts(2026, 8, 25, 23, 0),
+                "wake_up_time": _ts(2026, 8, 26, 5, 8),
+                "sleep_duration": 23,
+                "sleep_deep_duration": 70,
+                "sleep_light_duration": 217,
+                "sleep_rem_duration": 65,
+            }
+        }
+    ]
+    sleep = _pick_sleep_for_day(items, date(2026, 8, 26))
+    assert sleep["total_min"] == 352
+    assert sleep["in_bed_min"] == 368
 
 
 def test_pick_sleep_converts_stage_seconds():
