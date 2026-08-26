@@ -26,6 +26,20 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def _parse_ts(value: Any) -> float:
+    if not value:
+        return 0.0
+    text = str(value).strip()
+    if not text:
+        return 0.0
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(text).timestamp()
+    except ValueError:
+        return 0.0
+
+
 class HubProfileStore:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or Path(__file__).resolve().parent / "data" / "hub_profile.json"
@@ -78,8 +92,11 @@ class HubProfileStore:
                     if key in incoming and incoming[key] not in (None, ""):
                         target[key] = int(incoming[key])
                 next_profile["coaching_calorie_target"] = target
-            # Last-write-wins: client may send updated_at; otherwise stamp now.
+            # Last-write-wins: reject stale client payloads.
             client_ts = payload.get("updated_at")
+            server_ts = next_profile.get("updated_at")
+            if client_ts and server_ts and _parse_ts(client_ts) < _parse_ts(server_ts):
+                return json.loads(json.dumps(self._profile))
             if client_ts:
                 next_profile["updated_at"] = str(client_ts)
             else:

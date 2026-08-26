@@ -1,10 +1,12 @@
-const CACHE = "hub-v9";
+const params = new URL(self.location.href).searchParams;
+const VER = params.get("v") || "dev";
+const CACHE = `hub-${VER}`;
 
 const SHELL = [
   "/hub/",
   "/hub/index.html",
-  "/hub/styles.css",
-  "/hub/js/main.js",
+  `/hub/styles.css?v=${encodeURIComponent(VER)}`,
+  `/hub/js/main.js?v=${encodeURIComponent(VER)}`,
   "/hub/js/logic.js",
   "/hub/js/api.js",
   "/hub/js/state.js",
@@ -16,7 +18,13 @@ const SHELL = [
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
+  event.waitUntil(
+    caches.open(CACHE).then((cache) =>
+      Promise.all(
+        SHELL.map((url) => cache.add(url).catch(() => undefined)),
+      ),
+    ),
+  );
 });
 
 self.addEventListener("activate", (event) => {
@@ -50,7 +58,9 @@ self.addEventListener("fetch", (event) => {
           }
           return resp;
         })
-        .catch(() => caches.match(event.request)),
+        .catch(() =>
+          caches.match(event.request).then((cached) => cached || caches.match(url.pathname)),
+        ),
     );
     return;
   }

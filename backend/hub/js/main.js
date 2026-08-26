@@ -254,14 +254,22 @@ function render() {
 function setRefreshBusy(busy) {
   state.refreshing = busy;
   setSkeleton(busy);
-  for (const id of ["refresh-data", "refresh-data-tab", "collect-now", "backfill-week"]) {
-    const btn = document.getElementById(id);
-    if (!btn) continue;
+  const buttons = [
+    ...["refresh-data", "refresh-data-tab", "collect-now", "backfill-week", "backfill-week-more"]
+      .map((id) => document.getElementById(id))
+      .filter(Boolean),
+    ...document.querySelectorAll("[data-action='refresh'], [data-action='backfill']"),
+  ];
+  for (const btn of buttons) {
     btn.disabled = busy;
+    const id = btn.id;
+    const action = btn.dataset.action;
     if (id === "refresh-data") btn.textContent = busy ? "…" : "Обновить";
-    if (id === "refresh-data-tab") btn.textContent = busy ? "Обновляю…" : "Обновить данные";
-    if (id === "collect-now") btn.textContent = busy ? "Обновляю…" : "Собрать сейчас";
-    if (id === "backfill-week") btn.textContent = busy ? "Собираю…" : "Заполнить неделю";
+    else if (id === "refresh-data-tab" || action === "refresh") btn.textContent = busy ? "Обновляю…" : "Обновить данные";
+    else if (id === "collect-now") btn.textContent = busy ? "Обновляю…" : "Собрать сейчас";
+    else if (id === "backfill-week" || id === "backfill-week-more" || action === "backfill") {
+      btn.textContent = busy ? "Собираю…" : "Заполнить неделю";
+    }
   }
 }
 
@@ -767,6 +775,7 @@ function bind() {
     }
     persist();
     toast("Сохранено (ручные правки защищены)");
+    render();
   });
   document.getElementById("save-meal")?.addEventListener("click", () => {
     const name = val("meal-name");
@@ -821,6 +830,7 @@ function bind() {
   document.getElementById("import-csv")?.addEventListener("click", importCsv);
   document.getElementById("collect-now")?.addEventListener("click", refreshData);
   document.getElementById("backfill-week")?.addEventListener("click", backfillWeek);
+  document.getElementById("backfill-week-more")?.addEventListener("click", backfillWeek);
   document.getElementById("xi-login")?.addEventListener("click", xiaomiLogin);
   document.getElementById("xi-verify")?.addEventListener("click", xiaomiVerify);
   document.getElementById("xi-tokens")?.addEventListener("click", xiaomiSetTokens);
@@ -848,10 +858,16 @@ function wireShell() {
     });
   }
   document.body.addEventListener("click", (e) => {
-    const id = e.target?.id;
-    if (id === "refresh-data" || id === "refresh-data-tab") {
+    const t = e.target?.closest?.("button, [data-action]");
+    if (!t) return;
+    const id = t.id;
+    const action = t.dataset?.action;
+    if (id === "refresh-data" || id === "refresh-data-tab" || action === "refresh") {
       e.preventDefault();
       refreshData();
+    } else if (action === "backfill") {
+      e.preventDefault();
+      backfillWeek();
     }
   });
   document.querySelectorAll(".tabs button").forEach((btn) => {

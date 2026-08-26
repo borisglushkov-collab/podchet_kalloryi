@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 import hub_auth
 from hub_auth import COOKIE_NAME as HUB_SESSION_COOKIE
-from hub_auth import issue_token, path_is_public, pin_configured, token_valid
+from hub_auth import issue_token, path_requires_pin, pin_configured, token_valid
 
 
 def _read_api_version() -> str:
@@ -98,9 +98,7 @@ app.add_middleware(
 @app.middleware("http")
 async def hub_pin_guard(request: Request, call_next):
     path = request.url.path
-    if not path.startswith("/api/health/"):
-        return await call_next(request)
-    if path_is_public(path) or not pin_configured():
+    if not path_requires_pin(path) or not pin_configured():
         return await call_next(request)
     token = request.cookies.get(HUB_SESSION_COOKIE)
     if token_valid(token):

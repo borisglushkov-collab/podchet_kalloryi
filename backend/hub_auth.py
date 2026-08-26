@@ -50,3 +50,9 @@ def token_valid(token: str | None, now: float | None = None) -> bool:
 
 def path_is_public(path: str) -> bool:
     return path in {"/api/health/gate", "/api/health/unlock"}
+
+
+def path_requires_pin(path: str) -> bool:
+    if path.startswith("/api/health/"):
+        return not path_is_public(path)
+    return path in {"/api/coach-health-chat"}

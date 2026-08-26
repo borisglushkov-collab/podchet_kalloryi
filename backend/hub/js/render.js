@@ -81,11 +81,14 @@ export function sparkBars(values, maxHint, { relative = false } = {}) {
     .join("")}</div>`;
 }
 
-export function emptyState(title, hint, ctaId, ctaLabel) {
+export function emptyState(title, hint, action, ctaLabel) {
+  const btn = action
+    ? `<button class="btn primary" type="button" data-action="${escapeAttr(action)}">${ctaLabel || "Обновить"}</button>`
+    : "";
   return `<div class="empty-state">
-    <p class="empty-title">${title}</p>
-    <p class="empty-hint">${hint}</p>
-    ${ctaId ? `<button class="btn primary" id="${ctaId}" type="button">${ctaLabel || "Обновить"}</button>` : ""}
+    <p class="empty-title">${escapeHtml(title)}</p>
+    <p class="empty-hint">${escapeHtml(hint)}</p>
+    ${btn}
   </div>`;
 }
 
@@ -221,7 +224,7 @@ export function renderToday() {
       </div>
       ${sourceStatusCards(d)}
       ${hasManualLocks(d) ? `<button class="btn soft" id="unlock-cloud" type="button">Снова из облака</button>` : ""}
-      ${isEmptyDay ? emptyState("День пока пустой", "Подключите источники и нажмите «Обновить».", "refresh-data-tab", "Обновить данные") : ""}
+      ${isEmptyDay ? emptyState("День пока пустой", "Подключите источники и нажмите «Обновить».", "refresh", "Обновить данные") : ""}
     </section>
     <div class="cards">
       <div class="card"><h2>Давление</h2><div class="value ${high ? "high" : ""}">${bp ? `${bp.systolic}/${bp.diastolic}` : "—"}</div>
@@ -241,7 +244,7 @@ export function renderToday() {
         <div class="sub">мин ${d.heart_rate.min ?? "—"} / макс ${d.heart_rate.max ?? "—"}</div></div>` : ""}
       ${(d.workouts || []).length ? `<div class="card wide"><h2>Тренировки</h2><ul class="list">${d.workouts.map((w) => {
         const sub = [w.duration_min && `${w.duration_min} мин`, w.calories && `${w.calories} ккал`, w.avg_hr && `пульс ${w.avg_hr}`].filter(Boolean).join(" · ");
-        return `<li><span>${w.name || "Тренировка"}${sub ? ` — ${sub}` : ""}</span></li>`;
+        return `<li><span>${escapeHtml(w.name || "Тренировка")}${sub ? ` — ${escapeHtml(sub)}` : ""}</span></li>`;
       }).join("")}</ul></div>` : ""}
       <div class="card wide">
         <h2>Еда</h2>
@@ -250,7 +253,7 @@ export function renderToday() {
         ${kcalVs ? `<div class="${goalClass}">● ${kcalVs}</div>` : ""}
         <ul class="list">${d.meals.length
           ? d.meals.map((m, i) => {
-              const label = `${MEAL_RU[m.meal_type] || m.meal_type}: ${m.name}`;
+              const label = `${escapeHtml(MEAL_RU[m.meal_type] || m.meal_type)}: ${escapeHtml(m.name)}`;
               return m.source === "fatsecret"
                 ? `<li><span>${label}</span></li>`
                 : `<li><span>${label}</span><button class="btn ghost" data-del-meal="${i}" type="button">×</button></li>`;
@@ -283,7 +286,7 @@ export function renderWeek() {
       </div>
       ${weekHero(series)}
       ${weekGoalStrip(series)}
-      ${empty ? emptyState("Неделя ещё пустая", "Соберите 7 дней одной кнопкой.", "backfill-week", "Заполнить неделю") : ""}
+      ${empty ? emptyState("Неделя ещё пустая", "Соберите 7 дней одной кнопкой.", "backfill", "Заполнить неделю") : ""}
     </section>
     <div class="card wide lift">
       <div class="week-block"><div class="week-label">Калории</div>${sparkBars(series.map((s) => s.calories), Number(target.kcal_max || 2100))}<div class="week-axis">${axis}</div></div>
@@ -399,7 +402,7 @@ function renderSourcesPane() {
       ${cs.last_error ? `<div class="sub high">${escapeHtml(cs.last_error)}</div>` : ""}
       <div class="actions compact" style="margin-top:10px">
         <button class="btn primary" id="collect-now" type="button">Собрать сейчас</button>
-        <button class="btn soft" id="backfill-week" type="button">Заполнить неделю</button>
+        <button class="btn soft" id="backfill-week-more" type="button">Заполнить неделю</button>
       </div>
     </div>
     <div class="card wide form lift">

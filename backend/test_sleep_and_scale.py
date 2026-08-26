@@ -100,6 +100,25 @@ def test_pick_sleep_ignores_bogus_short_sleep_duration():
     assert sleep["in_bed_min"] == 368
 
 
+def test_pick_sleep_never_prefers_in_bed_over_stages():
+    """Even if sleep_duration equals in-bed, keep stages as asleep time."""
+    items = [
+        {
+            "value": {
+                "bedtime": _ts(2026, 8, 25, 23, 0),
+                "wake_up_time": _ts(2026, 8, 26, 7, 0),  # 480 in bed
+                "sleep_duration": 480,
+                "sleep_deep_duration": 70,
+                "sleep_light_duration": 217,
+                "sleep_rem_duration": 65,  # 352 asleep
+            }
+        }
+    ]
+    sleep = _pick_sleep_for_day(items, date(2026, 8, 26))
+    assert sleep["total_min"] == 352
+    assert sleep["in_bed_min"] == 480
+
+
 def test_pick_sleep_converts_stage_seconds():
     items = [
         {

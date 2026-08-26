@@ -200,9 +200,8 @@ def _sleep_session(item: dict[str, Any]) -> dict[str, Any] | None:
     rem = _as_minutes(v.get("sleep_rem_duration", 0), total_min=provisional)
     stages_sum = deep + light + rem
 
-    # Mi Fitness "sleep duration" ≈ deep+light+REM. Explicit sleep_duration is only
-    # trusted when it roughly agrees with stages or in-bed (some payloads put a
-    # short unrelated value in sleep_duration).
+    # Mi Fitness "sleep duration" ≈ deep+light+REM. Ignore explicit sleep_duration
+    # unless it agrees with stages (never prefer in-bed over stages).
     explicit = 0
     for key in ("sleep_duration", "duration", "total_minutes"):
         if v.get(key) is not None:
@@ -216,8 +215,6 @@ def _sleep_session(item: dict[str, Any]) -> dict[str, Any] | None:
         if explicit:
             tol = max(20, int(stages_sum * 0.2))
             if abs(explicit - stages_sum) <= tol:
-                asleep_min = explicit
-            elif in_bed_min and abs(explicit - in_bed_min) <= max(20, int(in_bed_min * 0.2)):
                 asleep_min = explicit
     elif explicit:
         asleep_min = explicit

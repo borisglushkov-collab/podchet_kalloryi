@@ -117,3 +117,35 @@ def test_hub_index_injects_version(client: TestClient):
     assert "js/main.js?v=" in r.text
     assert "type=\"module\"" in r.text
     assert "{{HUB_VERSION}}" not in r.text
+
+
+def test_profile_rejects_stale_updated_at(tmp_path: Path):
+    store = HubProfileStore(tmp_path / "hub_profile.json")
+    store.save({"height_cm": 170, "updated_at": "2026-08-26T12:00:00Z"})
+    stale = store.save({"height_cm": 160, "updated_at": "2026-08-26T10:00:00Z"})
+    assert stale["height_cm"] == 170
+    assert stale["updated_at"] == "2026-08-26T12:00:00Z"
+
+
+def test_coach_health_chat_requires_pin(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    monkeypatch.setenv("HUB_PIN", "4242")
+    monkeypatch.setenv("HUB_SESSION_SECRET", "test-secret")
+    import hub_profile_store as hps
+    import main as main_mod
+
+    store = HubProfileStore(tmp_path / "hub_profile.json")
+    monkeypatch.setattr(hps, "profile_store", store)
+    monkeypatch.setattr(main_mod, "profile_store", store)
+    client = TestClient(main_mod.app)
+
+    blocked = client.post(
+        "/api/coach-health-chat",
+        json={"message": "hi", "snapshot": {"date": "2026-08-26"}, "history": []},
+    )
+    assert blocked.status_code == 401
+    assert client.post("/api/health/unlock", json={"pin": "4242"}).status_code == 200
+    allowed = client.post(
+        "/api/coach-health-chat",
+        json={"message": "hi", "snapshot": {"date": "2026-08-26"}, "history": []},
+    )
+    assert allowed.status_code == 200
