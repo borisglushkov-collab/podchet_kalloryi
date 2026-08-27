@@ -347,7 +347,8 @@ def _aggregate_metric_values(values: list[int]) -> int:
 
 def _aggregate_steps_for_day(steps_list: list[dict[str, Any]], target_date: date) -> dict[str, int] | None:
     iso = target_date.isoformat()
-    buckets: list[tuple[int, dict[str, int]]] = []
+    # Dedupe by timestamp — Xiaomi sometimes repeats the same minute bucket.
+    by_ts: dict[int, dict[str, int]] = {}
     for item in steps_list:
         if _step_record_date(item) != iso:
             continue
@@ -357,18 +358,28 @@ def _aggregate_steps_for_day(steps_list: list[dict[str, Any]], target_date: date
         calories = int(v.get("calories", 0) or 0)
         if steps <= 0 and distance <= 0 and calories <= 0:
             continue
-        ts = int(item.get("time") or 0)
-        buckets.append((ts, {"steps": steps, "distance": distance, "calories": calories}))
-    if not buckets:
+        ts = int(item.get("time") or v.get("time") or 0)
+        prev = by_ts.get(ts)
+        if prev is None:
+            by_ts[ts] = {"steps": steps, "distance": distance, "calories": calories}
+        else:
+            # Same second: keep the richer sample, never sum duplicates.
+            by_ts[ts] = {
+                "steps": max(prev["steps"], steps),
+                "distance": max(prev["distance"], distance),
+                "calories": max(prev["calories"], calories),
+            }
+    if not by_ts:
         return None
-    buckets.sort(key=lambda pair: pair[0])
-    step_vals = [b["steps"] for _, b in buckets if b["steps"] > 0]
-    dist_vals = [b["distance"] for _, b in buckets if b["distance"] > 0]
-    cal_vals = [b["calories"] for _, b in buckets if b["calories"] > 0]
+    buckets = [by_ts[ts] for ts in sorted(by_ts)]
+    step_vals = [b["steps"] for b in buckets if b["steps"] > 0]
+    dist_vals = [b["distance"] for b in buckets if b["distance"] > 0]
+    cal_vals = [b["calories"] for b in buckets if b["calories"] > 0]
     return {
         "count": _aggregate_metric_values(step_vals),
         "distance_m": _aggregate_metric_values(dist_vals),
         "calories": _aggregate_metric_values(cal_vals),
+        "source": "mi_fitness",
     }
 
 

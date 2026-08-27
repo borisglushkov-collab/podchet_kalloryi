@@ -115,6 +115,11 @@ def _merge_steps(existing: dict[str, Any] | None, incoming: dict[str, Any] | Non
         return existing
     if not existing:
         return incoming
+    # Cloud collect is authoritative — never keep a higher stale total.
+    if incoming.get("source") == "mi_fitness":
+        return incoming
+    if existing.get("source") == "mi_fitness" and incoming.get("source") != "mi_fitness":
+        return existing
     incoming_count = (incoming.get("count") if isinstance(incoming, dict) else None) or 0
     existing_count = (existing.get("count") if isinstance(existing, dict) else None) or 0
     if incoming_count >= existing_count:

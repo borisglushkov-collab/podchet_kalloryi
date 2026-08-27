@@ -93,3 +93,19 @@ def test_merge_accepts_empty_fatsecret_collect():
     merged = merge_snapshots(existing, incoming)
     assert merged["nutrition"]["meals"] == []
     assert merged["nutrition"]["calories"] == 0
+
+
+def test_merge_mi_fitness_steps_replace_higher_stale():
+    existing = {
+        "date": "2026-08-27",
+        "steps": {"count": 9000, "distance_m": 5000, "calories": 400},
+        "activity": {"steps": 9000, "source": "mi_fitness"},
+    }
+    incoming = {
+        "date": "2026-08-27",
+        "steps": {"count": 4772, "distance_m": 2827, "calories": 297, "source": "mi_fitness"},
+        "activity": {"steps": 4772, "source": "mi_fitness"},
+    }
+    merged = merge_snapshots(existing, incoming)
+    assert merged["steps"]["count"] == 4772
+    assert merged["activity"]["steps"] == 4772

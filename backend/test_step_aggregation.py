@@ -14,9 +14,22 @@ def test_aggregate_metric_values_cumulative():
 def test_aggregate_steps_for_day_filters_by_local_date():
     target = date(2026, 8, 19)
     items = [
-        {"time": 1787122800, "value": '{"steps":1500,"distance":800,"calories":90}'},
-        {"time": 1787130000, "value": '{"steps":1300,"distance":700,"calories":80}'},
-        {"time": 1787036400, "value": '{"steps":9999,"distance":1,"calories":1}'},
+        {"time": 1787122800, "zone_offset": 10800, "value": '{"steps":1500,"distance":800,"calories":90}'},
+        {"time": 1787130000, "zone_offset": 10800, "value": '{"steps":1300,"distance":700,"calories":80}'},
+        {"time": 1787036400, "zone_offset": 10800, "value": '{"steps":9999,"distance":1,"calories":1}'},
+    ]
+    result = _aggregate_steps_for_day(items, target)
+    assert result is not None
+    assert result["count"] == 2800
+    assert result["source"] == "mi_fitness"
+
+
+def test_aggregate_steps_dedupes_same_timestamp():
+    target = date(2026, 8, 19)
+    items = [
+        {"time": 1787122800, "zone_offset": 10800, "value": '{"steps":1500,"distance":800,"calories":90}'},
+        {"time": 1787122800, "zone_offset": 10800, "value": '{"steps":1500,"distance":800,"calories":90}'},
+        {"time": 1787130000, "zone_offset": 10800, "value": '{"steps":1300,"distance":700,"calories":80}'},
     ]
     result = _aggregate_steps_for_day(items, target)
     assert result is not None
