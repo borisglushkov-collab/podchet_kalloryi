@@ -113,24 +113,25 @@ async def fetch_bp_readings(
             return []
         record_id = rm.group(1)
 
-        # Prefer dedicated BP history (cleaner rows); fall back to full timeline.
-        pages: list[str] = []
+        # Timeline has "147 / 91" rows; dedicated BP history uses column layout.
+        # Try both and keep the richest timed result (nav text alone is not enough).
+        best: list[dict[str, Any]] = []
         for path in (
-            f"/en/records/{record_id}/history/bloodpressures",
             f"/en/records/{record_id}/timeline",
+            f"/en/records/{record_id}/history/bloodpressures",
         ):
             resp = await c.get(f"{_PORTAL}{path}")
-            if resp.status_code == 200 and resp.text:
-                pages.append(resp.text)
-                if "Blood Pressure" in resp.text or "bloodpressure" in resp.text.lower():
-                    break
+            if resp.status_code != 200 or not resp.text:
+                continue
+            parsed = _parse_timeline_bp(resp.text, limit=limit)
+            if _bp_parse_score(parsed) > _bp_parse_score(best):
+                best = parsed
+        return best
 
-        readings: list[dict[str, Any]] = []
-        for html in pages:
-            readings = _parse_timeline_bp(html, limit=limit)
-            if readings:
-                break
-        return readings
+
+def _bp_parse_score(readings: list[dict[str, Any]]) -> tuple[int, int]:
+    timed = sum(1 for r in readings if "T" in str(r.get("measured_at") or ""))
+    return (timed, len(readings))
 
 
 _MONTHS_EN = {
@@ -234,20 +235,89 @@ def _parse_time_token(text: str) -> str | None:
 def _parse_timeline_bp(html: str, *, limit: int = 50, today: date | None = None) -> list[dict[str, Any]]:
     """Extract BP readings from MedM timeline / bloodpressures HTML."""
     today = today or _local_today()
-    readings: list[dict[str, Any]] = []
+    by_key: dict[tuple[int, int, str], dict[str, Any]] = {}
     current_date = today.isoformat()
 
-    # Walk table rows: date headers and measurement rows with time + value.
+    def _remember(sys_val: int, dia_val: int, pulse: int | None, measured_at: str) -> None:
+        if sys_val < 60 or sys_val > 260 or dia_val < 30 or dia_val > 160:
+            return
+        key = (sys_val, dia_val, measured_at)
+        prev = by_key.get(key)
+        if prev and prev.get("pulse") is not None and pulse is None:
+            return
+        by_key[key] = {
+            "systolic": sys_val,
+            "diastolic": dia_val,
+            "pulse": pulse,
+            "measured_at": measured_at,
+            "source": "medm_bp",
+        }
+
     row_re = re.compile(r"<tr\b[^>]*>(.*?)</tr>", re.I | re.S)
     for row_m in row_re.finditer(html):
         row = row_m.group(1)
-        date_cell = re.search(r"class=['\"]date[^'\"]*['\"][^>]*>(.*?)</td>", row, re.I | re.S)
-        if date_cell:
+
+        # Timeline date header: <td class='date ...'>Today</td>
+        date_cell = re.search(r"class=['\"]date(?![^'\"]*time)[^'\"]*['\"][^>]*>(.*?)</td>", row, re.I | re.S)
+        if date_cell and "measurements_table__time" not in row:
             parsed = _parse_date_header(date_cell.group(1), today=today)
             if parsed:
                 current_date = parsed
-            continue
+            # Pure date-header rows have no values.
+            if not re.search(r"\d{2,3}\s*/\s*\d{2,3}", row) and "measurements_table__time" not in row:
+                continue
 
+        # History BP table date cell (may share the measurement row via rowspan).
+        hist_date = re.search(
+            r"class=['\"][^'\"]*measurements_table__date[^'\"]*['\"][^>]*rowspan[^>]*>(.*?)</td>",
+            row,
+            re.I | re.S,
+        )
+        if not hist_date:
+            hist_date = re.search(
+                r"class=['\"][^'\"]*measurements_table__date(?![^'\"]*time)[^'\"]*['\"][^>]*>"
+                r"(?![\s\S]*measurements_table__time)(.*?)</td>",
+                row,
+                re.I | re.S,
+            )
+        if hist_date:
+            # Only treat as date if text looks like a date header, not a clock.
+            header = re.sub(r"<[^>]+>", " ", hist_date.group(1))
+            if not re.search(r"\d{1,2}:\d{2}", header):
+                parsed = _parse_date_header(header, today=today)
+                if parsed:
+                    current_date = parsed
+
+        time_token = None
+        time_cell = re.search(
+            r"class=['\"][^'\"]*(?:measurements_table__time|\btime\b)[^'\"]*['\"][^>]*>(.*?)</td>",
+            row,
+            re.I | re.S,
+        )
+        if time_cell:
+            time_token = _parse_time_token(re.sub(r"<[^>]+>", " ", time_cell.group(1)))
+        if not time_token:
+            time_token = _parse_time_token(re.sub(r"<[^>]+>", " ", row))
+
+        # History page: separate numeric columns (sys / dia / pulse).
+        if "measurements_table__" in row:
+            nums = [
+                int(n)
+                for n in re.findall(
+                    r"<td class=['\"]measurements_table__column['\"]>\s*<span[^>]*>\s*(\d{2,3})\s*</span>",
+                    row,
+                    re.I,
+                )
+            ]
+            if len(nums) >= 2:
+                pulse = nums[2] if len(nums) >= 3 and 30 <= nums[2] <= 200 else None
+                measured_at = f"{current_date}T{time_token}" if time_token else current_date
+                _remember(nums[0], nums[1], pulse, measured_at)
+                if len(by_key) >= limit:
+                    break
+                continue
+
+        # Timeline page: "Blood Pressure" + "147 / 91 (65 bpm)"
         if not re.search(r"Blood\s*Pressure|bloodpressure", row, re.I):
             continue
 
@@ -262,11 +332,6 @@ def _parse_timeline_bp(html: str, *, limit: int = 50, today: date | None = None)
         if not bp_m:
             continue
 
-        sys_val = int(bp_m.group(1))
-        dia_val = int(bp_m.group(2))
-        if sys_val < 60 or sys_val > 260 or dia_val < 30 or dia_val > 160:
-            continue
-
         pulse = None
         if bp_m.lastindex and bp_m.lastindex >= 3 and bp_m.group(3):
             p = int(bp_m.group(3))
@@ -279,29 +344,11 @@ def _parse_timeline_bp(html: str, *, limit: int = 50, today: date | None = None)
                 if 30 <= p <= 200:
                     pulse = p
 
-        time_cell = re.search(r"class=['\"]time['\"][^>]*>(.*?)</td>", row, re.I | re.S)
-        time_token = _parse_time_token(re.sub(r"<[^>]+>", " ", time_cell.group(1)) if time_cell else "")
-        if not time_token:
-            # Fallback: any AM/PM time in the row.
-            time_token = _parse_time_token(re.sub(r"<[^>]+>", " ", row))
-
         measured_at = f"{current_date}T{time_token}" if time_token else current_date
-
-        key = (sys_val, dia_val, measured_at)
-        if any((r["systolic"], r["diastolic"], r["measured_at"]) == key for r in readings):
-            continue
-
-        readings.append(
-            {
-                "systolic": sys_val,
-                "diastolic": dia_val,
-                "pulse": pulse,
-                "measured_at": measured_at,
-                "source": "medm_bp",
-            }
-        )
-        if len(readings) >= limit:
+        _remember(int(bp_m.group(1)), int(bp_m.group(2)), pulse, measured_at)
+        if len(by_key) >= limit:
             break
 
+    readings = list(by_key.values())
     readings.sort(key=lambda r: str(r.get("measured_at") or ""), reverse=True)
-    return readings
+    return readings[:limit]

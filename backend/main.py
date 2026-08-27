@@ -656,6 +656,18 @@ def _merge_bp_readings(*groups: list[dict] | None) -> list[dict]:
                 continue
             seen.add(key)
             merged.append(item)
+    timed_keys = {
+        (str(r.get("measured_at") or "")[:10], int(r["systolic"]), int(r["diastolic"]))
+        for r in merged
+        if "T" in str(r.get("measured_at") or "")
+    }
+    if timed_keys:
+        merged = [
+            r
+            for r in merged
+            if "T" in str(r.get("measured_at") or "")
+            or (str(r.get("measured_at") or "")[:10], int(r["systolic"]), int(r["diastolic"])) not in timed_keys
+        ]
     merged.sort(key=lambda r: str(r.get("measured_at") or ""), reverse=True)
     return merged
 
