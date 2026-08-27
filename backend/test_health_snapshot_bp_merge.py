@@ -57,3 +57,19 @@ def test_merge_replaces_prior_medm_day_when_timed_scrape_arrives():
         "T" in str(r["measured_at"]) for r in merged["readings_today"] if r.get("source") == "medm_bp"
     )
     assert any(r.get("source") == "manual" for r in merged["readings_today"])
+
+
+def test_merge_clears_stale_medm_when_day_has_no_readings():
+    existing = {
+        "latest": {"systolic": 134, "diastolic": 94, "measured_at": "2026-08-25", "source": "medm_bp"},
+        "readings_today": [
+            {"systolic": 134, "diastolic": 94, "measured_at": "2026-08-25", "source": "medm_bp"},
+            {"systolic": 120, "diastolic": 80, "measured_at": "2026-08-25T09:00:00", "source": "manual"},
+        ],
+    }
+    incoming = {"readings_today": [], "latest": None, "cleared_medm": True}
+    merged = _merge_blood_pressure(existing, incoming)
+    assert len(merged["readings_today"]) == 1
+    assert merged["readings_today"][0]["source"] == "manual"
+    assert merged["latest"]["systolic"] == 120
+    assert "cleared_medm" not in merged

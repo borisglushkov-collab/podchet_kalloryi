@@ -170,15 +170,19 @@ export function applySnapshotToDay(d, snap, { force = false, onWeight } = {}) {
   }
   const latest = snap.blood_pressure?.latest;
   if (latest?.systolic && latest?.diastolic) {
-    incoming.push({
-      systolic: latest.systolic,
-      diastolic: latest.diastolic,
-      pulse: latest.pulse,
-      measured_at: latest.measured_at || new Date().toISOString(),
-      source: latest.source || "auto",
-    });
+    const measuredAt = latest.measured_at || null;
+    // Do not invent "now" for undated latest — that sorts above real timed readings.
+    if (measuredAt || !incoming.length) {
+      incoming.push({
+        systolic: latest.systolic,
+        diastolic: latest.diastolic,
+        pulse: latest.pulse,
+        measured_at: measuredAt || `${d.date || ""}`,
+        source: latest.source || "auto",
+      });
+    }
   }
-  if (force && incoming.length) {
+  if (force) {
     // Collect-now is authoritative for cloud BP; keep only local manuals not present server-side.
     const manuals = (d.bp || []).filter((b) => b.source === "manual" || b.source === "csv");
     d.bp = [];

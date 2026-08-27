@@ -677,12 +677,23 @@ def _attach_bp(snapshot: dict, date: str) -> dict:
     bp_snapshot = merged.get("blood_pressure") or {}
     bp_items = bp_store.list(from_date=date, to_date=date)
     snapshot_readings = bp_snapshot.get("readings_today") or []
+    # Never resurrect date-only MedM stubs once timed store rows exist or scrape cleared the day.
+    snapshot_readings = [
+        r
+        for r in snapshot_readings
+        if not (
+            str(r.get("source") or "") == "medm_bp"
+            and "T" not in str(r.get("measured_at") or "")
+        )
+    ]
     readings_today = _merge_bp_readings(snapshot_readings, bp_items)
     summary = bp_store.summary(7)
-    # Always prefer the newest reading by measured_at; never keep a stale snapshot latest.
-    latest = readings_today[0] if readings_today else (bp_snapshot.get("latest") or summary.get("latest"))
+    # Latest is only from this day's readings — do not borrow another day's summary.latest.
+    latest = readings_today[0] if readings_today else bp_snapshot.get("latest")
+    if latest and not readings_today and str(latest.get("source") or "") == "medm_bp" and "T" not in str(latest.get("measured_at") or ""):
+        latest = None
     merged["blood_pressure"] = {
-        **bp_snapshot,
+        **{k: v for k, v in bp_snapshot.items() if k != "cleared_medm"},
         "readings_today": readings_today,
         "latest": latest,
         "avg_7d": summary.get("avg"),

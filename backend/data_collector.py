@@ -629,34 +629,43 @@ def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any
                 "source": "fatsecret",
             }
 
-    # MedM blood pressure
-    medm_bp = raw.get("medm_bp") or []
-    if medm_bp:
-        medm_bp = sorted(medm_bp, key=lambda r: str(r.get("measured_at") or ""), reverse=True)
-        latest_bp = medm_bp[0]
-        sys_val = latest_bp.get("systolic")
-        dia_val = latest_bp.get("diastolic")
-        if sys_val and dia_val:
-            bp_data = snap.get("blood_pressure", {})
-            bp_data["latest"] = {
-                "systolic": int(sys_val),
-                "diastolic": int(dia_val),
-                "pulse": latest_bp.get("pulse"),
-                "measured_at": latest_bp.get("measured_at"),
-                "source": "medm_bp",
-            }
-            bp_data["readings_today"] = [
-                {
-                    "systolic": r["systolic"],
-                    "diastolic": r["diastolic"],
-                    "pulse": r.get("pulse"),
-                    "measured_at": r.get("measured_at"),
+    # MedM blood pressure — key present means we scraped (may be empty for the day).
+    if "medm_bp" in raw:
+        medm_bp = list(raw.get("medm_bp") or [])
+        if medm_bp:
+            medm_bp = sorted(medm_bp, key=lambda r: str(r.get("measured_at") or ""), reverse=True)
+            latest_bp = medm_bp[0]
+            sys_val = latest_bp.get("systolic")
+            dia_val = latest_bp.get("diastolic")
+            if sys_val and dia_val:
+                bp_data = snap.get("blood_pressure") or {}
+                bp_data["latest"] = {
+                    "systolic": int(sys_val),
+                    "diastolic": int(dia_val),
+                    "pulse": latest_bp.get("pulse"),
+                    "measured_at": latest_bp.get("measured_at"),
                     "source": "medm_bp",
                 }
-                for r in medm_bp
-                if r.get("systolic") and r.get("diastolic")
-            ]
-            snap["blood_pressure"] = bp_data
+                bp_data["readings_today"] = [
+                    {
+                        "systolic": r["systolic"],
+                        "diastolic": r["diastolic"],
+                        "pulse": r.get("pulse"),
+                        "measured_at": r.get("measured_at"),
+                        "source": "medm_bp",
+                    }
+                    for r in medm_bp
+                    if r.get("systolic") and r.get("diastolic")
+                ]
+                bp_data.pop("cleared_medm", None)
+                snap["blood_pressure"] = bp_data
+        else:
+            # No MedM readings for this calendar day — drop stale date-only stubs on merge.
+            snap["blood_pressure"] = {
+                "readings_today": [],
+                "latest": None,
+                "cleared_medm": True,
+            }
 
     snap["source"] = "mi_fitness_auto"
     snap["generated_at"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
@@ -723,14 +732,14 @@ async def collect_for_date(target_date: date | None = None) -> dict[str, Any]:
         else:
             bp_readings = await fetch_bp_readings(limit=50)
             bp_for_day = _filter_medm_for_date(bp_readings, day)
-            if bp_for_day:
-                raw["medm_bp"] = bp_for_day
-                try:
-                    from blood_pressure_store import store as bp_store
+            raw["medm_bp"] = bp_for_day
+            try:
+                from blood_pressure_store import store as bp_store
 
-                    # Replace prior MedM rows for this day (incl. date-only stubs from old parser).
-                    bp_store.purge_date_only("medm_bp")
-                    bp_store.remove_source_on_date("medm_bp", day.isoformat())
+                # Replace prior MedM rows for this day (incl. date-only stubs from old parser).
+                bp_store.purge_date_only("medm_bp")
+                bp_store.remove_source_on_date("medm_bp", day.isoformat())
+                if bp_for_day:
                     bp_store.add_many(
                         [
                             {
@@ -744,8 +753,8 @@ async def collect_for_date(target_date: date | None = None) -> dict[str, Any]:
                             if r.get("systolic") and r.get("diastolic")
                         ]
                     )
-                except Exception as bp_exc:
-                    logger.warning("MedM BP store persist failed: %s", bp_exc)
+            except Exception as bp_exc:
+                logger.warning("MedM BP store persist failed: %s", bp_exc)
             sources["medm"] = {"ok": True, "count": len(bp_for_day)}
             logger.info("MedM BP (%s): %d readings", day.isoformat(), len(bp_for_day))
     except Exception as exc:

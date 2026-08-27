@@ -80,10 +80,35 @@ def _merge_blood_pressure(
     if not incoming:
         return existing
     if not existing:
-        return incoming
+        out = dict(incoming)
+        out.pop("cleared_medm", None)
+        if out.get("latest") is None and not (out.get("readings_today") or []):
+            out.pop("latest", None)
+        return out
 
     existing_list = list(existing.get("readings_today") or [])
     incoming_list = list(incoming.get("readings_today") or [])
+
+    # Explicit empty MedM collect for the day — drop stale MedM / date-only stubs.
+    if incoming.get("cleared_medm"):
+        kept = [
+            r
+            for r in existing_list
+            if str(r.get("source") or "") in {"manual", "csv"}
+            or (
+                str(r.get("source") or "") not in {"medm_bp", "auto"}
+                and "T" in str(r.get("measured_at") or "")
+            )
+        ]
+        readings = _merge_bp_reading_lists(kept)
+        latest = _bp_latest(readings, None)
+        merged = {**existing, "readings_today": readings}
+        merged.pop("cleared_medm", None)
+        if latest:
+            merged["latest"] = latest
+        else:
+            merged.pop("latest", None)
+        return merged
 
     # Timed MedM scrape is authoritative for that calendar day — drop prior MedM
     # rows for the same dates (including date-only stubs from the old parser).
@@ -105,8 +130,11 @@ def _merge_blood_pressure(
     readings = _merge_bp_reading_lists(existing_list, incoming_list)
     latest = _bp_latest(readings, incoming.get("latest") or existing.get("latest"))
     merged = {**existing, **incoming, "readings_today": readings}
+    merged.pop("cleared_medm", None)
     if latest:
         merged["latest"] = latest
+    else:
+        merged.pop("latest", None)
     return merged
 
 
