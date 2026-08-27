@@ -103,7 +103,13 @@ export function bodyCompositionFromWeight(w) {
 
 export function applySnapshotToDay(d, snap, { force = false, onWeight } = {}) {
   d.locks = d.locks || { steps: false, sleep: false, weight: false };
-  const stepCount = snap.steps?.count ?? snap.activity?.steps;
+  let stepCount = snap.steps?.count ?? snap.activity?.steps;
+  // Prefer Mi Fitness cloud totals when steps/activity disagree (old max-merge left stale highs).
+  if (snap.steps?.source === "mi_fitness" && snap.steps?.count != null) {
+    stepCount = snap.steps.count;
+  } else if (snap.activity?.source === "mi_fitness" && snap.activity?.steps != null) {
+    stepCount = snap.activity.steps;
+  }
   if (
     stepCount != null
     && !d.locks.steps
