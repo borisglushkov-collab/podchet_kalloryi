@@ -6,6 +6,7 @@ import {
   emptyDay,
   hasManualLocks,
   importNutritionMeals,
+  latestBpReading,
   mergeProfilesLww,
   syncTone,
   weekGoalStats,
@@ -68,6 +69,32 @@ test("syncTone covers busy stale off ok", () => {
   assert.equal(syncTone({ connected: true, lastSyncedAt: staleAt }).tone, "stale");
   const freshAt = new Date(Date.now() - 10 * 60000).toISOString();
   assert.equal(syncTone({ connected: true, lastSyncedAt: freshAt }).tone, "ok");
+});
+
+test("force refresh replaces cloud BP and keeps manuals", () => {
+  const d = emptyDay("2026-08-27");
+  d.bp = [
+    { systolic: 147, diastolic: 91, measured_at: "2026-08-27", source: "medm_bp" },
+    { systolic: 120, diastolic: 80, measured_at: "2026-08-27T08:00:00", source: "manual" },
+  ];
+  applySnapshotToDay(
+    d,
+    {
+      blood_pressure: {
+        readings_today: [
+          { systolic: 133, diastolic: 88, pulse: 72, measured_at: "2026-08-27T09:05:00", source: "medm_bp" },
+          { systolic: 140, diastolic: 90, pulse: 68, measured_at: "2026-08-27T14:13:00", source: "medm_bp" },
+        ],
+        latest: { systolic: 140, diastolic: 90, pulse: 68, measured_at: "2026-08-27T14:13:00", source: "medm_bp" },
+      },
+    },
+    { force: true },
+  );
+  assert.equal(d.bp.length, 3);
+  assert.equal(latestBpReading(d.bp).systolic, 140);
+  assert.equal(latestBpReading(d.bp).measured_at, "2026-08-27T14:13:00");
+  assert.ok(d.bp.some((b) => b.source === "manual" && b.systolic === 120));
+  assert.equal(d.bp.some((b) => b.measured_at === "2026-08-27"), false);
 });
 
 test("profile merge last-write-wins", () => {

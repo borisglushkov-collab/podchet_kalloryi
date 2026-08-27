@@ -3,6 +3,7 @@ import {
   applySnapshotToDay,
   clearManualLocks,
   defaultProfile,
+  latestBpReading,
   mergeProfilesLww,
   nutritionTotals,
   todayIso,
@@ -53,8 +54,7 @@ function bodyCompositionReportLines(bc) {
 }
 
 function latestBp() {
-  const list = [...(day().bp || [])].sort((a, b) => String(b.measured_at).localeCompare(String(a.measured_at)));
-  return list[0] || null;
+  return latestBpReading(day().bp);
 }
 
 function avgBp(daysCount = 7) {

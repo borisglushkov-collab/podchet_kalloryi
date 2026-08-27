@@ -1,7 +1,9 @@
 import {
   MEAL_RU,
   hasManualLocks,
+  latestBpReading,
   nutritionTotals,
+  sortBpNewestFirst,
   weekGoalStats,
   syncTone,
 } from "./logic.js";
@@ -169,8 +171,7 @@ function freshnessLine(d) {
 }
 
 function latestBp() {
-  const list = [...(day().bp || [])].sort((a, b) => String(b.measured_at).localeCompare(String(a.measured_at)));
-  return list[0] || null;
+  return latestBpReading(day().bp);
 }
 
 function avgBp(daysCount = 7) {
@@ -214,7 +215,7 @@ export function renderToday() {
     else if (cal > hi) { kcalVs = `выше цели на ${cal - hi}`; goalClass = "goal-pill warn"; }
     else kcalVs = `в цели ${lo}–${hi}`;
   }
-  const bpList = [...(d.bp || [])].sort((a, b) => String(b.measured_at).localeCompare(String(a.measured_at)));
+  const bpList = sortBpNewestFirst(d.bp);
   const isEmptyDay = !totals.calories && d.steps == null && d.sleep_min == null && !bp && weightVal === "—";
   return `
     <section class="panel stack-gap">
@@ -499,7 +500,7 @@ export function weekSeriesFromLocal(daysCount = 7) {
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const dayData = state.days[key] || { meals: [], steps: null, sleep_min: null, weight_kg: null, bp: [], body_composition: null };
     const totals = nutritionTotals(dayData.meals || []);
-    const bp = [...(dayData.bp || [])].sort((a, b) => String(b.measured_at).localeCompare(String(a.measured_at)))[0];
+    const bp = latestBpReading(dayData.bp);
     series.push({
       date: key,
       label: `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`,

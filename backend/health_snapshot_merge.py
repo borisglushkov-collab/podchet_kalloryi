@@ -38,6 +38,28 @@ def _merge_nutrition(
     return existing
 
 
+def _merge_bp_reading_lists(*groups: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, int, int]] = set()
+    for group in groups:
+        for item in group or []:
+            if not item.get("systolic") or not item.get("diastolic"):
+                continue
+            key = (str(item.get("measured_at") or ""), int(item["systolic"]), int(item["diastolic"]))
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(dict(item))
+    merged.sort(key=lambda r: str(r.get("measured_at") or ""), reverse=True)
+    return merged
+
+
+def _bp_latest(readings: list[dict[str, Any]], fallback: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    if readings:
+        return readings[0]
+    return fallback
+
+
 def _merge_blood_pressure(
     existing: dict[str, Any] | None,
     incoming: dict[str, Any] | None,
@@ -47,12 +69,14 @@ def _merge_blood_pressure(
     if not existing:
         return incoming
 
-    existing_readings = existing.get("readings_today") or []
-    incoming_readings = incoming.get("readings_today") or []
-    if len(incoming_readings) >= len(existing_readings):
-        return {**existing, **incoming, "readings_today": incoming_readings or existing_readings}
-    merged = dict(existing)
-    merged.update({k: v for k, v in incoming.items() if k != "readings_today"})
+    readings = _merge_bp_reading_lists(
+        existing.get("readings_today") or [],
+        incoming.get("readings_today") or [],
+    )
+    latest = _bp_latest(readings, incoming.get("latest") or existing.get("latest"))
+    merged = {**existing, **incoming, "readings_today": readings}
+    if latest:
+        merged["latest"] = latest
     return merged
 
 

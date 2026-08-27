@@ -667,9 +667,8 @@ def _attach_bp(snapshot: dict, date: str) -> dict:
     snapshot_readings = bp_snapshot.get("readings_today") or []
     readings_today = _merge_bp_readings(snapshot_readings, bp_items)
     summary = bp_store.summary(7)
-    latest = bp_snapshot.get("latest") or (readings_today[0] if readings_today else summary.get("latest"))
-    if bp_items and not bp_snapshot.get("latest"):
-        latest = bp_items[0]
+    # Always prefer the newest reading by measured_at; never keep a stale snapshot latest.
+    latest = readings_today[0] if readings_today else (bp_snapshot.get("latest") or summary.get("latest"))
     merged["blood_pressure"] = {
         **bp_snapshot,
         "readings_today": readings_today,

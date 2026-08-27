@@ -147,8 +147,9 @@ export function applySnapshotToDay(d, snap, { force = false, onWeight } = {}) {
   if (snap.generated_at) d.last_synced_at = snap.generated_at;
 
   const incoming = [];
-  if (Array.isArray(snap.blood_pressure?.readings_today)) {
-    for (const r of snap.blood_pressure.readings_today) {
+  const readings = snap.blood_pressure?.readings_today;
+  if (Array.isArray(readings) && readings.length) {
+    for (const r of readings) {
       if (!r?.systolic || !r?.diastolic) continue;
       incoming.push({
         systolic: r.systolic,
@@ -158,24 +159,53 @@ export function applySnapshotToDay(d, snap, { force = false, onWeight } = {}) {
         source: r.source || "auto",
       });
     }
-  } else if (snap.blood_pressure?.latest?.systolic && snap.blood_pressure?.latest?.diastolic) {
-    const bp = snap.blood_pressure.latest;
+  }
+  const latest = snap.blood_pressure?.latest;
+  if (latest?.systolic && latest?.diastolic) {
     incoming.push({
-      systolic: bp.systolic,
-      diastolic: bp.diastolic,
-      pulse: bp.pulse,
-      measured_at: bp.measured_at || new Date().toISOString(),
-      source: bp.source || "auto",
+      systolic: latest.systolic,
+      diastolic: latest.diastolic,
+      pulse: latest.pulse,
+      measured_at: latest.measured_at || new Date().toISOString(),
+      source: latest.source || "auto",
     });
   }
-  for (const r of incoming) {
-    if (!d.bp.some((b) => b.systolic === r.systolic && b.diastolic === r.diastolic && b.measured_at === r.measured_at)) {
-      d.bp.push(r);
+  if (force && incoming.length) {
+    // Collect-now is authoritative for cloud BP; keep only local manuals not present server-side.
+    const manuals = (d.bp || []).filter((b) => b.source === "manual" || b.source === "csv");
+    d.bp = [];
+    for (const r of [...incoming, ...manuals]) {
+      if (!d.bp.some((b) => b.systolic === r.systolic && b.diastolic === r.diastolic && b.measured_at === r.measured_at)) {
+        d.bp.push(r);
+      }
+    }
+  } else {
+    for (const r of incoming) {
+      if (!d.bp.some((b) => b.systolic === r.systolic && b.diastolic === r.diastolic && b.measured_at === r.measured_at)) {
+        d.bp.push(r);
+      }
     }
   }
+  d.bp = sortBpNewestFirst(d.bp);
 
   importNutritionMeals(d, snap.nutrition, force);
   return d;
+}
+
+/** Sort key for BP measured_at; date-only counts as start-of-day (older than timed same day). */
+export function bpSortKey(measuredAt) {
+  const s = String(measuredAt || "");
+  if (!s) return 0;
+  const t = Date.parse(s.includes("T") ? s : `${s}T00:00:00`);
+  return Number.isFinite(t) ? t : 0;
+}
+
+export function sortBpNewestFirst(list) {
+  return [...(list || [])].sort((a, b) => bpSortKey(b.measured_at) - bpSortKey(a.measured_at));
+}
+
+export function latestBpReading(list) {
+  return sortBpNewestFirst(list)[0] || null;
 }
 
 export function clearManualLocks(d) {

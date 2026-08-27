@@ -548,6 +548,7 @@ def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any
     # MedM blood pressure
     medm_bp = raw.get("medm_bp") or []
     if medm_bp:
+        medm_bp = sorted(medm_bp, key=lambda r: str(r.get("measured_at") or ""), reverse=True)
         latest_bp = medm_bp[0]
         sys_val = latest_bp.get("systolic")
         dia_val = latest_bp.get("diastolic")
@@ -557,11 +558,19 @@ def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any
                 "systolic": int(sys_val),
                 "diastolic": int(dia_val),
                 "pulse": latest_bp.get("pulse"),
+                "measured_at": latest_bp.get("measured_at"),
                 "source": "medm_bp",
             }
             bp_data["readings_today"] = [
-                {"systolic": r["systolic"], "diastolic": r["diastolic"], "pulse": r.get("pulse"), "measured_at": r.get("measured_at"), "source": "medm_bp"}
-                for r in medm_bp if r.get("systolic") and r.get("diastolic")
+                {
+                    "systolic": r["systolic"],
+                    "diastolic": r["diastolic"],
+                    "pulse": r.get("pulse"),
+                    "measured_at": r.get("measured_at"),
+                    "source": "medm_bp",
+                }
+                for r in medm_bp
+                if r.get("systolic") and r.get("diastolic")
             ]
             snap["blood_pressure"] = bp_data
 
