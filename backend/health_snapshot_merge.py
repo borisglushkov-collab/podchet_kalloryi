@@ -82,10 +82,27 @@ def _merge_blood_pressure(
     if not existing:
         return incoming
 
-    readings = _merge_bp_reading_lists(
-        existing.get("readings_today") or [],
-        incoming.get("readings_today") or [],
-    )
+    existing_list = list(existing.get("readings_today") or [])
+    incoming_list = list(incoming.get("readings_today") or [])
+
+    # Timed MedM scrape is authoritative for that calendar day — drop prior MedM
+    # rows for the same dates (including date-only stubs from the old parser).
+    medm_dates = {
+        str(r.get("measured_at") or "")[:10]
+        for r in incoming_list
+        if str(r.get("source") or "") == "medm_bp" and "T" in str(r.get("measured_at") or "")
+    }
+    if medm_dates:
+        existing_list = [
+            r
+            for r in existing_list
+            if not (
+                str(r.get("source") or "") == "medm_bp"
+                and str(r.get("measured_at") or "")[:10] in medm_dates
+            )
+        ]
+
+    readings = _merge_bp_reading_lists(existing_list, incoming_list)
     latest = _bp_latest(readings, incoming.get("latest") or existing.get("latest"))
     merged = {**existing, **incoming, "readings_today": readings}
     if latest:
