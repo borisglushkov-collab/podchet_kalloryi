@@ -647,6 +647,9 @@ async def collect_for_date(target_date: date | None = None) -> dict[str, Any]:
                 try:
                     from blood_pressure_store import store as bp_store
 
+                    # Replace prior MedM rows for this day (incl. date-only stubs from old parser).
+                    bp_store.purge_date_only("medm_bp")
+                    bp_store.remove_source_on_date("medm_bp", day.isoformat())
                     bp_store.add_many(
                         [
                             {

@@ -97,6 +97,40 @@ class BloodPressureStore:
                 skipped += 1
         return {"created": created, "skipped_duplicates": skipped, "items": stored}
 
+    def remove_source_on_date(self, source: str, date_iso: str) -> int:
+        """Drop stored readings for one calendar day from a cloud source."""
+        prefix = str(date_iso)[:10]
+        with self._lock:
+            before = len(self._items)
+            self._items = [
+                i
+                for i in self._items
+                if not (
+                    str(i.get("source") or "") == source
+                    and str(i.get("measured_at") or "").startswith(prefix)
+                )
+            ]
+            removed = before - len(self._items)
+            if removed:
+                self._persist()
+            return removed
+
+    def purge_date_only(self, source: str | None = None) -> int:
+        """Remove date-only timestamps (no time) optionally limited to one source."""
+        with self._lock:
+            before = len(self._items)
+            kept: list[dict[str, Any]] = []
+            for i in self._items:
+                at = str(i.get("measured_at") or "")
+                if "T" not in at and (source is None or str(i.get("source") or "") == source):
+                    continue
+                kept.append(i)
+            removed = before - len(kept)
+            if removed:
+                self._items = kept
+                self._persist()
+            return removed
+
     def list(
         self,
         *,
