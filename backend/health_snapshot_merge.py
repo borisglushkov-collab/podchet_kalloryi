@@ -145,17 +145,38 @@ def _merge_activity(
     return existing
 
 
+def _is_blank_cloud_metric(key: str, value: Any) -> bool:
+    """Client sync often sends {} for unset metrics — never wipe richer auto data."""
+    if not isinstance(value, dict):
+        return False
+    if key == "sleep":
+        return value.get("duration_min") is None and value.get("total_min") is None
+    if key == "weight":
+        return value.get("kg") is None
+    if key == "body_composition":
+        return value.get("weight_kg") is None and value.get("kg") is None
+    if key == "heart_rate":
+        return value.get("avg") is None and value.get("min") is None and value.get("max") is None
+    return False
+
+
 def merge_snapshots(existing: dict[str, Any] | None, incoming: dict[str, Any]) -> dict[str, Any]:
     """Merge incoming snapshot into existing without dropping richer auto-collected fields."""
     if not existing:
-        return dict(incoming)
+        return {k: v for k, v in incoming.items() if v is not None or k == "weight"}
 
     out = dict(existing)
     for key, value in incoming.items():
         if key == "date":
             out["date"] = value
             continue
+        # Collect may clear today's weight when the scale has no reading for that day.
+        if key == "weight" and value is None:
+            out.pop("weight", None)
+            continue
         if value is None:
+            continue
+        if key in {"sleep", "weight", "body_composition", "heart_rate"} and _is_blank_cloud_metric(key, value):
             continue
         if key == "nutrition":
             merged = _merge_nutrition(existing.get("nutrition"), value if isinstance(value, dict) else None)

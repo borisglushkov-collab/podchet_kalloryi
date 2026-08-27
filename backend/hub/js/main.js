@@ -96,8 +96,8 @@ function snapshot() {
     },
     nutrition: { ...totals, meals: Object.values(mealsByType) },
     blood_pressure: { readings_today: d.bp, latest: bp, avg_7d: avgBp(7) },
-    activity: d.steps == null ? {} : { steps: Number(d.steps), source: "manual" },
-    sleep: d.sleep_min == null ? {} : {
+    activity: d.steps == null ? undefined : { steps: Number(d.steps), source: "manual" },
+    sleep: d.sleep_min == null ? undefined : {
       duration_min: Number(d.sleep_min),
       total_min: Number(d.sleep_min),
       deep_min: d.sleep_deep_min,
@@ -105,7 +105,7 @@ function snapshot() {
       rem_min: d.sleep_rem_min,
       source: "manual",
     },
-    body_composition: d.body_composition || (d.weight_kg == null ? {} : { weight_kg: Number(d.weight_kg) }),
+    body_composition: d.body_composition || (d.weight_kg == null ? undefined : { weight_kg: Number(d.weight_kg) }),
     weight: d.body_composition ? {
       kg: d.body_composition.weight_kg,
       bmi: d.body_composition.bmi,
@@ -353,7 +353,7 @@ async function loadServerDay(options = false) {
       toast("Загружаю данные за этот день…");
       try {
         await healthApi.collectNow(state.date);
-        return loadServerDay({ force: false });
+        return loadServerDay({ force: true });
       } catch { /* offline */ }
     }
     applySnapshotToDay(day(), snap, {
@@ -407,7 +407,7 @@ async function backfillWeek() {
   try {
     const data = await healthApi.backfill(7);
     const ok = (data.results || []).filter((x) => x.ok).length;
-    await loadServerDay({ force: false });
+    await loadServerDay({ force: true });
     await loadWeek();
     await fetchCollectorStatus();
     setRefreshStatus(`Неделя: собрано ${ok} из ${(data.results || []).length} дней`);

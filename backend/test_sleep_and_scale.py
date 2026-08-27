@@ -148,3 +148,35 @@ def test_filter_scale_never_falls_back_to_other_days():
     matched = _filter_scale_for_date(records, date(2026, 8, 19))
     assert len(matched) == 1
     assert matched[0]["weight"] == 109
+
+
+def test_filter_scale_sorts_newest_first_and_uses_user_tz():
+    from data_collector import _normalize_snapshot, _record_date_iso
+
+    # 01:30 MSK on Aug 20 == 22:30 UTC Aug 19 — must count as Aug 20 local.
+    morning_msk = int(datetime(2026, 8, 19, 22, 30, tzinfo=timezone.utc).timestamp() * 1000)
+    evening_msk = int(datetime(2026, 8, 20, 18, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    assert _record_date_iso({"createTime": morning_msk}) == "2026-08-20"
+    records = [
+        {"createTime": morning_msk, "weight": 80.5, "bmi": 30},
+        {"createTime": evening_msk, "weight": 81.2, "bmi": 30.2},
+    ]
+    matched = _filter_scale_for_date(records, date(2026, 8, 20))
+    assert [r["weight"] for r in matched] == [81.2, 80.5]
+    snap = _normalize_snapshot({"weight_home": matched}, date(2026, 8, 20))
+    assert snap["weight"]["kg"] == 81.2
+    assert snap["weight"]["source"] == "xiaomi_home"
+    assert str(snap["weight"]["measured_at"]).startswith("2026-08-20T")
+
+
+def test_normalize_empty_fatsecret_and_workouts_clear_stale():
+    from data_collector import _normalize_snapshot
+
+    snap = _normalize_snapshot(
+        {"fatsecret_food": [], "workouts": [], "weight_home": []},
+        date(2026, 8, 20),
+    )
+    assert snap["nutrition"]["source"] == "fatsecret"
+    assert snap["nutrition"]["meals"] == []
+    assert snap["workouts"] == []
+    assert snap["weight"] is None

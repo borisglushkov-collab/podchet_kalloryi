@@ -136,10 +136,12 @@ export function applySnapshotToDay(d, snap, { force = false, onWeight } = {}) {
       if (typeof onWeight === "function") onWeight(bc.weight_kg);
     }
   }
-  if (snap.heart_rate && (force || !d.heart_rate)) d.heart_rate = snap.heart_rate;
+  if (snap.heart_rate && (force || !d.heart_rate || snap.source === "mi_fitness_auto")) {
+    d.heart_rate = snap.heart_rate;
+  }
   if (force) {
     d.workouts = Array.isArray(snap.workouts) ? snap.workouts : [];
-  } else if (Array.isArray(snap.workouts) && snap.workouts.length && !d.workouts?.length) {
+  } else if (Array.isArray(snap.workouts) && snap.workouts.length) {
     d.workouts = snap.workouts;
   }
 

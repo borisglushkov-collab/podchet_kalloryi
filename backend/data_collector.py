@@ -108,9 +108,9 @@ def _parse_value(item: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def _record_date_iso(record: dict[str, Any]) -> str | None:
-    """Best-effort extract YYYY-MM-DD from a vendor record."""
-    for key in ("measured_at", "date", "createTime", "create_time", "time", "timestamp"):
+def _record_timestamp(record: dict[str, Any]) -> float:
+    """Unix seconds from a vendor record (0 if unknown)."""
+    for key in ("createTime", "create_time", "time", "timestamp", "measured_at"):
         val = record.get(key)
         if val is None and isinstance(record.get("bodyData"), dict):
             val = record["bodyData"].get(key)
@@ -120,34 +120,73 @@ def _record_date_iso(record: dict[str, Any]) -> str | None:
             ts = float(val)
             if ts > 1_000_000_000_000:
                 ts /= 1000.0
-            try:
-                return datetime.fromtimestamp(ts, tz=timezone.utc).date().isoformat()
-            except (OSError, OverflowError, ValueError):
-                continue
-        text = str(val).strip()
-        if len(text) >= 10 and text[4] == "-" and text[7] == "-":
-            return text[:10]
+            return ts
+        text = str(val).strip().replace("Z", "")
+        if not text:
+            continue
+        try:
+            if "T" in text:
+                return datetime.fromisoformat(text[:19]).replace(tzinfo=_USER_TZ).timestamp()
+            if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+                return datetime.fromisoformat(text[:10]).replace(tzinfo=_USER_TZ).timestamp()
+        except ValueError:
+            continue
     nested = record.get("data")
     if isinstance(nested, str):
         try:
             nested = json.loads(nested)
         except (json.JSONDecodeError, ValueError):
             nested = None
-    if isinstance(nested, dict) and nested.get("time"):
+    if isinstance(nested, dict) and nested.get("time") is not None:
         try:
             ts = float(nested["time"])
             if ts > 1_000_000_000_000:
                 ts /= 1000.0
-            return datetime.fromtimestamp(ts, tz=timezone.utc).date().isoformat()
-        except (OSError, OverflowError, ValueError):
+            return ts
+        except (TypeError, ValueError):
             pass
+    return 0.0
+
+
+def _record_date_iso(record: dict[str, Any]) -> str | None:
+    """Best-effort extract YYYY-MM-DD in the user timezone (Europe/Moscow)."""
+    for key in ("measured_at", "date"):
+        val = record.get(key)
+        if val is None:
+            continue
+        text = str(val).strip()
+        if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+            return text[:10]
+    ts = _record_timestamp(record)
+    if ts > 0:
+        try:
+            return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(_USER_TZ).date().isoformat()
+        except (OSError, OverflowError, ValueError):
+            return None
     return None
 
 
 def _filter_scale_for_date(records: list[dict[str, Any]], target_date: date) -> list[dict[str, Any]]:
     """Return only scale readings for the target local day. Never fall back to other days."""
     iso = target_date.isoformat()
-    return [r for r in records if _record_date_iso(r) == iso]
+    matched = [r for r in records if _record_date_iso(r) == iso]
+    matched.sort(key=_record_timestamp, reverse=True)
+    return matched
+
+
+def _measured_at_iso(record: dict[str, Any]) -> str | None:
+    ts = _record_timestamp(record)
+    if ts <= 0:
+        return None
+    try:
+        return (
+            datetime.fromtimestamp(ts, tz=timezone.utc)
+            .astimezone(_USER_TZ)
+            .replace(microsecond=0, tzinfo=None)
+            .isoformat()
+        )
+    except (OSError, OverflowError, ValueError):
+        return None
 
 
 def _as_minutes(value: Any, *, total_min: int | None = None) -> int:
@@ -454,30 +493,47 @@ def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any
     if sleep:
         snap["sleep"] = sleep
 
-    # Weight from Xiaomi Home scale (body composition)
-    home_weight = raw.get("weight_home") or []
-    if home_weight:
-        latest_hw = home_weight[-1]
-        bd = _parse_scale_body(latest_hw)
-        w = bd.get("weight")
-        if w is not None:
-            try:
-                snap["weight"] = {"kg": round(float(w), 1), "source": "xiaomi_home"}
-                for field in ("bmi", "bodyFat", "muscle", "water", "bone", "visceralFat", "bodyAge", "bmr", "bodyScore", "heartRate", "skeletalMuscle", "protein"):
-                    val = bd.get(field)
-                    if val is not None:
-                        snap["weight"][field] = round(float(val), 1)
-            except (ValueError, TypeError):
-                pass
+    # Weight from Xiaomi Home scale (body composition) — newest reading of the day.
+    if "weight_home" in raw:
+        home_weight = list(raw.get("weight_home") or [])
+        home_weight.sort(key=_record_timestamp, reverse=True)
+        if home_weight:
+            latest_hw = home_weight[0]
+            bd = _parse_scale_body(latest_hw)
+            w = bd.get("weight")
+            if w is not None:
+                try:
+                    snap["weight"] = {
+                        "kg": round(float(w), 1),
+                        "source": "xiaomi_home",
+                        "measured_at": _measured_at_iso(latest_hw),
+                    }
+                    for field in (
+                        "bmi", "bodyFat", "muscle", "water", "bone", "visceralFat",
+                        "bodyAge", "bmr", "bodyScore", "heartRate", "skeletalMuscle", "protein",
+                    ):
+                        val = bd.get(field)
+                        if val is not None:
+                            snap["weight"][field] = round(float(val), 1)
+                except (ValueError, TypeError):
+                    pass
+        else:
+            # Explicit empty day from scale fetch — clear stale weight on merge.
+            snap["weight"] = None
 
     # Weight from Mi Fitness (fallback if no Xiaomi Home data)
-    weight_list = raw.get("weight") or []
+    weight_list = list(raw.get("weight") or [])
     if weight_list and "weight" not in snap:
-        latest_v = _parse_value(weight_list[-1])
+        weight_list.sort(key=_record_timestamp, reverse=True)
+        latest_item = weight_list[0]
+        latest_v = _parse_value(latest_item)
         w = latest_v.get("weight")
         if w is not None:
             try:
-                snap["weight"] = {"kg": round(float(w), 1)}
+                snap["weight"] = {
+                    "kg": round(float(w), 1),
+                    "measured_at": _measured_at_iso(latest_item),
+                }
                 bmi = latest_v.get("bmi")
                 if bmi:
                     snap["weight"]["bmi"] = round(float(bmi), 1)
@@ -504,46 +560,63 @@ def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any
                 "samples": len(vals),
             }
 
-    workout_list = raw.get("workouts") or []
-    if workout_list:
-        snap["workouts"] = [_normalize_workout(w) for w in workout_list]
+    # Workouts key is always set by Mi Fitness day summary (may be empty).
+    if "workouts" in raw:
+        snap["workouts"] = [_normalize_workout(w) for w in (raw.get("workouts") or [])]
 
-    # Blood pressure
-    bp_list = raw.get("blood_pressure") or []
+    # Blood pressure from Mi Fitness (MedM overwrites below when present).
+    bp_list = list(raw.get("blood_pressure") or [])
     if bp_list:
-        latest_v = _parse_value(bp_list[-1])
+        bp_list.sort(key=_record_timestamp, reverse=True)
+        latest_item = bp_list[0]
+        latest_v = _parse_value(latest_item)
         sys_val = latest_v.get("systolic") or latest_v.get("sys")
         dia_val = latest_v.get("diastolic") or latest_v.get("dia")
         if sys_val and dia_val:
             snap["blood_pressure"] = {
-                "latest": {"systolic": int(sys_val), "diastolic": int(dia_val)},
+                "latest": {
+                    "systolic": int(sys_val),
+                    "diastolic": int(dia_val),
+                    "measured_at": _measured_at_iso(latest_item),
+                    "source": "mi_fitness",
+                },
             }
 
-    # FatSecret food diary
-    food_entries = raw.get("fatsecret_food") or []
-    if food_entries:
-        normalized_entries = [_normalize_food_entry(e) for e in food_entries if e.get("name")]
-        total_cal = sum(e.get("calories", 0) for e in normalized_entries)
-        total_p = sum(e.get("protein", 0) for e in normalized_entries)
-        total_f = sum(e.get("fat", 0) for e in normalized_entries)
-        total_c = sum(e.get("carbs", 0) for e in normalized_entries)
-        meals_by_type: dict[str, list] = {}
-        for e in food_entries:
-            if not e.get("name"):
-                continue
-            mt = _meal_type_key(e.get("meal"))
-            meals_by_type.setdefault(mt, []).append(_normalize_food_entry(e))
-        snap["nutrition"] = {
-            "calories": round(total_cal),
-            "protein_g": round(total_p, 1),
-            "fat_g": round(total_f, 1),
-            "carbs_g": round(total_c, 1),
-            "meals": [
-                {"meal_type": mt, "items": items}
-                for mt, items in meals_by_type.items()
-            ],
-            "source": "fatsecret",
-        }
+    # FatSecret food diary — empty list clears stale meals when source was collected.
+    if "fatsecret_food" in raw:
+        food_entries = raw.get("fatsecret_food") or []
+        if food_entries:
+            normalized_entries = [_normalize_food_entry(e) for e in food_entries if e.get("name")]
+            total_cal = sum(e.get("calories", 0) for e in normalized_entries)
+            total_p = sum(e.get("protein", 0) for e in normalized_entries)
+            total_f = sum(e.get("fat", 0) for e in normalized_entries)
+            total_c = sum(e.get("carbs", 0) for e in normalized_entries)
+            meals_by_type: dict[str, list] = {}
+            for e in food_entries:
+                if not e.get("name"):
+                    continue
+                mt = _meal_type_key(e.get("meal"))
+                meals_by_type.setdefault(mt, []).append(_normalize_food_entry(e))
+            snap["nutrition"] = {
+                "calories": round(total_cal),
+                "protein_g": round(total_p, 1),
+                "fat_g": round(total_f, 1),
+                "carbs_g": round(total_c, 1),
+                "meals": [
+                    {"meal_type": mt, "items": items}
+                    for mt, items in meals_by_type.items()
+                ],
+                "source": "fatsecret",
+            }
+        else:
+            snap["nutrition"] = {
+                "calories": 0,
+                "protein_g": 0,
+                "fat_g": 0,
+                "carbs_g": 0,
+                "meals": [],
+                "source": "fatsecret",
+            }
 
     # MedM blood pressure
     medm_bp = raw.get("medm_bp") or []
@@ -620,13 +693,10 @@ async def collect_for_date(target_date: date | None = None) -> dict[str, Any]:
             home_client = XiaomiHomeClient(tokens, region=_REGION)
             await home_client.connect()
             scale_data = await home_client.get_scale_data()
-            if scale_data:
-                filtered = _filter_scale_for_date(scale_data, day)
-                raw["weight_home"] = filtered
-                sources["xiaomi_home"] = {"ok": True, "count": len(filtered)}
-                logger.info("Xiaomi Home scale (%s): %d records", day.isoformat(), len(filtered))
-            else:
-                sources["xiaomi_home"] = {"ok": True, "count": 0}
+            filtered = _filter_scale_for_date(scale_data or [], day)
+            raw["weight_home"] = filtered
+            sources["xiaomi_home"] = {"ok": True, "count": len(filtered)}
+            logger.info("Xiaomi Home scale (%s): %d records", day.isoformat(), len(filtered))
         except Exception as exc:
             logger.warning("Xiaomi Home scale fetch failed: %s", exc)
             sources["xiaomi_home"] = {"ok": False, "error": str(exc)}
@@ -677,11 +747,10 @@ async def collect_for_date(target_date: date | None = None) -> dict[str, Any]:
         if not load_tokens():
             sources["fatsecret"] = {"ok": False, "error": "not_connected"}
         else:
-            food_entries = fetch_food_entries_for_date(day)
-            if food_entries:
-                raw["fatsecret_food"] = food_entries
-            sources["fatsecret"] = {"ok": True, "count": len(food_entries or [])}
-            logger.info("FatSecret (%s): %d food entries", day.isoformat(), len(food_entries or []))
+            food_entries = fetch_food_entries_for_date(day) or []
+            raw["fatsecret_food"] = food_entries
+            sources["fatsecret"] = {"ok": True, "count": len(food_entries)}
+            logger.info("FatSecret (%s): %d food entries", day.isoformat(), len(food_entries))
     except Exception as exc:
         logger.warning("FatSecret fetch failed: %s", exc)
         sources["fatsecret"] = {"ok": False, "error": str(exc)}
