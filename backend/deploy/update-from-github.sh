@@ -47,7 +47,10 @@ rsync -a --delete \
   --exclude '__pycache__' \
   --exclude '.env' \
   --exclude '*.pyc' \
+  --exclude 'data/' \
   "$SRC/" /opt/podchet_kalloriy/backend/
+
+mkdir -p /opt/podchet_kalloriy/backend/data/backups
 
 if [ -f "$KEEP_ENV" ]; then
   cp "$KEEP_ENV" /opt/podchet_kalloriy/backend/.env
