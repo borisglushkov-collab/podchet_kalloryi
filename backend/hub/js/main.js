@@ -356,8 +356,13 @@ async function loadServerDay(options = false) {
         return loadServerDay({ force: true });
       } catch { /* offline */ }
     }
-    applySnapshotToDay(day(), snap, {
-      force,
+    const d = day();
+    const serverAt = snap.generated_at ? Date.parse(snap.generated_at) : NaN;
+    const localAt = d.last_synced_at ? Date.parse(d.last_synced_at) : NaN;
+    const serverNewer = Number.isFinite(serverAt)
+      && (!Number.isFinite(localAt) || serverAt > localAt);
+    applySnapshotToDay(d, snap, {
+      force: force || serverNewer,
       onWeight: (kg) => { state.profile.weight_kg_latest = kg; },
     });
     saveJson(STORAGE_DAYS, state.days);

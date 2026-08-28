@@ -239,24 +239,38 @@ def _sleep_session(item: dict[str, Any]) -> dict[str, Any] | None:
     rem = _as_minutes(v.get("sleep_rem_duration", 0), total_min=provisional)
     stages_sum = deep + light + rem
 
-    # Mi Fitness "sleep duration" ≈ deep+light+REM. Ignore explicit sleep_duration
-    # unless it agrees with stages (never prefer in-bed over stages).
-    explicit = 0
-    for key in ("sleep_duration", "duration", "total_minutes"):
-        if v.get(key) is not None:
-            explicit = _as_minutes(v.get(key), total_min=provisional)
-            if explicit:
-                break
+    # Mi Fitness asleep time ≈ deep+light+REM. `duration` usually matches stages;
+    # `sleep_duration` may include in-bed time — only trust it when close to stages.
+    duration_field = (
+        _as_minutes(v.get("duration"), total_min=provisional)
+        if v.get("duration") is not None
+        else 0
+    )
+    sleep_duration_field = (
+        _as_minutes(v.get("sleep_duration"), total_min=provisional)
+        if v.get("sleep_duration") is not None
+        else 0
+    )
+    total_minutes_field = (
+        _as_minutes(v.get("total_minutes"), total_min=provisional)
+        if v.get("total_minutes") is not None
+        else 0
+    )
 
     asleep_min = 0
     if stages_sum > 0:
         asleep_min = stages_sum
-        if explicit:
-            tol = max(20, int(stages_sum * 0.2))
-            if abs(explicit - stages_sum) <= tol:
+        tol = max(10, int(stages_sum * 0.05))
+        for explicit in (duration_field, sleep_duration_field, total_minutes_field):
+            if explicit and abs(explicit - stages_sum) <= tol:
                 asleep_min = explicit
-    elif explicit:
-        asleep_min = explicit
+                break
+    elif duration_field:
+        asleep_min = duration_field
+    elif sleep_duration_field:
+        asleep_min = sleep_duration_field
+    elif total_minutes_field:
+        asleep_min = total_minutes_field
     elif in_bed_min:
         asleep_min = in_bed_min
     if not asleep_min:
