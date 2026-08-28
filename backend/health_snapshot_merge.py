@@ -203,9 +203,12 @@ def merge_snapshots(existing: dict[str, Any] | None, incoming: dict[str, Any]) -
         if key == "date":
             out["date"] = value
             continue
-        # Collect may clear today's weight when the scale has no reading for that day.
+        # Collect may clear today's weight/sleep when the source has no reading for that day.
         if key == "weight" and value is None:
             out.pop("weight", None)
+            continue
+        if key == "sleep" and value is None:
+            out.pop("sleep", None)
             continue
         if value is None:
             continue

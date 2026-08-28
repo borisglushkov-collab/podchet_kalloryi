@@ -509,10 +509,12 @@ def _normalize_snapshot(raw: dict[str, Any], target_date: date) -> dict[str, Any
         snap["activity"] = {"steps": step_totals["count"], "source": "mi_fitness"}
 
     # Sleep — pick the night ending on target_date (do not sum two nights).
-    sleep_list = raw.get("sleep") or []
-    sleep = _pick_sleep_for_day(sleep_list, target_date)
-    if sleep:
-        snap["sleep"] = sleep
+    if "sleep" in raw:
+        sleep = _pick_sleep_for_day(raw.get("sleep") or [], target_date)
+        if sleep:
+            snap["sleep"] = sleep
+        else:
+            snap["sleep"] = None
 
     # Weight from Xiaomi Home scale (body composition) — newest reading of the day.
     if "weight_home" in raw:

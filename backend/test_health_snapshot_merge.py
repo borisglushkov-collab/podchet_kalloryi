@@ -95,6 +95,12 @@ def test_merge_accepts_empty_fatsecret_collect():
     assert merged["nutrition"]["calories"] == 0
 
 
+def test_merge_clears_sleep_when_collect_sends_none():
+    existing = {"date": "2026-08-28", "sleep": {"total_min": 6, "deep_min": 0}}
+    merged = merge_snapshots(existing, {"date": "2026-08-28", "sleep": None})
+    assert "sleep" not in merged
+
+
 def test_merge_mi_fitness_steps_replace_higher_stale():
     existing = {
         "date": "2026-08-27",
