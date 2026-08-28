@@ -8,7 +8,7 @@
 set -euo pipefail
 
 REPO="${REPO:-borisglushkov-collab/podchet_kalloryi}"
-TAG="${1:-v1.4.26-backend}"
+TAG="${1:-v1.4.28-backend}"
 ZIP_URL="${ZIP_URL:-https://github.com/${REPO}/releases/download/${TAG}/podchet_backend_deploy.zip}"
 TMP_ZIP=/tmp/podchet_backend_deploy.zip
 TMP_DIR=/tmp/podchet_backend_unpack
@@ -47,7 +47,10 @@ rsync -a --delete \
   --exclude '__pycache__' \
   --exclude '.env' \
   --exclude '*.pyc' \
+  --exclude 'data/' \
   "$SRC/" /opt/podchet_kalloriy/backend/
+
+mkdir -p /opt/podchet_kalloriy/backend/data/backups
 
 if [ -f "$KEEP_ENV" ]; then
   cp "$KEEP_ENV" /opt/podchet_kalloriy/backend/.env

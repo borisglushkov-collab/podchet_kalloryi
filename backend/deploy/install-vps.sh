@@ -26,7 +26,9 @@ rsync -a --delete \
   --exclude '__pycache__' \
   --exclude '.env' \
   --exclude '*.pyc' \
+  --exclude 'data/' \
   "$SOURCE_DIR/" "$BACKEND_DIR/"
+mkdir -p "$BACKEND_DIR/data/backups"
 
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
