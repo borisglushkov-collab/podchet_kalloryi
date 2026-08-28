@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import date as Date
+from datetime import date as Date, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -794,10 +794,17 @@ async def collect_now(target_date: str | None = Query(None, alias="date")):
             day = Date.fromisoformat(target_date)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
-    result = await collect_for_date(day)
+    target = day or user_local_date()
+    # Steps, sleep and food for yesterday often finalize after midnight.
+    if target == user_local_date():
+        try:
+            await collect_for_date(target - timedelta(days=1))
+        except Exception:
+            pass
+    result = await collect_for_date(target)
     if "error" in result:
         raise HTTPException(status_code=502, detail=result["error"])
-    date_s = str(result.get("date") or (day.isoformat() if day else user_local_date().isoformat()))
+    date_s = str(result.get("date") or target.isoformat())
     return _attach_bp(result, date_s)
 
 

@@ -288,28 +288,38 @@ def _pick_sleep_for_day(sleep_list: list[dict[str, Any]], target_date: date) -> 
     sessions = [s for s in (_sleep_session(i) for i in sleep_list) if s]
     if not sessions:
         return None
+
+    def _sleep_output(best: dict[str, Any]) -> dict[str, Any]:
+        out = {
+            "total_min": int(best["total_min"]),
+            "deep_min": int(best.get("deep_min") or 0),
+            "light_min": int(best.get("light_min") or 0),
+            "rem_min": int(best.get("rem_min") or 0),
+        }
+        if best.get("avg_hr") is not None:
+            out["avg_hr"] = best["avg_hr"]
+        if best.get("in_bed_min") is not None:
+            out["in_bed_min"] = int(best["in_bed_min"])
+        return out
+
+    # Mi Fitness attributes sleep to the wake-up calendar day.
     preferred = [s for s in sessions if s.get("wake_date") == target_date]
-    if not preferred:
-        preferred = [
-            s
-            for s in sessions
-            if s.get("bed_date") in {target_date - timedelta(days=1), target_date}
-        ]
-    pool = preferred or ([sessions[-1]] if len(sessions) == 1 else [])
-    if not pool:
-        return None
-    best = max(pool, key=lambda s: int(s.get("total_min") or 0))
-    out = {
-        "total_min": int(best["total_min"]),
-        "deep_min": int(best.get("deep_min") or 0),
-        "light_min": int(best.get("light_min") or 0),
-        "rem_min": int(best.get("rem_min") or 0),
-    }
-    if best.get("avg_hr") is not None:
-        out["avg_hr"] = best["avg_hr"]
-    if best.get("in_bed_min") is not None:
-        out["in_bed_min"] = int(best["in_bed_min"])
-    return out
+    if preferred:
+        return _sleep_output(max(preferred, key=lambda s: int(s.get("total_min") or 0)))
+
+    # Wake date missing — fall back to bed starting previous evening (not random naps).
+    fallback = [
+        s
+        for s in sessions
+        if s.get("wake_date") is None
+        and s.get("bed_date") in {target_date - timedelta(days=1), target_date}
+        and int(s.get("total_min") or 0) >= 60
+    ]
+    if fallback:
+        return _sleep_output(max(fallback, key=lambda s: int(s.get("total_min") or 0)))
+
+    # No main night for this morning yet — do not show yesterday's nap or an older night.
+    return None
 
 
 def _step_record_date(item: dict[str, Any], tz_name: str = "Europe/Moscow") -> str | None:

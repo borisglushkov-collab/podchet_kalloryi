@@ -139,6 +139,34 @@ def test_pick_sleep_converts_stage_seconds():
     assert sleep["in_bed_min"] == 8 * 60
 
 
+def test_pick_sleep_ignores_yesterday_nap_when_no_wake_today():
+    """Do not show a prior-day nap when the main night for today is not synced yet."""
+    items = [
+        {
+            "value": {
+                "bedtime": _ts(2026, 8, 26, 23, 57),
+                "wake_up_time": _ts(2026, 8, 27, 7, 44),
+                "sleep_deep_duration": 87,
+                "sleep_light_duration": 222,
+                "sleep_rem_duration": 85,
+            }
+        },
+        {
+            "value": {
+                "bedtime": _ts(2026, 8, 27, 18, 55),
+                "wake_up_time": _ts(2026, 8, 27, 19, 52),
+                "sleep_deep_duration": 0,
+                "sleep_light_duration": 0,
+                "sleep_rem_duration": 0,
+            }
+        },
+    ]
+    assert _pick_sleep_for_day(items, date(2026, 8, 28)) is None
+    sleep = _pick_sleep_for_day(items, date(2026, 8, 27))
+    assert sleep is not None
+    assert sleep["total_min"] == 394
+
+
 def test_filter_scale_never_falls_back_to_other_days():
     records = [
         {"measured_at": "2026-08-18T08:00:00", "weight": 110},

@@ -382,6 +382,19 @@ async function refreshData() {
       force: true,
       onWeight: (kg) => { state.profile.weight_kg_latest = kg; },
     });
+    // Backend also re-collects yesterday when refreshing today; reload week/history.
+    if (state.date === todayIso()) {
+      const y = new Date(`${state.date}T12:00:00`);
+      y.setDate(y.getDate() - 1);
+      const yKey = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, "0")}-${String(y.getDate()).padStart(2, "0")}`;
+      try {
+        const yData = await healthApi.day(yKey);
+        applySnapshotToDay(dayFor(yKey), yData.snapshot || {}, {
+          force: true,
+          onWeight: (kg) => { state.profile.weight_kg_latest = kg; },
+        });
+      } catch { /* offline */ }
+    }
     saveJson(STORAGE_DAYS, state.days);
     await fetchCollectorStatus();
     if (state.tab === "week") await loadWeek();
