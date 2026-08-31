@@ -15,6 +15,8 @@ http://201.51.22.29/hub/
 | [PLAN.md](./PLAN.md) | Roadmap по фазам |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | SQLite, API, Health Connect |
 | [CLOUD_AGENT_BRIEF.md](./CLOUD_AGENT_BRIEF.md) | Промпт для следующей фазы |
+| [coaching/COACHING_BASELINE.md](./coaching/COACHING_BASELINE.md) | **Baseline коуча: цели, сверка с hub** |
+| [coaching/AUGUST_2026_CARD.md](./coaching/AUGUST_2026_CARD.md) | Карточка коучинга за август 2026 |
 | [fixtures/citizen-sample.csv](./fixtures/citizen-sample.csv) | Пример CSV Citizen |
 
 ## Как пользоваться
