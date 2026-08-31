@@ -27,6 +27,14 @@ if errorlevel 1 (
   exit /b 1
 )
 
+set "EXCEL_DEST=E:\Работа и ИИ\Лечение, уменьшение веса\лекарства"
+if exist "E:\" (
+  mkdir "%EXCEL_DEST%" 2>nul
+  copy /Y "%SRC%выгрузка-чата\питание-завтрак-обед-ужин.xlsx" "%EXCEL_DEST%\питание-завтрак-обед-ужин.xlsx"
+  echo Excel-меню также скопировано в:
+  echo   %EXCEL_DEST%
+)
+
 echo.
 echo Готово. Открываю папку.
 start "" "%DEST%"
