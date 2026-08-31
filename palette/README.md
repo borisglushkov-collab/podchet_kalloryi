@@ -17,9 +17,22 @@
 
 ## Excel-меню на диск E:
 
-На своём ПК запустите **`выгрузить-excel-на-E.bat`**. Он положит файл сюда:
+На своём ПК положите файл сюда:
 
 `E:\Работа и ИИ\Лечение, уменьшение веса\лекарства\питание-завтрак-обед-ужин.xlsx`
+
+Вариант 1 — если папка `palette` уже на диске, дважды нажмите **`выгрузить-excel-на-E.bat`**.
+
+Вариант 2 — без клона репозитория, в PowerShell:
+
+```powershell
+$dir = 'E:\Работа и ИИ\Лечение, уменьшение веса\лекарства'
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/borisglushkov-collab/podchet_kalloryi/cursor/palette-local-card-730a/palette/meal-plan.xlsx' -OutFile (Join-Path $dir 'питание-завтрак-обед-ужин.xlsx')
+explorer $dir
+```
+
+Готовый скрипт: **`скачать-excel-на-E.ps1`**. Копия без кириллицы в имени: `meal-plan.xlsx`.
 
 С облачной машины диск E: недоступен — копирование делается только на вашем Windows.
 

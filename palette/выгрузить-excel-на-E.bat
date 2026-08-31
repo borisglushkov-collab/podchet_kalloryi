@@ -4,6 +4,7 @@ setlocal
 
 set "DEST=E:\Работа и ИИ\Лечение, уменьшение веса\лекарства"
 set "SRC=%~dp0выгрузка-чата\питание-завтрак-обед-ужин.xlsx"
+if not exist "%SRC%" set "SRC=%~dp0meal-plan.xlsx"
 
 echo.
 echo Копирую Excel-меню в:
