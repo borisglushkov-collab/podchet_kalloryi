@@ -1,0 +1,186 @@
+# Health Data Hub — план инструмента сбора данных
+
+Цель: **одно место** для питания, веса, давления, сна, шагов и активности — чтобы коуч (AI) и пользователь видели **полную картину дня**, а не скрины из 4 приложений.
+
+Проект: **Podchet Kalloriy** (`mobile/` + `backend/`). Расширяем существующее приложение, не пишем с нуля.
+
+---
+
+## Профиль пользователя (контекст коучинга)
+
+| Поле | Значение |
+|------|----------|
+| Пол / возраст | мужчина, ~41–42 |
+| Рост / вес | 165 см, ~109 кг (цель похудения) |
+| Гипертония | Edarbi 80 ежедневно |
+| Рабочие цели питания | ~1900–2100 ккал, Б 120–140, Ж 55–70, У 150–180 |
+| IQOS | ~20/день |
+| Локация | Зеленоград |
+| Источники сейчас | Yazio (еда), Citizen/приложение «Давление», Mi Fitness, весы (LeFu / Xiaomi) |
+
+---
+
+## Что уже есть в репозитории
+
+| Компонент | Статус |
+|-----------|--------|
+| Дневник еды, КБЖУ, SQLite | ✅ `mobile/lib/db/` |
+| Коуч-чат (еда + вес) | ✅ `POST /api/coach-chat`, `coach_chat_screen.dart` |
+| Весы LeFu BLE | ✅ `health_scale_service`, `работа с весами/` |
+| Backend FastAPI | ✅ `backend/main.py` |
+| Health Connect / Mi Fit | ❌ не реализовано |
+| Импорт CSV давления | ❌ не реализовано |
+| Единый дашборд «день» | ❌ частично в design mockups |
+
+---
+
+## MVP — 4 недели (фазы)
+
+### Фаза 0 — спецификация (2–3 дня)
+
+- [x] JSON-схема `DailyHealthSnapshot` (см. `schemas/daily_health_snapshot.json`)
+- [x] Таблицы SQLite: `blood_pressure`, `sleep_sessions`, `activity_daily`, `body_composition`
+- [ ] API контракт: `POST /api/health/sync`, `GET /api/health/day/{date}`
+
+### Важно: интеграция с внешним hub (201.51.22.29)
+
+На стороне `hub/app.js` обнаружено, что он формирует объект `snapshot()` и отправляет его на сервер:
+• `POST http://201.51.22.29/api/health/sync`
+• тело: `{ "snapshot": <DailyHealthSnapshot-like> }`
+• ответ: JSON + поле `report` (текстовый дайджест)
+
+Для чтения готового снимка дня:
+• `GET http://201.51.22.29/api/health/day/{date}` → `{ snapshot, report }`
+
+Минимальные поля `snapshot`, которые реально используются hub:
+• `date`, `generated_at`
+• `profile`: `height_cm`, `weight_kg_latest`, `medications[]`, `coaching_calorie_target{kcal_min,kcal_max,protein_g}`
+• `nutrition`: `calories`, `protein_g`, `fat_g`, `carbs_g`, `meals[]`
+• `blood_pressure`: `readings_today[]`, `latest`, `avg_7d`
+• `activity`: `steps`, `source`
+• `sleep`: `duration_min`, `source`
+• `body_composition`: `weight_kg`
+• `notes`
+
+То есть: для коучинга можно **не собирать всё снова локально**, а забирать готовый `snapshot` прямо из hub и подставлять в AI.
+
+### Фаза 1 — ручной ввод + CSV (1 неделя)
+
+**Backend**
+
+- [x] `POST /api/health/blood-pressure` — одна запись
+- [x] `POST /api/health/blood-pressure/import-csv` — формат как Citizen export (`Дата,Время,Сис,Диа,Пульс,...`)
+- [x] `GET /api/health/blood-pressure/summary?days=7|30`
+
+**Mobile**
+
+- [x] Экран «Давление»: последнее, среднее за 7/30 дней, мини-график
+- [x] Импорт CSV из файла (Android `file_picker`)
+- [x] Быстрый ввод: систол / диастол / пульс / время
+
+**Коуч**
+
+- [x] Расширить `CoachChatRequest`: блок `health_context` (АД утро, сон, шаги)
+- [x] Обновить `coach_chat_prompt.py`: учёт гипертонии, соли, алкоголя
+
+### Фаза 2 — Health Connect (Android, 1–1.5 недели)
+
+**Зависимость:** `health` pub package или `health_connect` + разрешения Android 14+.
+
+**Читать из Health Connect** (если Mi Fitness синхронизирует):
+
+| Тип | Health Connect type |
+|-----|---------------------|
+| Шаги | `StepsRecord` |
+| Сон | `SleepSessionRecord` |
+| Пульс | `HeartRateRecord` |
+| SpO₂ | `OxygenSaturationRecord` |
+| Активные минуты | `ExerciseSessionRecord` / `TotalCaloriesBurned` |
+
+**Mobile**
+
+- [ ] Онбординг: «В Mi Fitness → Настройки → Health Connect → включить шаги, сон, пульс»
+- [ ] Фоновая синхронизация 1–2 раза в день + по pull-to-refresh
+- [ ] Дедупликация по `startTime` + `source`
+
+**Не делать:** прямой API Xiaomi / Mi Fit — закрыт.
+
+### Фаза 3 — весы и состав тела (3–5 дней)
+
+- [ ] Сохранять замер с LeFu: вес, жир %, висцеральный жир, BMR, мышцы
+- [ ] Связать с `weight_entries` или отдельная таблица `body_composition`
+- [ ] Показать тренд на экране «Вес» (уже есть `weight_chart.dart`)
+
+### Фаза 4 — дашборд «День здоровья» (1 неделя)
+
+Один экран на дату:
+
+```
+┌─────────────────────────────────────┐
+│ 19 авг · оценка дня                 │
+├──────────┬──────────┬───────────────┤
+│ АД 133/90│ Сон 6:59 │ Шаги 7764     │
+│ Вес 109  │ Ккал 1756│ Белок 107     │
+└──────────┴──────────┴───────────────┘
+[ Коуч: что улучшить сегодня ]
+[ Отправить отчёт коучу ]
+```
+
+- [ ] `HealthDayScreen` — агрегация локальных таблиц + дневник еды
+- [ ] Кнопка «Скопировать отчёт» (markdown/text) для Cloud Agent / Telegram
+- [ ] Push-напоминания: утро АД, вода, отбой (опционально)
+
+---
+
+## Фаза 5 — облачный коуч (после MVP)
+
+- [ ] `POST /api/coach-health-chat` — отдельный endpoint с полным `DailyHealthSnapshot`
+- [ ] Системный промпт: гипертония, Edarbi, диастол, сон, без меддиагнозов
+- [ ] Опционально: автo-дайджест раз в день на backend (cron)
+
+**Отдельный Cloud Agent в Cursor:** см. `CLOUD_AGENT_BRIEF.md` — стартовый промпт для нового агента в этом репо.
+
+---
+
+## Источники данных — матрица
+
+| Источник | Способ интеграции | Приоритет |
+|----------|-------------------|-----------|
+| Podchet дневник | уже в SQLite | P0 |
+| Citizen / «Давление» | CSV import + ручной ввод | P0 |
+| Mi Fitness | Health Connect (Android) | P1 |
+| LeFu / Futula весы | BLE SDK (есть) | P1 |
+| Xiaomi body scale | Health Connect или ручной ввод с весов | P2 |
+| Yazio | нет API → миграция на свой дневник | P2 |
+| Яндекс.Диск бэкап | export JSON дня | P3 |
+
+---
+
+## Риски
+
+| Риск | Митигация |
+|------|-----------|
+| Mi Fitness не пишет в Health Connect | Ручной ввод шагов/сна или скрин → OCR позже |
+| Разные цели калорий (Yazio 2402 vs коуч 1900) | В профиле: «рабочая цель» vs «цель приложения» |
+| Медицинская ответственность | Дисклеймер + «при стабильном ≥140/90 — к врачу» |
+| iOS | HealthKit — отдельная фаза после Android MVP |
+
+---
+
+## Критерии готовности MVP
+
+1. Импорт CSV давления → график 7/30 дней
+2. Health Connect: шаги + сон за сегодня на экране
+3. Коуч-чат получает АД + сон в промпте
+4. Экран «День» собирает еду + АД + активность
+5. Экспорт текстового отчёта одной кнопкой
+
+---
+
+## Следующий шаг для разработки
+
+1. Фаза 1 реализована на ветке `cursor/health-data-hub-985a`
+2. Дальше **Фаза 2**: Health Connect (шаги + сон из Mi Fitness)
+3. Затем дашборд «День здоровья» и кнопка экспорта отчёта
+
+См. также: `ARCHITECTURE.md`, `schemas/daily_health_snapshot.json`.

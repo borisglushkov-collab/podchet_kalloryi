@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../services/nutrition_calculator.dart';
+import '../services/health_repository.dart';
 import '../services/weight_analysis.dart';
 import '../theme/app_theme.dart';
 import '../utils/api_error_utils.dart';
@@ -103,6 +104,10 @@ class _CoachChatScreenState extends ConsumerState<CoachChatScreen>
           NutritionCalculator.consumedForMeal(entries, widget.mealType);
       final weightAnalysis =
           WeightAnalysis.fromProfileAndEntries(profile, weightEntries);
+      final healthContext = await HealthRepository().healthContextForCoach(
+        profile: profile,
+        targets: targets,
+      );
 
       // Previous turns only — current message is sent separately.
       final historyForApi = <Map<String, String>>[];
@@ -126,6 +131,7 @@ class _CoachChatScreenState extends ConsumerState<CoachChatScreen>
             profile: profile,
             weightAnalysis: weightAnalysis,
             diaryEntries: NutritionCalculator.diaryEntriesForApi(entries),
+            healthContext: healthContext,
           );
 
       if (!mounted) return;

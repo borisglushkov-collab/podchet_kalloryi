@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Дизайн-варианты — Сбор для коуча</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@500;700;800&family=Space+Grotesk:wght@500;700&family=Source+Sans+3:wght@500;700&family=Sora:wght@500;700;800&family=Literata:opsz,wght@7..72,600;7..72,700&display=swap" />
+  <style>
+    :root {
+      --ink: #1c2420;
+      --muted: #5b675f;
+      --line: rgba(28,36,32,.08);
+      --bg: #f3f6f2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Manrope, system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(900px 420px at 10% -10%, #d9efe0 0%, transparent 55%),
+        radial-gradient(700px 380px at 100% 0%, #d7e8f5 0%, transparent 50%),
+        var(--bg);
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 18px 64px; }
+    .hero h1 {
+      font-family: Fraunces, Georgia, serif;
+      font-size: clamp(28px, 5vw, 42px);
+      margin: 0 0 8px;
+      letter-spacing: -0.02em;
+    }
+    .hero p { margin: 0; color: var(--muted); max-width: 54ch; line-height: 1.5; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 18px;
+      margin-top: 28px;
+    }
+    .card {
+      display: flex;
+      flex-direction: column;
+      text-decoration: none;
+      color: inherit;
+      background: rgba(255,255,255,.72);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      overflow: hidden;
+      backdrop-filter: blur(8px);
+      transition: transform .2s ease, box-shadow .2s ease;
+    }
+    .card:hover { transform: translateY(-3px); box-shadow: 0 16px 40px rgba(28,36,32,.1); }
+    .preview {
+      height: 180px;
+      padding: 18px;
+      position: relative;
+    }
+    .preview.a {
+      background: linear-gradient(145deg, #e8f4ec, #f7fbf8 45%, #dceee3);
+      font-family: Manrope, sans-serif;
+    }
+    .preview.b {
+      background: linear-gradient(160deg, #e7eef5, #f5f8fb 40%, #d9e8f0);
+      font-family: Space Grotesk, sans-serif;
+    }
+    .preview.c {
+      background: linear-gradient(150deg, #ffe9dc, #fff8f2 42%, #e8f3ff);
+      font-family: Sora, sans-serif;
+    }
+    .chip {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      padding: 6px 10px;
+      border-radius: 10px;
+      background: rgba(255,255,255,.7);
+    }
+    .phone {
+      position: absolute;
+      right: 16px; bottom: -24px;
+      width: 118px; height: 150px;
+      border-radius: 18px 18px 0 0;
+      padding: 10px;
+      background: rgba(255,255,255,.85);
+      border: 1px solid rgba(0,0,0,.06);
+    }
+    .phone .mini-brand { font-size: 11px; font-weight: 800; margin-bottom: 8px; }
+    .phone .row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .phone .tile {
+      border-radius: 10px;
+      padding: 8px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .a .tile { background: #dff0e5; color: #1f5b3d; }
+    .b .tile { background: #d9e7f2; color: #1d4f6b; }
+    .c .tile { background: #ffe3d4; color: #8a3d1d; }
+    .body { padding: 16px 18px 18px; }
+    .body h2 { margin: 0 0 6px; font-size: 18px; }
+    .body p { margin: 0 0 12px; color: var(--muted); font-size: 14px; line-height: 1.45; }
+    .cta {
+      margin-top: auto;
+      font-weight: 800;
+      font-size: 14px;
+      color: #1f5b3d;
+    }
+    .note {
+      margin-top: 28px;
+      padding: 16px 18px;
+      border-radius: 16px;
+      background: rgba(255,255,255,.65);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .back { display: inline-block; margin-bottom: 18px; color: var(--muted); font-weight: 700; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="/hub/">← к приложению</a>
+    <header class="hero">
+      <h1>Три направления дизайна</h1>
+      <p>Статические макеты экрана «Сегодня» для выбора визуального языка. Данные условные — оцениваем атмосферу, иерархию и читаемость для коуча.</p>
+    </header>
+
+    <div class="grid">
+      <a class="card" href="a-sage.html">
+        <div class="preview a">
+          <span class="chip">A · Sage Care</span>
+          <div class="phone">
+            <div class="mini-brand">Сбор</div>
+            <div class="row">
+              <div class="tile">АД<br>131/89</div>
+              <div class="tile">Сон<br>6ч30</div>
+            </div>
+          </div>
+        </div>
+        <div class="body">
+          <h2>Sage Care</h2>
+          <p>Спокойная «клиника без больницы»: шалфей, хвоя, крупный бренд. Для ежедневного спокойного ввода.</p>
+          <div class="cta">Открыть макет →</div>
+        </div>
+      </a>
+
+      <a class="card" href="b-ocean.html">
+        <div class="preview b">
+          <span class="chip">B · Ocean Track</span>
+          <div class="phone">
+            <div class="mini-brand">Сбор</div>
+            <div class="row">
+              <div class="tile">Шаги<br>3315</div>
+              <div class="tile">Еда<br>830</div>
+            </div>
+          </div>
+        </div>
+        <div class="body">
+          <h2>Ocean Track</h2>
+          <p>Техно-спорт: сланцево-морской, плотные метрики, ощущение трекера. Для быстрого скана цифр.</p>
+          <div class="cta">Открыть макет →</div>
+        </div>
+      </a>
+
+      <a class="card" href="c-sunrise.html">
+        <div class="preview c">
+          <span class="chip">C · Sunrise Studio</span>
+          <div class="phone">
+            <div class="mini-brand">Сбор</div>
+            <div class="row">
+              <div class="tile">Вес<br>109.0</div>
+              <div class="tile">Цель<br>в зоне</div>
+            </div>
+          </div>
+        </div>
+        <div class="body">
+          <h2>Sunrise Studio</h2>
+          <p>Тёплый утренний свет + небо: мягкая мотивация без «медицинского» холода. Для эмоционального контакта с коучем.</p>
+          <div class="cta">Открыть макет →</div>
+        </div>
+      </a>
+    </div>
+
+    <div class="note">
+      После выбора направления перенесём токены (цвета, шрифты, радиусы, иерархию) в рабочий PWA.
+      Сейчас макеты не подключены к API — только визуал.
+    </div>
+  </div>
+</body>
+</html>

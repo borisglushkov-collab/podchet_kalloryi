@@ -258,6 +258,88 @@ class WeightEntry {
       );
 }
 
+enum BloodPressureSource { manual, csv, device }
+
+class BloodPressureReading {
+  final int? id;
+  final DateTime measuredAt;
+  final int systolic;
+  final int diastolic;
+  final int? pulse;
+  final BloodPressureSource source;
+  final String? note;
+
+  const BloodPressureReading({
+    this.id,
+    required this.measuredAt,
+    required this.systolic,
+    required this.diastolic,
+    this.pulse,
+    this.source = BloodPressureSource.manual,
+    this.note,
+  });
+
+  bool get isHigh => systolic >= 140 || diastolic >= 90;
+
+  String get displayValue => '$systolic/$diastolic';
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'measured_at': measuredAt.toIso8601String(),
+        'systolic': systolic,
+        'diastolic': diastolic,
+        'pulse': pulse,
+        'source': source.name,
+        'note': note,
+      };
+
+  Map<String, dynamic> toApiJson() => {
+        'systolic': systolic,
+        'diastolic': diastolic,
+        if (pulse != null) 'pulse': pulse,
+        'at': measuredAt.toIso8601String(),
+        'measured_at': measuredAt.toIso8601String(),
+        'source': source.name,
+      };
+
+  factory BloodPressureReading.fromMap(Map<String, dynamic> map) =>
+      BloodPressureReading(
+        id: map['id'] as int?,
+        measuredAt: DateTime.parse(map['measured_at'] as String),
+        systolic: (map['systolic'] as num).toInt(),
+        diastolic: (map['diastolic'] as num).toInt(),
+        pulse: (map['pulse'] as num?)?.toInt(),
+        source: BloodPressureSource.values.byName(
+          map['source'] as String? ?? 'manual',
+        ),
+        note: map['note'] as String?,
+      );
+}
+
+class BloodPressureAverage {
+  final double systolic;
+  final double diastolic;
+  final double? pulse;
+  final int count;
+
+  const BloodPressureAverage({
+    required this.systolic,
+    required this.diastolic,
+    this.pulse,
+    required this.count,
+  });
+
+  String get displayValue =>
+      '${systolic.toStringAsFixed(0)}/${diastolic.toStringAsFixed(0)}';
+
+  Map<String, dynamic> toApiJson() => {
+        'systolic': num.parse(systolic.toStringAsFixed(1)),
+        'diastolic': num.parse(diastolic.toStringAsFixed(1)),
+        if (pulse != null) 'pulse': num.parse(pulse!.toStringAsFixed(1)),
+        'count': count,
+      };
+}
+
 class FoodEntry {
   final int? id;
   final String date;

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1d3557" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Сбор" />
+  <meta name="hub-version" content="{{HUB_VERSION}}" />
+  <title>Сбор для коуча</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,600;7..72,700&family=Sora:wght@500;600;700;800&display=swap" />
+  <link rel="stylesheet" href="styles.css?v=ASSET" />
+</head>
+<body>
+  <div id="pin-gate" class="pin-gate hidden" aria-modal="true" role="dialog" aria-hidden="true">
+    <div class="pin-card">
+      <p class="eyebrow">Сбор</p>
+      <h2 class="pin-title">Вход</h2>
+      <p class="panel-sub">Введите PIN, чтобы открыть данные</p>
+      <input id="hub-pin" type="password" inputmode="numeric" autocomplete="one-time-code" placeholder="PIN" />
+      <button class="btn primary btn-xl" id="hub-pin-go" type="button">Открыть</button>
+    </div>
+  </div>
+
+  <header class="stage">
+    <div class="stage-top">
+      <div class="stage-brand">
+        <p class="eyebrow">для коуча</p>
+        <h1 class="brand">Сбор</h1>
+        <p class="lead">День ясно и по делу</p>
+        <p id="refresh-status" class="refresh-status" aria-live="polite"></p>
+      </div>
+      <div class="top-actions">
+        <input id="date" type="date" />
+      </div>
+    </div>
+    <div class="row-cta">
+      <button class="btn primary refresh-btn" id="refresh-data" type="button">Обновить</button>
+    </div>
+  </header>
+
+  <main id="view" role="tabpanel"></main>
+
+  <nav class="tabs" role="tablist" aria-label="Разделы">
+    <button data-tab="today" class="active" role="tab" aria-selected="true" aria-label="Сегодня">
+      <span class="tab-ico" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="7.5" stroke="currentColor" stroke-width="1.8"/><path d="M12 8.2v4.1l2.4 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </span>
+      <span class="tab-lbl">День</span>
+    </button>
+    <button data-tab="week" role="tab" aria-selected="false" aria-label="Неделя">
+      <span class="tab-ico" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M5 16V9.5M10 16V7M15 16v-5.5M19 16V5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </span>
+      <span class="tab-lbl">Неделя</span>
+    </button>
+    <button data-tab="add" role="tab" aria-selected="false" aria-label="Добавить">
+      <span class="tab-ico" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 6.5v11M6.5 12h11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </span>
+      <span class="tab-lbl">Плюс</span>
+    </button>
+    <button data-tab="coach" role="tab" aria-selected="false" aria-label="Коучу">
+      <span class="tab-ico" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M7 16.5 12 8l5 8.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="18" r="1.2" fill="currentColor"/></svg>
+      </span>
+      <span class="tab-lbl">Коуч</span>
+    </button>
+    <button data-tab="more" role="tab" aria-selected="false" aria-label="Ещё">
+      <span class="tab-ico" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="6.5" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="17.5" cy="12" r="1.4" fill="currentColor"/></svg>
+      </span>
+      <span class="tab-lbl">Ещё</span>
+    </button>
+  </nav>
+
+  <script type="module" src="js/main.js?v=ASSET"></script>
+</body>
+</html>

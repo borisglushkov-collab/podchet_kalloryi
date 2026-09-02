@@ -9,6 +9,7 @@ import '../services/wellness_storage.dart';
 import '../theme/app_theme.dart';
 import '../widgets/wellness_widgets.dart';
 import 'weight_tracker_screen.dart';
+import 'blood_pressure_screen.dart';
 
 class AnalyticsScreen extends ConsumerStatefulWidget {
   const AnalyticsScreen({super.key});
@@ -30,16 +31,19 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: SegmentedButton<int>(
+              showSelectedIcon: false,
               segments: const [
                 ButtonSegment(
                   value: 0,
                   label: Text('Калории'),
-                  icon: Icon(Icons.local_fire_department_outlined, size: 18),
                 ),
                 ButtonSegment(
                   value: 1,
                   label: Text('Вес'),
-                  icon: Icon(Icons.monitor_weight_outlined, size: 18),
+                ),
+                ButtonSegment(
+                  value: 2,
+                  label: Text('АД'),
                 ),
               ],
               selected: {_tab},
@@ -49,7 +53,9 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           Expanded(
             child: _tab == 0
                 ? const _CaloriesTab()
-                : const WeightTrackerScreen(embedded: true),
+                : _tab == 1
+                    ? const WeightTrackerScreen(embedded: true)
+                    : const BloodPressureScreen(embedded: true),
           ),
         ],
       ),
