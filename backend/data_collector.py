@@ -242,6 +242,7 @@ def _sleep_session(item: dict[str, Any]) -> dict[str, Any] | None:
         or v.get("device_wake_up_time")
         or v.get("end_time")
         or v.get("sleep_end")
+        or item.get("time")
     )
     in_bed_min = 0
     wake_date = None
@@ -379,6 +380,17 @@ def _pick_sleep_for_day(sleep_list: list[dict[str, Any]], target_date: date) -> 
     ]
     if fallback:
         return _sleep_output(max(fallback, key=lambda s: int(s.get("total_min") or 0)))
+
+    # Night ending target_date may have bed_date yesterday when wake time only on item.time.
+    if not preferred:
+        overnight = [
+            s
+            for s in sessions
+            if s.get("bed_date") == target_date - timedelta(days=1)
+            and int(s.get("total_min") or 0) >= 60
+        ]
+        if overnight:
+            return _sleep_output(max(overnight, key=lambda s: int(s.get("total_min") or 0)))
 
     # No main night for this morning yet — do not show yesterday's nap or an older night.
     return None
@@ -762,6 +774,35 @@ async def _get_tokens() -> XiaomiTokens | None:
     except Exception as exc:
         logger.error("Xiaomi login failed: %s", exc)
         return None
+
+
+async def debug_sleep_for_date(target_date: date) -> dict[str, Any]:
+    """Fetch raw Mi Fitness sleep rows and parsing diagnostics (no store writes)."""
+    out: dict[str, Any] = {"date": target_date.isoformat(), "connected": False}
+    tokens = XiaomiTokens.load()
+    if not tokens or not tokens.service_token:
+        out["error"] = "xiaomi_not_connected"
+        return out
+    out["connected"] = True
+    client = MiFitnessClient(tokens, region=_REGION)
+    await client.connect()
+    raw = await client.get_day_summary(target_date) or {}
+    items = raw.get("sleep") or []
+    sessions = []
+    for i, item in enumerate(items):
+        s = _sleep_session(item)
+        sessions.append(
+            {
+                "index": i,
+                "time": item.get("time"),
+                "zone_offset": item.get("zone_offset"),
+                "parsed": s,
+            }
+        )
+    out["sleep_items"] = len(items)
+    out["sessions"] = sessions
+    out["picked"] = _pick_sleep_for_day(items, target_date)
+    return out
 
 
 async def collect_for_date(target_date: date | None = None) -> dict[str, Any]:

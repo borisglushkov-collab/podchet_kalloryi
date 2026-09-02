@@ -820,6 +820,19 @@ async def get_collector_status():
     return collector_status()
 
 
+@app.get("/api/health/sleep-debug/{date}")
+async def sleep_debug(date: str):
+    from datetime import date as Date
+
+    from data_collector import debug_sleep_for_date
+
+    try:
+        target = Date.fromisoformat(date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
+    return await debug_sleep_for_date(target)
+
+
 @app.post("/api/coach-health-chat", response_model=CoachChatResponse)
 async def coach_health_chat(request: CoachHealthChatRequest):
     message = (request.message or "").strip() or "Что улучшить по этому дню?"
