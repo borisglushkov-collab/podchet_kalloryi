@@ -20,8 +20,8 @@ jobs:
         with:
           host: ${{ format('{0}.{1}.{2}.{3}', '201', '51', '22', '29') }}
           username: ${{ secrets.DEPLOY_USER || 'root' }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
+          key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          password: ${{ secrets.DEPLOY_SSH_PASSWORD || secrets.DEPLOY_SSH_KEY }}
           script_stop: true
           script: |
             set -euo pipefail
