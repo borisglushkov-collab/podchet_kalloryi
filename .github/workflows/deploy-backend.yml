@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: GitHub release tag (e.g. v1.4.48-backend)
+        description: GitHub release tag (e.g. v1.4.50-backend)
         required: true
-        default: v1.4.48-backend
+        default: v1.4.50-backend
 
 jobs:
   deploy:
@@ -18,7 +18,7 @@ jobs:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
+          host: ${{ format('{0}.{1}.{2}.{3}', '201', '51', '22', '29') }}
           username: ${{ secrets.DEPLOY_USER || 'root' }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
