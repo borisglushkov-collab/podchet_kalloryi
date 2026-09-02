@@ -237,12 +237,12 @@ class MiFitnessClient:
 
     async def get_day_summary(self, target_date: date) -> dict[str, Any]:
         """Fetch Mi Fitness metrics for a specific calendar day."""
-        prev = target_date - timedelta(days=1)
+        prev = target_date - timedelta(days=2)
         result: dict[str, Any] = {"date": target_date.isoformat()}
 
         for key in ("steps", "sleep", "weight", "heart_rate", "blood_pressure"):
             try:
-                # Sleep often spans midnight: include previous night when querying a day.
+                # Sleep often spans midnight: include prior nights when querying a day.
                 start = prev if key == "sleep" else target_date
                 items = await self.fetch_key(key, start, target_date)
                 result[key] = items

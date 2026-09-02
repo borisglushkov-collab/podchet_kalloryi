@@ -118,17 +118,25 @@ export function applySnapshotToDay(d, snap, { force = false, onWeight } = {}) {
     d.steps = Number(stepCount);
   }
   const sleepMin = snap.sleep?.total_min ?? snap.sleep?.duration_min;
+  const cloudSleep = snap.source === "mi_fitness_auto";
   if (
-    sleepMin != null
-    && !d.locks.sleep
-    && (force || d.sleep_min == null || snap.source === "mi_fitness_auto")
+    !d.locks.sleep
+    && (force || d.sleep_min == null || cloudSleep)
   ) {
-    d.sleep_min = Number(sleepMin);
-    if (snap.sleep?.deep_min != null) d.sleep_deep_min = Number(snap.sleep.deep_min);
-    if (snap.sleep?.light_min != null) d.sleep_light_min = Number(snap.sleep.light_min);
-    if (snap.sleep?.rem_min != null) d.sleep_rem_min = Number(snap.sleep.rem_min);
-    if (snap.sleep?.in_bed_min != null) d.sleep_in_bed_min = Number(snap.sleep.in_bed_min);
-    else d.sleep_in_bed_min = null;
+    if (sleepMin != null) {
+      d.sleep_min = Number(sleepMin);
+      if (snap.sleep?.deep_min != null) d.sleep_deep_min = Number(snap.sleep.deep_min);
+      if (snap.sleep?.light_min != null) d.sleep_light_min = Number(snap.sleep.light_min);
+      if (snap.sleep?.rem_min != null) d.sleep_rem_min = Number(snap.sleep.rem_min);
+      if (snap.sleep?.in_bed_min != null) d.sleep_in_bed_min = Number(snap.sleep.in_bed_min);
+      else d.sleep_in_bed_min = null;
+    } else if (force && cloudSleep && Object.prototype.hasOwnProperty.call(snap, "sleep") && snap.sleep == null) {
+      d.sleep_min = null;
+      d.sleep_deep_min = null;
+      d.sleep_light_min = null;
+      d.sleep_rem_min = null;
+      d.sleep_in_bed_min = null;
+    }
   }
   if (
     snap.weight?.kg != null

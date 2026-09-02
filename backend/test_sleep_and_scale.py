@@ -159,6 +159,25 @@ def test_pick_sleep_converts_stage_seconds():
     assert sleep["in_bed_min"] == 8 * 60
 
 
+def test_pick_sleep_uses_item_time_when_wake_missing():
+    """Some Mi payloads only put wake day on the data_list row, not in value JSON."""
+    items = [
+        {
+            "time": _ts(2026, 9, 2, 7, 15),
+            "zone_offset": 10800,
+            "value": {
+                "sleep_deep_duration": 70,
+                "sleep_light_duration": 200,
+                "sleep_rem_duration": 75,
+            },
+        }
+    ]
+    sleep = _pick_sleep_for_day(items, date(2026, 9, 2))
+    assert sleep is not None
+    assert sleep["total_min"] == 345
+    assert sleep["deep_min"] == 70
+
+
 def test_pick_sleep_ignores_yesterday_nap_when_no_wake_today():
     """Do not show a prior-day nap when the main night for today is not synced yet."""
     items = [

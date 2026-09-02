@@ -189,6 +189,30 @@ def _measured_at_iso(record: dict[str, Any]) -> str | None:
         return None
 
 
+def _item_local_date(item: dict[str, Any], tz_name: str = "Europe/Moscow") -> date | None:
+    """Calendar day for a Mi Fitness data_list row (uses zone_offset when set)."""
+    ts = item.get("time")
+    if ts is None:
+        return None
+    try:
+        ts_i = int(ts)
+        if ts_i > 1_000_000_000_000:
+            ts_i //= 1000
+        instant = datetime.fromtimestamp(ts_i, tz=timezone.utc)
+    except (OSError, OverflowError, TypeError, ValueError):
+        return None
+    zone_offset = item.get("zone_offset")
+    if zone_offset is not None:
+        try:
+            return (instant + timedelta(seconds=int(zone_offset))).date()
+        except (TypeError, ValueError, OverflowError):
+            pass
+    try:
+        return instant.astimezone(ZoneInfo(tz_name)).date()
+    except Exception:
+        return None
+
+
 def _as_minutes(value: Any, *, total_min: int | None = None) -> int:
     """Normalize a duration that may be seconds or minutes."""
     try:
@@ -213,7 +237,12 @@ def _sleep_session(item: dict[str, Any]) -> dict[str, Any] | None:
     """
     v = _parse_value(item)
     bt = v.get("bedtime") or v.get("device_bedtime")
-    wt = v.get("wake_up_time") or v.get("device_wake_up_time")
+    wt = (
+        v.get("wake_up_time")
+        or v.get("device_wake_up_time")
+        or v.get("end_time")
+        or v.get("sleep_end")
+    )
     in_bed_min = 0
     wake_date = None
     bed_date = None
@@ -231,6 +260,25 @@ def _sleep_session(item: dict[str, Any]) -> dict[str, Any] | None:
         in_bed_min = 0
         wake_date = None
         bed_date = None
+
+    if wake_date is None and wt:
+        try:
+            wt_i = int(wt)
+            if wt_i > 1_000_000_000_000:
+                wt_i //= 1000
+            wake_date = datetime.fromtimestamp(wt_i, tz=timezone.utc).astimezone(_USER_TZ).date()
+        except (OSError, OverflowError, TypeError, ValueError):
+            wake_date = None
+    if wake_date is None:
+        wake_date = _item_local_date(item)
+    if bed_date is None and bt:
+        try:
+            bt_i = int(bt)
+            if bt_i > 1_000_000_000_000:
+                bt_i //= 1000
+            bed_date = datetime.fromtimestamp(bt_i, tz=timezone.utc).astimezone(_USER_TZ).date()
+        except (OSError, OverflowError, TypeError, ValueError):
+            bed_date = None
 
     # Provisional scale for seconds→minutes heuristic on stage fields.
     provisional = in_bed_min or 8 * 60
@@ -730,7 +778,13 @@ async def collect_for_date(target_date: date | None = None) -> dict[str, Any]:
             client = MiFitnessClient(tokens, region=_REGION)
             await client.connect()
             raw = await client.get_day_summary(day) or {}
-            sources["mi_fitness"] = {"ok": True, "keys": [k for k in raw.keys() if k != "date"]}
+            sleep_raw = raw.get("sleep") or []
+            sources["mi_fitness"] = {
+                "ok": True,
+                "keys": [k for k in raw.keys() if k != "date"],
+                "sleep_items": len(sleep_raw),
+                "sleep_picked": _pick_sleep_for_day(sleep_raw, day) is not None,
+            }
         except Exception as exc:
             logger.error("Mi Fitness API error: %s", exc)
             sources["mi_fitness"] = {"ok": False, "error": str(exc)}

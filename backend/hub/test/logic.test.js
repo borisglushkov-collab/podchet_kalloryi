@@ -36,6 +36,19 @@ test("FatSecret meals replace when incoming has items", () => {
   assert.equal(d.meals[0].source, "fatsecret");
 });
 
+test("force refresh clears sleep when cloud reports null", () => {
+  const d = emptyDay("2026-09-02");
+  d.sleep_min = 420;
+  d.sleep_deep_min = 50;
+  applySnapshotToDay(
+    d,
+    { sleep: null, source: "mi_fitness_auto" },
+    { force: true },
+  );
+  assert.equal(d.sleep_min, null);
+  assert.equal(d.sleep_deep_min, null);
+});
+
 test("manual locks block cloud overwrite", () => {
   const d = emptyDay("2026-08-20");
   d.steps = 100;
