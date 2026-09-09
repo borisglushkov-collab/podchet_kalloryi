@@ -332,6 +332,35 @@ def _sleep_session(item: dict[str, Any]) -> dict[str, Any] | None:
         except (TypeError, ValueError):
             avg_hr = None
 
+    device_bed_ts = None
+    device_wake_ts = None
+    for raw_ts, dest in (
+        (v.get("device_bedtime") or v.get("bed_timestamp"), "bed"),
+        (v.get("device_wake_up_time") or v.get("out_bed_timestamp"), "wake"),
+    ):
+        if raw_ts is None:
+            continue
+        try:
+            ts_i = int(raw_ts)
+            if ts_i > 1_000_000_000_000:
+                ts_i //= 1000
+            if dest == "bed":
+                device_bed_ts = ts_i
+            else:
+                device_wake_ts = ts_i
+        except (TypeError, ValueError):
+            pass
+
+    # Prefer device window for in-bed when fragments report short bout bedtimes.
+    if device_bed_ts is not None and device_wake_ts is not None and device_wake_ts > device_bed_ts:
+        device_in_bed = max(0, (device_wake_ts - device_bed_ts) // 60)
+        if device_in_bed > in_bed_min:
+            in_bed_min = device_in_bed
+        if wake_date is None:
+            wake_date = datetime.fromtimestamp(device_wake_ts, tz=timezone.utc).astimezone(_USER_TZ).date()
+        if bed_date is None:
+            bed_date = datetime.fromtimestamp(device_bed_ts, tz=timezone.utc).astimezone(_USER_TZ).date()
+
     out = {
         "total_min": asleep_min,
         "deep_min": deep,
@@ -340,15 +369,76 @@ def _sleep_session(item: dict[str, Any]) -> dict[str, Any] | None:
         "avg_hr": avg_hr,
         "wake_date": wake_date,
         "bed_date": bed_date,
+        "device_bed_ts": device_bed_ts,
+        "device_wake_ts": device_wake_ts,
     }
     if in_bed_min and in_bed_min != asleep_min:
         out["in_bed_min"] = in_bed_min
     return out
 
 
+def _sleep_has_stages(session: dict[str, Any]) -> bool:
+    return (
+        int(session.get("deep_min") or 0)
+        + int(session.get("light_min") or 0)
+        + int(session.get("rem_min") or 0)
+    ) > 0
+
+
+def _merge_sleep_sessions(parts: list[dict[str, Any]]) -> dict[str, Any]:
+    """Merge same-night sleep bouts (Mi Fitness often splits nights without stages)."""
+    total = sum(int(s.get("total_min") or 0) for s in parts)
+    deep = sum(int(s.get("deep_min") or 0) for s in parts)
+    light = sum(int(s.get("light_min") or 0) for s in parts)
+    rem = sum(int(s.get("rem_min") or 0) for s in parts)
+    in_beds = [int(s["in_bed_min"]) for s in parts if s.get("in_bed_min") is not None]
+    hrs = [int(s["avg_hr"]) for s in parts if s.get("avg_hr") is not None]
+    out: dict[str, Any] = {
+        "total_min": total,
+        "deep_min": deep,
+        "light_min": light,
+        "rem_min": rem,
+        "wake_date": parts[0].get("wake_date"),
+        "bed_date": parts[0].get("bed_date"),
+        "device_bed_ts": parts[0].get("device_bed_ts"),
+        "device_wake_ts": parts[0].get("device_wake_ts"),
+    }
+    if in_beds:
+        out["in_bed_min"] = max(in_beds)
+    if hrs:
+        out["avg_hr"] = round(sum(hrs) / len(hrs))
+    return out
+
+
+def _collapse_sleep_sessions(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse fragmented bouts that share the same device bedtime/wake window."""
+    staged = [s for s in sessions if _sleep_has_stages(s)]
+    unstaged = [s for s in sessions if not _sleep_has_stages(s)]
+    groups: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    passthrough: list[dict[str, Any]] = []
+    for s in unstaged:
+        bed_ts = s.get("device_bed_ts")
+        wake_ts = s.get("device_wake_ts")
+        if bed_ts is not None and wake_ts is not None:
+            groups.setdefault((int(bed_ts), int(wake_ts)), []).append(s)
+        else:
+            passthrough.append(s)
+    collapsed = list(staged)
+    for parts in groups.values():
+        collapsed.append(_merge_sleep_sessions(parts) if len(parts) > 1 else parts[0])
+    collapsed.extend(passthrough)
+    return collapsed
+
+
 def _pick_sleep_for_day(sleep_list: list[dict[str, Any]], target_date: date) -> dict[str, Any] | None:
-    """Choose the night that ends on target_date (wake-up morning). Never sum two nights."""
-    sessions = [s for s in (_sleep_session(i) for i in sleep_list) if s]
+    """Choose the night that ends on target_date (wake-up morning).
+
+    Never sum two different nights. Same-night Mi Fitness fragments that share
+    device_bedtime/device_wake_up_time are merged (sum of bout durations).
+    """
+    sessions = _collapse_sleep_sessions(
+        [s for s in (_sleep_session(i) for i in sleep_list) if s]
+    )
     if not sessions:
         return None
 
@@ -365,10 +455,15 @@ def _pick_sleep_for_day(sleep_list: list[dict[str, Any]], target_date: date) -> 
             out["in_bed_min"] = int(best["in_bed_min"])
         return out
 
+    def _best(pool: list[dict[str, Any]]) -> dict[str, Any]:
+        staged = [s for s in pool if _sleep_has_stages(s)]
+        use = staged or pool
+        return max(use, key=lambda s: int(s.get("total_min") or 0))
+
     # Mi Fitness attributes sleep to the wake-up calendar day.
     preferred = [s for s in sessions if s.get("wake_date") == target_date]
     if preferred:
-        return _sleep_output(max(preferred, key=lambda s: int(s.get("total_min") or 0)))
+        return _sleep_output(_best(preferred))
 
     # Wake date missing — fall back to bed starting previous evening (not random naps).
     fallback = [
@@ -379,18 +474,17 @@ def _pick_sleep_for_day(sleep_list: list[dict[str, Any]], target_date: date) -> 
         and int(s.get("total_min") or 0) >= 60
     ]
     if fallback:
-        return _sleep_output(max(fallback, key=lambda s: int(s.get("total_min") or 0)))
+        return _sleep_output(_best(fallback))
 
     # Night ending target_date may have bed_date yesterday when wake time only on item.time.
-    if not preferred:
-        overnight = [
-            s
-            for s in sessions
-            if s.get("bed_date") == target_date - timedelta(days=1)
-            and int(s.get("total_min") or 0) >= 60
-        ]
-        if overnight:
-            return _sleep_output(max(overnight, key=lambda s: int(s.get("total_min") or 0)))
+    overnight = [
+        s
+        for s in sessions
+        if s.get("bed_date") == target_date - timedelta(days=1)
+        and int(s.get("total_min") or 0) >= 60
+    ]
+    if overnight:
+        return _sleep_output(_best(overnight))
 
     # No main night for this morning yet — do not show yesterday's nap or an older night.
     return None
