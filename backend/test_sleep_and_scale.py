@@ -224,6 +224,28 @@ def test_pick_sleep_ignores_yesterday_nap_when_no_wake_today():
     assert sleep["total_min"] == 394
 
 
+def test_pick_sleep_does_not_reuse_yesterday_staged_night():
+    """If today's night is not synced yet, do not show yesterday's wake-day sleep."""
+    items = [
+        {
+            "time": _ts(2026, 9, 10, 7, 21),
+            "value": {
+                "bedtime": _ts(2026, 9, 10, 1, 12),
+                "wake_up_time": _ts(2026, 9, 10, 7, 21),
+                "device_bedtime": _ts(2026, 9, 10, 1, 12),
+                "device_wake_up_time": _ts(2026, 9, 10, 7, 21),
+                "duration": 340,
+                "sleep_deep_duration": 80,
+                "sleep_light_duration": 219,
+                "sleep_rem_duration": 41,
+                "avg_hr": 65,
+            },
+        }
+    ]
+    assert _pick_sleep_for_day(items, date(2026, 9, 10))["total_min"] == 340
+    assert _pick_sleep_for_day(items, date(2026, 9, 11)) is None
+
+
 def test_pick_sleep_sums_same_night_fragments_not_evening_nap():
     """Mi Fitness may split one night into bout rows sharing device bedtime/wake."""
     device_bed = _ts(2026, 9, 9, 1, 28)

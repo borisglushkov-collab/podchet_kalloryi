@@ -476,17 +476,8 @@ def _pick_sleep_for_day(sleep_list: list[dict[str, Any]], target_date: date) -> 
     if fallback:
         return _sleep_output(_best(fallback))
 
-    # Night ending target_date may have bed_date yesterday when wake time only on item.time.
-    overnight = [
-        s
-        for s in sessions
-        if s.get("bed_date") == target_date - timedelta(days=1)
-        and int(s.get("total_min") or 0) >= 60
-    ]
-    if overnight:
-        return _sleep_output(_best(overnight))
-
-    # No main night for this morning yet — do not show yesterday's nap or an older night.
+    # No main night for this morning yet — never reuse a night whose wake_date
+    # is already attributed to another day (that caused Hub to show yesterday's sleep).
     return None
 
 
