@@ -13,10 +13,13 @@ const defaultProfile = () => ({
   height_cm: null,
   weight_kg_latest: null,
   medications: [],
-  coaching_calorie_target: {
+    coaching_calorie_target: {
     kcal_min: 1900,
     kcal_max: 2100,
     protein_g: 130,
+    protein_g_min: 120,
+    fat_g_min: 55,
+    fat_g_max: 70,
   },
 });
 
@@ -29,6 +32,7 @@ const emptyDay = (date) => ({
   sleep_deep_min: null,
   sleep_light_min: null,
   sleep_rem_min: null,
+  sleep_incomplete: false,
   steps: null,
   weight_kg: null,
   body_composition: null,
@@ -76,11 +80,14 @@ function normalizeNutritionItem(it) {
   if (!name) return null;
   return {
     name,
-    grams: Number(it.grams ?? it.number_of_units ?? 0),
+    grams: Number(it.grams ?? it.number_of_units ?? it.units ?? 0),
     calories: Number(it.calories ?? 0),
     protein: Number(it.protein ?? it.protein_g ?? 0),
     fat: Number(it.fat ?? it.fat_g ?? 0),
     carbs: Number(it.carbs ?? it.carbs_g ?? it.carbohydrate ?? 0),
+    qty_label: it.qty_label || "",
+    qty_is_servings: Boolean(it.qty_is_servings),
+    units: Number(it.units ?? it.grams ?? it.number_of_units ?? 0),
   };
 }
 
@@ -127,6 +134,7 @@ function applySnapshotToDay(d, snap, { force = false } = {}) {
     if (snap.sleep?.deep_min != null) d.sleep_deep_min = Number(snap.sleep.deep_min);
     if (snap.sleep?.light_min != null) d.sleep_light_min = Number(snap.sleep.light_min);
     if (snap.sleep?.rem_min != null) d.sleep_rem_min = Number(snap.sleep.rem_min);
+    d.sleep_incomplete = Boolean(snap.sleep?.incomplete);
   }
   if (
     snap.weight?.kg != null
@@ -282,6 +290,21 @@ function persist() {
   syncServer();
 }
 
+function remainingLine(totals, target) {
+  const kcal = Number(totals.calories || 0);
+  if (!kcal) return "";
+  const lo = Number(target.kcal_min || 1900);
+  const hi = Number(target.kcal_max || 2100);
+  const pMin = Number(target.protein_g_min || target.protein_g || 120);
+  const fatMax = Number(target.fat_g_max || 70);
+  const p = Number(totals.protein_g || 0);
+  const f = Number(totals.fat_g || 0);
+  const pLeft = Math.max(0, Math.round(pMin - p));
+  const fatRoom = Math.round(fatMax - f);
+  const fatS = fatRoom >= 0 ? `жир запас ${fatRoom} г` : `жир выше цели на ${Math.abs(fatRoom)} г`;
+  return `Остаток: ${Math.max(0, lo - Math.round(kcal))}–${Math.max(0, hi - Math.round(kcal))} ккал · белок ещё ${pLeft} г · ${fatS}`;
+}
+
 function nutritionTotals(meals) {
   return meals.reduce(
     (acc, m) => ({
@@ -324,6 +347,9 @@ function snapshot() {
       protein_g: Number(meal.protein || 0),
       fat_g: Number(meal.fat || 0),
       carbs_g: Number(meal.carbs || 0),
+      qty_label: meal.qty_label || "",
+      qty_is_servings: Boolean(meal.qty_is_servings),
+      units: Number(meal.units || meal.grams || 0),
     });
   }
   const bp = latestBp();
@@ -354,6 +380,7 @@ function snapshot() {
           deep_min: d.sleep_deep_min,
           light_min: d.sleep_light_min,
           rem_min: d.sleep_rem_min,
+          incomplete: Boolean(d.sleep_incomplete),
           source: "manual",
         },
     body_composition: d.body_composition || (d.weight_kg == null ? {} : { weight_kg: Number(d.weight_kg) }),
@@ -398,6 +425,7 @@ function formatReport(snap) {
     if (snap.sleep.light_min != null) stages.push(`лёгкий ${snap.sleep.light_min}м`);
     if (snap.sleep.rem_min != null) stages.push(`REM ${snap.sleep.rem_min}м`);
     if (stages.length) line += ` (${stages.join(", ")})`;
+    if (snap.sleep.incomplete) line += " ⚠️ короткая сессия — не ночной сон";
     lines.push(line);
   }
   if (snap.activity?.steps != null) lines.push(`Шаги: ${snap.activity.steps}`);
@@ -420,7 +448,11 @@ function formatReport(snap) {
   const n = snap.nutrition || {};
   const mealBits = (n.meals || [])
     .map((meal) => {
-      const names = (meal.items || []).map((i) => i.name).filter(Boolean);
+      const names = (meal.items || []).map((i) => {
+        const n = i.name;
+        if (!n) return "";
+        return i.qty_label ? `${n} (${i.qty_label})` : n;
+      }).filter(Boolean);
       return names.length ? `${MEAL_RU[meal.meal_type] || meal.meal_type}: ${names.join(", ")}` : "";
     })
     .filter(Boolean);
@@ -429,6 +461,8 @@ function formatReport(snap) {
     if (n.protein_g || n.fat_g || n.carbs_g) {
       lines.push(`КБЖУ: Б ${Math.round(n.protein_g || 0)} · Ж ${Math.round(n.fat_g || 0)} · У ${Math.round(n.carbs_g || 0)}`);
     }
+    const remain = remainingLine(n, snap.profile?.coaching_calorie_target || {});
+    if (remain) lines.push(remain);
     const t0 = snap.profile?.coaching_calorie_target || {};
     if (n.calories && (t0.kcal_min || t0.kcal_max)) {
       const lo = Number(t0.kcal_min || 0);
@@ -558,7 +592,9 @@ function renderToday() {
   const totals = nutritionTotals(d.meals);
   const high = bp && (bp.systolic >= 140 || bp.diastolic >= 90);
   const sleepH = d.sleep_min ? `${Math.floor(d.sleep_min / 60)}ч ${d.sleep_min % 60}м` : "—";
-  const sleepStages = [
+  const sleepStages = d.sleep_incomplete
+    ? "короткая сессия — не ночной сон, нажмите «Обновить» позже"
+    : [
     d.sleep_deep_min != null ? `глуб. ${d.sleep_deep_min}м` : null,
     d.sleep_light_min != null ? `лёгк. ${d.sleep_light_min}м` : null,
     d.sleep_rem_min != null ? `REM ${d.sleep_rem_min}м` : null,
@@ -576,6 +612,7 @@ function renderToday() {
     else if (cal > hi) kcalVs = `выше цели на ${cal - hi}`;
     else kcalVs = `в цели ${lo}–${hi}`;
   }
+  const remain = remainingLine(totals, target);
   const fs = d.sources_status?.fatsecret;
   const foodSync = fs
     ? (fs.ok === false
@@ -643,10 +680,16 @@ function renderToday() {
         <h2>Еда</h2>
         <div class="value">${Math.round(totals.calories)} ккал</div>
         <div class="sub">Б ${Math.round(totals.protein_g)} · Ж ${Math.round(totals.fat_g)} · У ${Math.round(totals.carbs_g)}${kcalVs ? ` · ${kcalVs}` : ""}</div>
+        ${remain ? `<div class="sub">${remain}</div>` : ""}
         <ul class="list">${
           d.meals.length
             ? d.meals.map((m, i) => {
-                const label = `${MEAL_RU[m.meal_type] || m.meal_type}: ${m.name}`;
+                const qty = m.qty_label || (m.qty_is_servings || (m.grams > 0 && m.grams < 20)
+                  ? `×${m.grams} ед. FatSecret`
+                  : (m.grams >= 20 ? `${m.grams} г` : ""));
+                const kcal = m.calories ? `${Math.round(m.calories)} ккал` : "";
+                const bits = [qty, kcal].filter(Boolean).join(" · ");
+                const label = `${MEAL_RU[m.meal_type] || m.meal_type}: ${m.name}${bits ? ` · ${bits}` : ""}`;
                 if (m.source === "fatsecret") {
                   return `<li><span>${label}</span></li>`;
                 }
@@ -656,7 +699,7 @@ function renderToday() {
         }</ul>
         <div class="sub">${foodSync}</div>
         ${d.meals.some((m) => m.source === "fatsecret")
-          ? `<div class="sub">Блюда FatSecret нельзя удалить здесь — измените дневник в FatSecret и нажмите «Обновить»</div>`
+          ? `<div class="sub">«ед. FatSecret» — порции дневника, не граммы (4 ед. шницеля ≈ одна упаковка 400 г). Удалять блюда здесь нельзя — правьте FatSecret и нажмите «Обновить»</div>`
           : ""}
       </div>
     </div>
@@ -1503,7 +1546,7 @@ async function boot() {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js?v=8").then((reg) => {
+  navigator.serviceWorker.register("sw.js?v=9").then((reg) => {
     reg.update().catch(() => {});
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       toast("Обновление установлено — перезагрузка…");

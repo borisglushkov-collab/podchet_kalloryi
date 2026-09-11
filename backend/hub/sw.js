@@ -1,4 +1,4 @@
-const CACHE = "hub-v6";
+const CACHE = "hub-v7";
 
 const SHELL = ["/hub/", "/hub/index.html", "/hub/styles.css", "/hub/app.js", "/hub/manifest.json", "/hub/icon.svg"];
 

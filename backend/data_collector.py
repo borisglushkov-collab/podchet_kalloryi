@@ -14,6 +14,7 @@ from typing import Any
 
 from zoneinfo import ZoneInfo
 
+from food_qty import quantity_fields
 from health_day_store import day_store
 from xiaomi_auth import XiaomiTokens, login_xiaomi
 from xiaomi_fitness import MiFitnessClient
@@ -234,14 +235,18 @@ def _pick_sleep_for_day(sleep_list: list[dict[str, Any]], target_date: date) -> 
     if not pool:
         return None
     best = max(pool, key=lambda s: int(s.get("total_min") or 0))
+    total_min = int(best["total_min"])
     out = {
-        "total_min": int(best["total_min"]),
+        "total_min": total_min,
         "deep_min": int(best.get("deep_min") or 0),
         "light_min": int(best.get("light_min") or 0),
         "rem_min": int(best.get("rem_min") or 0),
     }
     if best.get("avg_hr") is not None:
         out["avg_hr"] = best["avg_hr"]
+    # Partial upload / nap: coaches treated 2h12 as the night on 09.09.
+    if total_min < 180:
+        out["incomplete"] = True
     return out
 
 
@@ -316,9 +321,10 @@ def _normalize_food_entry(entry: dict[str, Any]) -> dict[str, Any]:
     protein = round(float(entry.get("protein") or 0), 1)
     fat = round(float(entry.get("fat") or 0), 1)
     carbs = round(float(entry.get("carbs") or 0), 1)
-    return {
+    qty = quantity_fields(entry)
+    row = {
         "name": str(entry.get("name") or "").strip(),
-        "grams": round(float(entry.get("grams") or 0), 1),
+        "grams": round(float(qty.get("units") or entry.get("grams") or 0), 1),
         "calories": round(float(entry.get("calories") or 0), 1),
         "protein": protein,
         "fat": fat,
@@ -326,7 +332,15 @@ def _normalize_food_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "protein_g": protein,
         "fat_g": fat,
         "carbs_g": carbs,
+        "units": qty["units"],
+        "qty_label": qty["qty_label"],
+        "qty_is_servings": qty["qty_is_servings"],
     }
+    if qty.get("grams_estimated") is not None:
+        row["grams_estimated"] = qty["grams_estimated"]
+    if qty.get("serving_description"):
+        row["serving_description"] = qty["serving_description"]
+    return row
 
 
 def _filter_medm_for_date(readings: list[dict[str, Any]], target_date: date) -> list[dict[str, Any]]:

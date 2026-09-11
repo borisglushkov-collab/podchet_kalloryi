@@ -21,16 +21,55 @@ def _fmt_sleep(minutes: int | None) -> str | None:
     return f"{hours}h{mins:02d}"
 
 
+def _item_name(item: dict[str, Any]) -> str:
+    name = str(item.get("name") or "").strip()
+    if not name:
+        return ""
+    qty = str(item.get("qty_label") or "").strip()
+    if qty:
+        return f"{name} ({qty})"
+    return name
+
+
 def _meal_names(nutrition: dict[str, Any]) -> str:
     meals = nutrition.get("meals") or []
     parts: list[str] = []
     for meal in meals:
         mtype = _MEAL_RU.get(str(meal.get("meal_type") or ""), meal.get("meal_type") or "")
         items = meal.get("items") or []
-        names = [str(i.get("name") or "").strip() for i in items if str(i.get("name") or "").strip()]
+        names = [_item_name(i) for i in items]
+        names = [n for n in names if n]
         if names:
             parts.append(f"{mtype}: {', '.join(names)}")
     return "; ".join(parts)
+
+
+def _coach_targets(profile: dict[str, Any]) -> dict[str, int]:
+    targets = (profile or {}).get("coaching_calorie_target") or {}
+    return {
+        "kcal_min": int(targets.get("kcal_min") or 1900),
+        "kcal_max": int(targets.get("kcal_max") or 2100),
+        "protein_min": int(targets.get("protein_g_min") or targets.get("protein_g") or 120),
+        "fat_max": int(targets.get("fat_g_max") or 70),
+    }
+
+
+def _remaining_line(nutrition: dict[str, Any], profile: dict[str, Any]) -> str | None:
+    kcal = nutrition.get("calories")
+    if kcal is None:
+        return None
+    t = _coach_targets(profile)
+    p = float(nutrition.get("protein_g") or 0)
+    f = float(nutrition.get("fat_g") or 0)
+    kcal_left_min = max(0, t["kcal_min"] - int(kcal))
+    kcal_left_max = max(0, t["kcal_max"] - int(kcal))
+    p_left = max(0, t["protein_min"] - p)
+    fat_room = t["fat_max"] - f
+    fat_s = f"жир запас {fat_room:.0f} г" if fat_room >= 0 else f"жир выше цели на {abs(fat_room):.0f} г"
+    return (
+        f"Остаток: {kcal_left_min}–{kcal_left_max} ккал · "
+        f"белок ещё {p_left:.0f} г · {fat_s}"
+    )
 
 
 def format_day_report(snapshot: dict[str, Any]) -> str:
@@ -78,6 +117,8 @@ def format_day_report(snapshot: dict[str, Any]) -> str:
         line = f"Сон: {sleep_s}"
         if stages:
             line += f" ({', '.join(stages)})"
+        if sleep.get("incomplete"):
+            line += " ⚠️ короткая сессия — не ночной сон"
         lines.append(line)
 
     steps_count = (snapshot.get("steps") or {}).get("count")
@@ -162,6 +203,9 @@ def format_day_report(snapshot: dict[str, Any]) -> str:
             macros.append(f"У {nutrition['carbs_g']:.0f}")
         if macros:
             lines.append("КБЖУ: " + " · ".join(macros))
+        remaining = _remaining_line(nutrition, profile)
+        if remaining:
+            lines.append(remaining)
         kcal_min = targets.get("kcal_min")
         kcal_max = targets.get("kcal_max")
         if kcal is not None and (kcal_min or kcal_max):

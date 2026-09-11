@@ -61,7 +61,32 @@ def test_pick_sleep_converts_stage_seconds():
     assert sleep["rem_min"] == 80
 
 
-def test_filter_scale_never_falls_back_to_other_days():
+def test_pick_sleep_marks_short_session_incomplete():
+    items = [
+        {
+            "value": {
+                "bedtime": _ts(2026, 9, 8, 23, 0),
+                "wake_up_time": _ts(2026, 9, 9, 1, 12),
+            }
+        }
+    ]
+    sleep = _pick_sleep_for_day(items, date(2026, 9, 9))
+    assert sleep["total_min"] == 132
+    assert sleep["incomplete"] is True
+
+
+def test_pick_sleep_full_night_not_incomplete():
+    items = [
+        {
+            "value": {
+                "bedtime": _ts(2026, 9, 10, 23, 0),
+                "wake_up_time": _ts(2026, 9, 11, 6, 0),
+            }
+        }
+    ]
+    sleep = _pick_sleep_for_day(items, date(2026, 9, 11))
+    assert sleep["total_min"] == 7 * 60
+    assert "incomplete" not in sleep
     records = [
         {"measured_at": "2026-08-18T08:00:00", "weight": 110},
         {"measured_at": "2026-08-19T08:00:00", "weight": 109},

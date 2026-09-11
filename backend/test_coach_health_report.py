@@ -45,6 +45,37 @@ def test_format_day_report_includes_bp_sleep_food():
     assert "Edarbi 80" in text
     assert "1900–2100" in text
     assert "ниже на" in text
+    assert "Остаток:" in text
+    assert "белок ещё" in text
+
+
+def test_format_day_report_qty_and_short_sleep():
+    text = format_day_report(
+        {
+            "date": "2026-09-10",
+            "sleep": {"total_min": 132, "incomplete": True},
+            "nutrition": {
+                "calories": 660,
+                "protein_g": 36,
+                "fat_g": 36,
+                "carbs_g": 46,
+                "meals": [
+                    {
+                        "meal_type": "lunch",
+                        "items": [
+                            {
+                                "name": "Милти Шницель",
+                                "qty_label": "×4 ед. FatSecret",
+                                "qty_is_servings": True,
+                            }
+                        ],
+                    }
+                ],
+            },
+        }
+    )
+    assert "×4 ед. FatSecret" in text
+    assert "короткая сессия" in text
 
 
 def test_format_week_report_averages():

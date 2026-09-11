@@ -46,6 +46,7 @@
 
 - [COACHING_BASELINE.md](./coaching/COACHING_BASELINE.md) — цели, чеклист сверки перед рекомендациями
 - [AUGUST_2026_CARD.md](./coaching/AUGUST_2026_CARD.md) — итоги августа, паттерны, цели на сентябрь
+- [SEPTEMBER_2026_CARD.md](./coaching/SEPTEMBER_2026_CARD.md) — рабочая карточка сентября (вес, Эдарби АМ, дневник)
 
 Коуч-агент: перед ответами по питанию/весу/АД читай baseline + последнюю карточку месяца.
 
