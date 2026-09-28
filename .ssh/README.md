@@ -1,34 +1,39 @@
-# SSH-ключ для деплоя на VPS
+# SSH / пароль для деплоя на VPS
 
-Приватный ключ **не коммитится** в git (см. `.gitignore`).
+Секреты **не коммитятся** в git (см. `.gitignore`).
 
-## Локально (Windows)
+## Cloud Agent (Cursor) — рекомендуется
 
-Положите ключ сюда:
+1. [Cursor Dashboard → Cloud Agents](https://cursor.com/dashboard?tab=cloud-agents)
+2. Environments → ваш environment → **Secrets**
 
-```
-.ssh/id_ed25519
-.ssh/id_ed25519.pub   # опционально
-```
+Добавьте **один** из вариантов:
 
-Деплой: `backend\deploy\deploy-to-vps.ps1`
+| Secret | Значение |
+|--------|----------|
+| `root_pass` или `DEPLOY_SSH_PASSWORD` | пароль root VPS |
+| `DEPLOY_SSH_KEY` | **полный** текст private key (`BEGIN` … `END`), не имя файла |
 
-## Cloud Agent (Cursor)
+Опционально можно задать пользователя SSH (`DEPLOY_USER`, обычно `root`) и хост отдельным runtime secret.
 
-1. Откройте [Cursor Dashboard → Cloud Agents](https://cursor.com/dashboard?tab=cloud-agents)
-2. Environments → ваш environment (или создайте)
-3. **Secrets** → Add secret:
-   - Name: `DEPLOY_SSH_KEY`
-   - Type: **Runtime Secret**
-   - Value: весь текст `id_ed25519` (включая `BEGIN` / `END`)
-4. Опционально:
-   - `DEPLOY_HOST` = `5.42.111.122`
-   - `DEPLOY_USER` = `root`
+Скрипт `scripts/ensure-deploy-ssh.sh` поддерживает и ключ, и пароль (`sshpass`).
 
-В следующем cloud-запуске агент подхватит ключ через `scripts/ensure-deploy-ssh.sh`.
+## Локально
 
-Fingerprint текущего ключа (публичный):
+Положите ключ как:
 
 ```
-256 SHA256:+5DjE6VbtCzqGkcHCFCv6o+tT0SNSrRdJTX+aF4iEqA msi@podchet-kalloriy (ED25519)
+.ssh/deploy_key
+.ssh/deploy_key.pub   # опционально
 ```
+
+Или экспортируйте `root_pass` / `DEPLOY_SSH_PASSWORD` и используйте `scripts/deploy-backend-vps.sh`.
+
+## GitHub Actions
+
+В secrets репозитория:
+
+- `DEPLOY_SSH_PASSWORD` — пароль root, **или**
+- `DEPLOY_SSH_PRIVATE_KEY` — полный private key
+
+Workflow: `.github/workflows/deploy-backend.yml`
