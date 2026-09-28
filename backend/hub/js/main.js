@@ -742,7 +742,23 @@ async function medmLogin() {
   }
 }
 
+function openHealthDetail(id) {
+  if (!id) return;
+  state.healthDetail = id;
+  document.body.classList.add("health-sheet-open");
+  render();
+  document.querySelector(".sheet-back")?.focus();
+}
+
+function closeHealthDetail() {
+  if (!state.healthDetail) return;
+  state.healthDetail = null;
+  document.body.classList.remove("health-sheet-open");
+  render();
+}
+
 function bind() {
+  document.body.classList.toggle("health-sheet-open", Boolean(state.healthDetail));
   document.getElementById("copy-report")?.addEventListener("click", copyReport);
   document.getElementById("share-report")?.addEventListener("click", shareReport);
   document.getElementById("copy-week-report")?.addEventListener("click", copyWeekReport);
@@ -759,6 +775,25 @@ function bind() {
   });
   document.getElementById("ask-coach")?.addEventListener("click", () => {
     state.tab = "coach";
+    render();
+  });
+  document.querySelectorAll("[data-health-tile]").forEach((btn) => {
+    btn.addEventListener("click", () => openHealthDetail(btn.dataset.healthTile));
+  });
+  document.querySelectorAll("[data-health-close]").forEach((el) => {
+    el.addEventListener("click", closeHealthDetail);
+  });
+  document.getElementById("health-add")?.addEventListener("click", () => {
+    state.tab = "add";
+    state.healthDetail = null;
+    document.body.classList.remove("health-sheet-open");
+    render();
+  });
+  document.getElementById("health-manage")?.addEventListener("click", () => {
+    state.tab = "more";
+    state.morePane = "sources";
+    state.healthDetail = null;
+    document.body.classList.remove("health-sheet-open");
     render();
   });
   document.querySelectorAll("[data-more-pane]").forEach((btn) => {
@@ -891,9 +926,17 @@ function wireShell() {
   document.querySelectorAll(".tabs button").forEach((btn) => {
     btn.addEventListener("click", async () => {
       state.tab = btn.dataset.tab;
+      state.healthDetail = null;
+      document.body.classList.remove("health-sheet-open");
       if (state.tab === "week") await loadWeek();
       render();
     });
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && state.healthDetail) {
+      e.preventDefault();
+      closeHealthDetail();
+    }
   });
   window.addEventListener("online", () => {
     state.online = true;

@@ -1,14 +1,256 @@
 import {
   MEAL_RU,
+  buildHealthTiles,
+  formatSleepDuration,
   hasManualLocks,
   latestBpReading,
   nutritionTotals,
+  sleepQualityLabel,
   sortBpNewestFirst,
   weekGoalStats,
   syncTone,
 } from "./logic.js";
 import { state, day } from "./state.js";
 import { escapeHtml, escapeAttr } from "./ui.js";
+
+const TILE_ICONS = {
+  sleep: `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4.5 14.5c0-3.7 3-6.7 6.7-6.7.7 0 1.4.1 2 .3A5.8 5.8 0 0 0 9.2 12a5.8 5.8 0 0 0 5.7 5.8c1.8 0 3.4-.8 4.5-2.1.4.9.6 1.9.6 2.9A6.8 6.8 0 0 1 13.2 21.5 6.8 6.8 0 0 1 6.5 14.8c0-.1 0-.2 0-.3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M15.2 5.2c.3 1.1 1.2 2 2.3 2.3-.1.3-.1.5 0 .8-.1.2-.1.4 0 .6-1.1.3-2 1.2-2.3 2.3-.3-.1-.5-.1-.8 0-.2-.1-.4-.1-.6 0-.3-1.1-1.2-2-2.3-2.3.1-.3.1-.5 0-.8.1-.2.1-.4 0-.6 1.1-.3 2-1.2 2.3-2.3.3.1.5.1.8 0 .2.1.4.1.6 0Z" fill="currentColor"/></svg>`,
+  steps: `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 17.5c1.2-2.4 2-4.8 2-7.2C9 7.4 10.3 5.5 12.4 5.5c1.5 0 2.5 1 3.1 2.4.5 1.2.8 2.7 1.2 4.1.3 1.2.9 2.3 1.8 3.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M6.5 20.2h3.2M14.2 20.2h3.3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
+  heart: `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 19.2s-6.2-3.9-6.2-8.1A3.7 3.7 0 0 1 12 8.4a3.7 3.7 0 0 1 6.2 2.7c0 4.2-6.2 8.1-6.2 8.1Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M5.5 12.2h2.2l1.4-2.4 2.2 4.2 1.5-2.5H15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  activity: `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4.5 14.5 8 8.8l3.2 6.2 2.6-4.3 2.5 3.8 3.2-5.7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  bp: `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 20.2c3.8-3.2 5.8-5.9 5.8-8.6A3.8 3.8 0 0 0 12 8.2a3.8 3.8 0 0 0-5.8 3.4c0 2.7 2 5.4 5.8 8.6Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M10.2 11.6h3.6M12 9.8v3.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+  weight: `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.5" y="6.5" width="15" height="11" rx="3.2" stroke="currentColor" stroke-width="1.7"/><path d="M9.2 11.2c.6-1.4 1.5-2.2 2.8-2.2s2.2.8 2.8 2.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="12.4" r="1.1" fill="currentColor"/></svg>`,
+  workouts: `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7.2 9.2 5 11.4l2.2 2.2M16.8 9.2 19 11.4l-2.2 2.2M8.4 11.4h7.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.2 7.5l1.8 3.9 1.8-3.9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+};
+
+function dateLabelRu(isoDate) {
+  if (!isoDate) return "";
+  try {
+    return new Date(`${isoDate}T12:00:00`).toLocaleDateString("ru-RU", {
+      day: "numeric",
+      month: "long",
+    });
+  } catch {
+    return isoDate;
+  }
+}
+
+function renderTileViz(tile) {
+  const viz = tile.viz || "none";
+  const data = tile.vizData || {};
+  if (viz === "sleep-scale") {
+    const pct = data.pct ?? 50;
+    const stages = data.stages;
+    const bar = stages
+      ? `<div class="tile-stages" aria-hidden="true">
+          <span class="st-deep" style="flex:${stages.deep}"></span>
+          <span class="st-light" style="flex:${stages.light}"></span>
+          <span class="st-rem" style="flex:${stages.rem}"></span>
+        </div>`
+      : `<div class="tile-progress" aria-hidden="true"><span style="width:${pct}%"></span></div>`;
+    return `<div class="tile-viz">
+      ${bar}
+      <div class="tile-scale">
+        <span class="tile-needle" style="left:${pct}%"></span>
+      </div>
+      <div class="tile-axis"><span>${escapeHtml(data.labels?.[0] || "Плохо")}</span><span>${escapeHtml(data.labels?.[1] || "Превосходно")}</span></div>
+    </div>`;
+  }
+  if (viz === "progress") {
+    const pct = data.pct ?? 0;
+    return `<div class="tile-viz">
+      <div class="tile-progress" aria-hidden="true"><span style="width:${pct}%"></span></div>
+      <div class="tile-axis"><span>${escapeHtml(data.left || "0")}</span><span>${escapeHtml(data.right || "")}</span></div>
+    </div>`;
+  }
+  if (viz === "range" && data.min != null && data.max != null) {
+    const min = Number(data.min);
+    const max = Number(data.max);
+    const mid = Number(data.mid ?? min);
+    const span = Math.max(max - min, 1);
+    const left = Math.round(((mid - min) / span) * 100);
+    return `<div class="tile-viz">
+      <div class="tile-range" aria-hidden="true">
+        <span class="tile-range-track"></span>
+        <span class="tile-range-dot" style="left:${left}%"></span>
+      </div>
+      <div class="tile-axis"><span>${min}</span><span>${max}</span></div>
+    </div>`;
+  }
+  if (viz === "bp-mark") {
+    const high = !!data.high;
+    return `<div class="tile-viz">
+      <div class="tile-progress ${high ? "warn" : ""}" aria-hidden="true"><span style="width:${high ? 82 : 45}%"></span></div>
+      <div class="tile-axis"><span>${escapeHtml(data.left || "")}</span><span>${escapeHtml(data.right || "")}</span></div>
+    </div>`;
+  }
+  return `<div class="tile-viz tile-viz-empty" aria-hidden="true"><div class="tile-progress"><span style="width:0%"></span></div></div>`;
+}
+
+export function renderHealthTiles(d) {
+  const miConnected = Boolean(state.collectorStatus?.connections?.xiaomi?.connected);
+  const tiles = buildHealthTiles(d, {
+    miConnected,
+    dateLabel: dateLabelRu(d.date || state.date),
+  });
+  return `<div class="health-grid" role="list">
+    ${tiles.map((tile) => `
+      <button type="button" class="health-tile tone-${escapeAttr(tile.tone)}${tile.empty ? " is-empty" : ""}"
+        data-health-tile="${escapeAttr(tile.id)}" role="listitem"
+        aria-label="${escapeAttr(tile.title)}: ${escapeAttr(tile.value)}">
+        <span class="tile-ico" aria-hidden="true">${TILE_ICONS[tile.id] || TILE_ICONS.activity}</span>
+        <span class="tile-title">${escapeHtml(tile.title)}</span>
+        <span class="tile-value">${escapeHtml(tile.value)}</span>
+        <span class="tile-sub">${escapeHtml(tile.sub)}</span>
+        ${renderTileViz(tile)}
+        <span class="tile-chev" aria-hidden="true">›</span>
+      </button>`).join("")}
+  </div>`;
+}
+
+function detailRows(rows) {
+  const filled = rows.filter(([, v]) => v != null && v !== "" && v !== "—");
+  if (!filled.length) return `<p class="empty-hint">Пока нет подробностей за этот день.</p>`;
+  return `<dl class="detail-dl">${filled.map(([k, v]) => `
+    <div class="detail-row"><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(String(v))}</dd></div>`).join("")}</dl>`;
+}
+
+export function renderHealthDetail(id, d) {
+  const titles = {
+    sleep: "Сон",
+    steps: "Шаги",
+    heart: "Пульс",
+    activity: "Активность",
+    bp: "Давление",
+    weight: "Вес",
+    workouts: "Тренировки",
+  };
+  const title = titles[id] || "Здоровье";
+  let body = "";
+  if (id === "sleep") {
+    const q = sleepQualityLabel(d.sleep_min);
+    body = detailRows([
+      ["Длительность", formatSleepDuration(d.sleep_min)],
+      ["Оценка", q],
+      ["Глубокий", d.sleep_deep_min != null ? `${d.sleep_deep_min} мин` : null],
+      ["Лёгкий", d.sleep_light_min != null ? `${d.sleep_light_min} мин` : null],
+      ["REM", d.sleep_rem_min != null ? `${d.sleep_rem_min} мин` : null],
+      ["В кровати", formatSleepDuration(d.sleep_in_bed_min)],
+      ["Пульс сна", d.sleep_avg_hr != null ? `${d.sleep_avg_hr} уд/мин` : null],
+    ]);
+  } else if (id === "steps") {
+    const distKm = d.steps_distance_m != null ? `${(Number(d.steps_distance_m) / 1000).toFixed(1)} км` : null;
+    body = detailRows([
+      ["Шаги", d.steps],
+      ["Дистанция", distKm],
+      ["Ккал активности", d.steps_calories],
+      ["Источник", "Mi Fitness"],
+    ]);
+  } else if (id === "heart") {
+    const hr = d.heart_rate || {};
+    body = detailRows([
+      ["Средний", hr.avg != null ? `${hr.avg} уд/мин` : null],
+      ["Минимум", hr.min != null ? `${hr.min}` : null],
+      ["Максимум", hr.max != null ? `${hr.max}` : null],
+      ["Замеров", hr.samples],
+    ]);
+  } else if (id === "activity") {
+    const distKm = d.steps_distance_m != null ? `${(Number(d.steps_distance_m) / 1000).toFixed(1)} км` : null;
+    const workouts = d.workouts || [];
+    body = detailRows([
+      ["Ккал", d.steps_calories],
+      ["Дистанция", distKm],
+      ["Шаги", d.steps],
+      ["Тренировок", workouts.length || null],
+    ]);
+    if (workouts.length) {
+      body += `<ul class="list compact">${workouts.map((w) => {
+        const sub = [
+          w.duration_min && `${w.duration_min} мин`,
+          w.distance_m && `${(Number(w.distance_m) / 1000).toFixed(1)} км`,
+          w.calories && `${w.calories} ккал`,
+          w.avg_hr && `пульс ${w.avg_hr}`,
+        ].filter(Boolean).join(" · ");
+        return `<li><span>${escapeHtml(w.name || "Тренировка")}${sub ? ` — ${escapeHtml(sub)}` : ""}</span></li>`;
+      }).join("")}</ul>`;
+    }
+  } else if (id === "bp") {
+    const bp = latestBpReading(d.bp);
+    const avg = (() => {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 7);
+      const all = Object.values(state.days).flatMap((x) => x.bp || []);
+      const window = all.filter((r) => new Date(r.measured_at) >= cutoff);
+      if (!window.length) return null;
+      const sys = window.reduce((s, r) => s + Number(r.systolic), 0) / window.length;
+      const dia = window.reduce((s, r) => s + Number(r.diastolic), 0) / window.length;
+      return { systolic: Math.round(sys), diastolic: Math.round(dia) };
+    })();
+    body = detailRows([
+      ["Последнее", bp ? `${bp.systolic}/${bp.diastolic}` : null],
+      ["Пульс", bp?.pulse],
+      ["Среднее 7д", avg ? `${avg.systolic}/${avg.diastolic}` : null],
+      ["Замеров сегодня", (d.bp || []).length || null],
+    ]);
+    const list = sortBpNewestFirst(d.bp);
+    if (list.length) {
+      body += `<ul class="list compact">${list.map((r) => {
+        const t = String(r.measured_at || "");
+        const hh = t.includes("T") ? t.split("T")[1].slice(0, 5) : "";
+        return `<li><span>${r.systolic}/${r.diastolic}${r.pulse ? ` · ${r.pulse}` : ""}${hh ? ` · ${hh}` : ""}${r.source ? ` · ${escapeHtml(r.source)}` : ""}</span></li>`;
+      }).join("")}</ul>`;
+    }
+  } else if (id === "weight") {
+    const bc = d.body_composition;
+    const weightVal = bc?.weight_kg ?? d.weight_kg;
+    body = detailRows([
+      ["Вес", weightVal != null ? `${weightVal} кг` : null],
+      ["ИМТ", bc?.bmi],
+      ["Жир", bc?.body_fat_pct != null ? `${bc.body_fat_pct}%` : null],
+      ["Мышцы", bc?.muscle_kg != null ? `${bc.muscle_kg} кг` : null],
+      ["Вода", bc?.water_pct != null ? `${bc.water_pct}%` : null],
+      ["Кость", bc?.bone_kg != null ? `${bc.bone_kg} кг` : null],
+      ["Висц. жир", bc?.visceral_fat],
+      ["Возраст тела", bc?.body_age],
+      ["BMR", bc?.bmr_kcal != null ? `${bc.bmr_kcal} ккал` : null],
+      ["Оценка", bc?.body_score],
+      ["Источник", bc?.source || null],
+    ]);
+  } else if (id === "workouts") {
+    const workouts = d.workouts || [];
+    if (!workouts.length) {
+      body = `<p class="empty-hint">За этот день тренировок нет.</p>`;
+    } else {
+      body = `<ul class="list">${workouts.map((w) => {
+        const sub = [
+          w.duration_min && `${w.duration_min} мин`,
+          w.distance_m && `${(Number(w.distance_m) / 1000).toFixed(1)} км`,
+          w.calories && `${w.calories} ккал`,
+          w.avg_hr && `пульс ${w.avg_hr}`,
+        ].filter(Boolean).join(" · ");
+        return `<li><span><strong>${escapeHtml(w.name || "Тренировка")}</strong>${sub ? `<br><span class="sub">${escapeHtml(sub)}</span>` : ""}</span></li>`;
+      }).join("")}</ul>`;
+    }
+  } else {
+    body = `<p class="empty-hint">Нет данных.</p>`;
+  }
+
+  return `
+    <div class="health-sheet" id="health-sheet" role="dialog" aria-modal="true" aria-labelledby="health-sheet-title">
+      <div class="health-sheet-backdrop" data-health-close="1"></div>
+      <div class="health-sheet-panel">
+        <div class="health-sheet-bar">
+          <button type="button" class="btn soft sheet-back" data-health-close="1" aria-label="Назад">‹ Назад</button>
+          <h2 id="health-sheet-title" class="health-sheet-title">${escapeHtml(title)}</h2>
+          <span class="sheet-spacer"></span>
+        </div>
+        <div class="health-sheet-body">
+          <p class="panel-sub">${escapeHtml(dateLabelRu(d.date || state.date))} · данные хаба</p>
+          ${body}
+        </div>
+      </div>
+    </div>`;
+}
 
 export function fmtNum(v, suffix = "") {
   if (v == null || v === "") return null;
@@ -174,36 +416,12 @@ function latestBp() {
   return latestBpReading(day().bp);
 }
 
-function avgBp(daysCount = 7) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - daysCount);
-  const all = Object.values(state.days).flatMap((d) => d.bp || []);
-  const window = all.filter((r) => new Date(r.measured_at) >= cutoff);
-  if (!window.length) return null;
-  const sys = window.reduce((s, r) => s + Number(r.systolic), 0) / window.length;
-  const dia = window.reduce((s, r) => s + Number(r.diastolic), 0) / window.length;
-  return { systolic: Math.round(sys), diastolic: Math.round(dia) };
-}
-
 export function renderToday() {
   const d = day();
   const bp = latestBp();
-  const avg = avgBp(7);
   const totals = nutritionTotals(d.meals);
-  const high = bp && (bp.systolic >= 140 || bp.diastolic >= 90);
-  const sleepH = d.sleep_min ? `${Math.floor(d.sleep_min / 60)}ч ${d.sleep_min % 60}м` : "—";
-  const sleepStages = [
-    d.sleep_deep_min != null ? `глуб. ${d.sleep_deep_min}м` : null,
-    d.sleep_light_min != null ? `лёгк. ${d.sleep_light_min}м` : null,
-    d.sleep_rem_min != null ? `REM ${d.sleep_rem_min}м` : null,
-  ].filter(Boolean).join(" · ");
-  const inBed = d.sleep_in_bed_min != null && d.sleep_min != null && d.sleep_in_bed_min !== d.sleep_min
-    ? `в кровати ${Math.floor(d.sleep_in_bed_min / 60)}ч ${d.sleep_in_bed_min % 60}м`
-    : null;
-  const sleepSub = [sleepStages || "как в Mi Fitness (время сна)", inBed].filter(Boolean).join(" · ");
   const bc = d.body_composition;
   const weightVal = bc?.weight_kg ?? d.weight_kg ?? state.profile.weight_kg_latest ?? "—";
-  const weightSub = bc?.bmi != null ? `ИМТ ${bc.bmi} · Xiaomi Home` : (bc?.source === "xiaomi_home" ? "Xiaomi Home" : "кг");
   const target = state.profile.coaching_calorie_target || {};
   let kcalVs = "";
   let goalClass = "goal-pill";
@@ -215,18 +433,8 @@ export function renderToday() {
     else if (cal > hi) { kcalVs = `выше цели на ${cal - hi}`; goalClass = "goal-pill warn"; }
     else kcalVs = `в цели ${lo}–${hi}`;
   }
-  const bpList = sortBpNewestFirst(d.bp);
   const isEmptyDay = !totals.calories && d.steps == null && d.sleep_min == null && !bp && weightVal === "—";
-  const miConnected = Boolean(state.collectorStatus?.connections?.xiaomi?.connected);
-  const distKm = d.steps_distance_m != null ? (Number(d.steps_distance_m) / 1000).toFixed(1) : null;
-  const stepsSub = [
-    distKm != null ? `${distKm} км` : null,
-    d.steps_calories != null ? `${d.steps_calories} ккал` : null,
-    miConnected ? "Mi Fitness · облако" : "ручной ввод / Xiaomi нет",
-  ].filter(Boolean).join(" · ");
-  const sleepHr = d.sleep_avg_hr != null ? `пульс сна ${d.sleep_avg_hr}` : null;
-  const sleepSubFull = [sleepSub, sleepHr].filter(Boolean).join(" · ");
-  const workouts = d.workouts || [];
+  const sheet = state.healthDetail ? renderHealthDetail(state.healthDetail, d) : "";
   return `
     <section class="panel stack-gap">
       <div class="panel-head">
@@ -237,72 +445,43 @@ export function renderToday() {
       ${hasManualLocks(d) ? `<button class="btn soft" id="unlock-cloud" type="button">Снова из облака</button>` : ""}
       ${isEmptyDay ? emptyState("День пока пустой", "Подключите источники и нажмите «Обновить».", "refresh", "Обновить данные") : ""}
     </section>
-    <div class="day-columns">
-      <section class="day-col day-col-health panel stack-gap">
-        <div class="panel-head">
+    <section class="panel stack-gap health-panel">
+      <div class="panel-head health-head">
+        <div>
           <h2 class="panel-title">Здоровье</h2>
-          <p class="panel-sub">Mi Fitness · сон, активность, пульс · hub ${escapeHtml(state.assetVersion || "")}</p>
+          <p class="panel-sub">Сон, активность, пульс, давление, вес · нажмите плитку</p>
         </div>
-        <div class="cards cards-in-col">
-          <div class="card"><h2>Сон</h2><div class="value">${sleepH}</div><div class="sub">${sleepSubFull}</div></div>
-          <div class="card"><h2>Шаги</h2><div class="value">${d.steps ?? "—"}</div><div class="sub">${stepsSub}</div></div>
-          <div class="card"><h2>Пульс</h2>
-            <div class="value">${d.heart_rate?.avg ?? "—"}</div>
-            <div class="sub">${d.heart_rate
-              ? `мин ${d.heart_rate.min ?? "—"} / макс ${d.heart_rate.max ?? "—"}${d.heart_rate.samples != null ? ` · ${d.heart_rate.samples} зам.` : ""}`
-              : "нет данных Mi Fitness"}</div>
-          </div>
-          <div class="card"><h2>Активность</h2>
-            <div class="value">${d.steps_calories != null ? d.steps_calories : "—"}</div>
-            <div class="sub">${[
-              distKm != null ? `${distKm} км` : null,
-              workouts.length ? `тренировок ${workouts.length}` : "без тренировок",
-            ].filter(Boolean).join(" · ")}</div>
-          </div>
-          ${workouts.length ? `<div class="card wide"><h2>Тренировки</h2><ul class="list">${workouts.map((w) => {
-            const sub = [
-              w.duration_min && `${w.duration_min} мин`,
-              w.distance_m && `${(Number(w.distance_m) / 1000).toFixed(1)} км`,
-              w.calories && `${w.calories} ккал`,
-              w.avg_hr && `пульс ${w.avg_hr}`,
-            ].filter(Boolean).join(" · ");
-            return `<li><span>${escapeHtml(w.name || "Тренировка")}${sub ? ` — ${escapeHtml(sub)}` : ""}</span></li>`;
-          }).join("")}</ul><div class="sub">из Mi Fitness</div></div>` : ""}
+        <button class="btn soft icon-btn" id="health-add" type="button" aria-label="Добавить измерение" title="Добавить">+</button>
+      </div>
+      ${renderHealthTiles(d)}
+      <button class="health-manage" id="health-manage" type="button">
+        <span>Источники и функции здоровья</span>
+        <span aria-hidden="true">›</span>
+      </button>
+    </section>
+    <section class="panel stack-gap">
+      <div class="panel-head">
+        <h2 class="panel-title">День</h2>
+        <p class="panel-sub">Питание и состав тела</p>
+      </div>
+      <div class="cards">
+        ${bc && renderBodyMetrics(bc) ? `<div class="card wide"><h2>Состав тела</h2>${renderBodyMetrics(bc)}</div>` : ""}
+        <div class="card wide">
+          <h2>Еда</h2>
+          <div class="value">${Math.round(totals.calories)} ккал</div>
+          <div class="sub">Б ${Math.round(totals.protein_g)} · Ж ${Math.round(totals.fat_g)} · У ${Math.round(totals.carbs_g)}</div>
+          ${kcalVs ? `<div class="${goalClass}">● ${kcalVs}</div>` : ""}
+          <ul class="list">${d.meals.length
+            ? d.meals.map((m, i) => {
+                const label = `${escapeHtml(MEAL_RU[m.meal_type] || m.meal_type)}: ${escapeHtml(m.name)}`;
+                return m.source === "fatsecret"
+                  ? `<li><span>${label}</span></li>`
+                  : `<li><span>${label}</span><button class="btn ghost" data-del-meal="${i}" type="button">×</button></li>`;
+              }).join("")
+            : `<li class="empty">Пока пусто — FatSecret + «Обновить»</li>`}</ul>
         </div>
-      </section>
-      <section class="day-col day-col-day panel stack-gap">
-        <div class="panel-head">
-          <h2 class="panel-title">День</h2>
-          <p class="panel-sub">Давление, вес, питание</p>
-        </div>
-        <div class="cards cards-in-col">
-          <div class="card"><h2>Давление</h2><div class="value ${high ? "high" : ""}">${bp ? `${bp.systolic}/${bp.diastolic}` : "—"}</div>
-            <div class="sub">${avg ? `среднее 7д ${avg.systolic}/${avg.diastolic}` : "нет среднего"}</div>
-            ${bpList.length > 1 ? `<ul class="list compact">${bpList.slice(0, 4).map((r) => {
-              const t = String(r.measured_at || "");
-              const hh = t.includes("T") ? t.split("T")[1].slice(0, 5) : "";
-              return `<li><span>${r.systolic}/${r.diastolic}${r.pulse ? ` · ${r.pulse}` : ""}${hh ? ` · ${hh}` : ""}</span></li>`;
-            }).join("")}</ul>` : ""}
-          </div>
-          <div class="card"><h2>Вес</h2><div class="value">${weightVal}</div><div class="sub">${weightSub}</div></div>
-          ${bc && renderBodyMetrics(bc) ? `<div class="card wide"><h2>Состав тела</h2>${renderBodyMetrics(bc)}</div>` : ""}
-          <div class="card wide">
-            <h2>Еда</h2>
-            <div class="value">${Math.round(totals.calories)} ккал</div>
-            <div class="sub">Б ${Math.round(totals.protein_g)} · Ж ${Math.round(totals.fat_g)} · У ${Math.round(totals.carbs_g)}</div>
-            ${kcalVs ? `<div class="${goalClass}">● ${kcalVs}</div>` : ""}
-            <ul class="list">${d.meals.length
-              ? d.meals.map((m, i) => {
-                  const label = `${escapeHtml(MEAL_RU[m.meal_type] || m.meal_type)}: ${escapeHtml(m.name)}`;
-                  return m.source === "fatsecret"
-                    ? `<li><span>${label}</span></li>`
-                    : `<li><span>${label}</span><button class="btn ghost" data-del-meal="${i}" type="button">×</button></li>`;
-                }).join("")
-              : `<li class="empty">Пока пусто — FatSecret + «Обновить»</li>`}</ul>
-          </div>
-        </div>
-      </section>
-    </div>
+      </div>
+    </section>
     <div class="coach-cta">
       <p class="coach-cta-kicker">Главное действие</p>
       <button class="btn primary btn-xl" id="ask-coach" type="button">Отправить день коучу</button>
@@ -311,7 +490,8 @@ export function renderToday() {
         <button class="btn ghost" id="share-report" type="button">Поделиться</button>
         <button class="btn ghost" id="refresh-data-tab" type="button">Обновить данные</button>
       </div>
-    </div>`;
+    </div>
+    ${sheet}`;
 }
 
 export function renderWeek() {
