@@ -106,6 +106,17 @@ async def hub_pin_guard(request: Request, call_next):
     return JSONResponse({"detail": "PIN required"}, status_code=401)
 
 
+@app.middleware("http")
+async def hub_asset_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/hub/") and (
+        path.endswith(".js") or path.endswith(".css") or path.endswith(".html") or path.rstrip("/").endswith("/hub")
+    ):
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return response
+
+
 class Macros(BaseModel):
     calories: float = 0
     protein: float = 0
