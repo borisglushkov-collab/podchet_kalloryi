@@ -224,6 +224,113 @@ def test_pick_sleep_ignores_yesterday_nap_when_no_wake_today():
     assert sleep["total_min"] == 394
 
 
+def test_pick_sleep_does_not_reuse_yesterday_staged_night():
+    """If today's night is not synced yet, do not show yesterday's wake-day sleep."""
+    items = [
+        {
+            "time": _ts(2026, 9, 10, 7, 21),
+            "value": {
+                "bedtime": _ts(2026, 9, 10, 1, 12),
+                "wake_up_time": _ts(2026, 9, 10, 7, 21),
+                "device_bedtime": _ts(2026, 9, 10, 1, 12),
+                "device_wake_up_time": _ts(2026, 9, 10, 7, 21),
+                "duration": 340,
+                "sleep_deep_duration": 80,
+                "sleep_light_duration": 219,
+                "sleep_rem_duration": 41,
+                "avg_hr": 65,
+            },
+        }
+    ]
+    assert _pick_sleep_for_day(items, date(2026, 9, 10))["total_min"] == 340
+    assert _pick_sleep_for_day(items, date(2026, 9, 11)) is None
+
+
+def test_pick_sleep_sums_same_night_fragments_not_evening_nap():
+    """Mi Fitness may split one night into bout rows sharing device bedtime/wake."""
+    device_bed = _ts(2026, 9, 9, 1, 28)
+    device_wake = _ts(2026, 9, 9, 8, 0)
+    items = [
+        {
+            "time": _ts(2026, 9, 8, 7, 51),
+            "value": {
+                "bedtime": _ts(2026, 9, 8, 0, 55),
+                "wake_up_time": _ts(2026, 9, 8, 7, 51),
+                "device_bedtime": _ts(2026, 9, 8, 0, 55),
+                "device_wake_up_time": _ts(2026, 9, 8, 7, 51),
+                "duration": 362,
+                "sleep_deep_duration": 83,
+                "sleep_light_duration": 261,
+                "sleep_rem_duration": 18,
+            },
+        },
+        {
+            "time": _ts(2026, 9, 9, 2, 24),
+            "value": {
+                "bedtime": _ts(2026, 9, 9, 1, 28),
+                "wake_up_time": _ts(2026, 9, 9, 2, 24),
+                "device_bedtime": device_bed,
+                "device_wake_up_time": device_wake,
+                "duration": 56,
+                "sleep_duration": 180,
+                "sleep_deep_duration": 0,
+                "sleep_light_duration": 0,
+            },
+        },
+        {
+            "time": _ts(2026, 9, 9, 3, 52),
+            "value": {
+                "bedtime": _ts(2026, 9, 9, 2, 36),
+                "wake_up_time": _ts(2026, 9, 9, 3, 52),
+                "device_bedtime": device_bed,
+                "device_wake_up_time": device_wake,
+                "duration": 76,
+                "sleep_duration": 180,
+            },
+        },
+        {
+            "time": _ts(2026, 9, 9, 5, 35),
+            "value": {
+                "bedtime": _ts(2026, 9, 9, 4, 4),
+                "wake_up_time": _ts(2026, 9, 9, 5, 35),
+                "device_bedtime": device_bed,
+                "device_wake_up_time": device_wake,
+                "duration": 91,
+                "sleep_duration": 180,
+            },
+        },
+        {
+            "time": _ts(2026, 9, 9, 8, 0),
+            "value": {
+                "bedtime": _ts(2026, 9, 9, 5, 48),
+                "wake_up_time": _ts(2026, 9, 9, 8, 0),
+                "device_bedtime": device_bed,
+                "device_wake_up_time": device_wake,
+                "duration": 132,
+                "sleep_duration": 180,
+            },
+        },
+        {
+            "time": _ts(2026, 9, 9, 20, 2),
+            "value": {
+                "bedtime": _ts(2026, 9, 9, 19, 15),
+                "wake_up_time": _ts(2026, 9, 9, 20, 2),
+                "device_bedtime": _ts(2026, 9, 9, 19, 15),
+                "device_wake_up_time": _ts(2026, 9, 9, 20, 2),
+                "duration": 47,
+            },
+        },
+    ]
+    sleep = _pick_sleep_for_day(items, date(2026, 9, 9))
+    assert sleep is not None
+    assert sleep["total_min"] == 56 + 76 + 91 + 132
+    assert sleep["in_bed_min"] == 392
+    # Prior staged night must stay on its own day.
+    prior = _pick_sleep_for_day(items, date(2026, 9, 8))
+    assert prior is not None
+    assert prior["total_min"] == 362
+
+
 def test_filter_scale_never_falls_back_to_other_days():
     records = [
         {"measured_at": "2026-08-18T08:00:00", "weight": 110},

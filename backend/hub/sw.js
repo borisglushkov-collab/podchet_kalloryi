@@ -7,11 +7,11 @@ const SHELL = [
   "/hub/index.html",
   `/hub/styles.css?v=${encodeURIComponent(VER)}`,
   `/hub/js/main.js?v=${encodeURIComponent(VER)}`,
-  "/hub/js/logic.js",
-  "/hub/js/api.js",
-  "/hub/js/state.js",
-  "/hub/js/ui.js",
-  "/hub/js/render.js",
+  `/hub/js/logic.js?v=${encodeURIComponent(VER)}`,
+  `/hub/js/api.js?v=${encodeURIComponent(VER)}`,
+  `/hub/js/state.js?v=${encodeURIComponent(VER)}`,
+  `/hub/js/ui.js?v=${encodeURIComponent(VER)}`,
+  `/hub/js/render.js?v=${encodeURIComponent(VER)}`,
   "/hub/manifest.json",
   "/hub/icon.svg",
 ];
@@ -50,7 +50,7 @@ self.addEventListener("fetch", (event) => {
 
   if (isShell(url)) {
     event.respondWith(
-      fetch(event.request)
+      fetch(event.request, { cache: "no-store" })
         .then((resp) => {
           if (resp.ok) {
             const copy = resp.clone();
@@ -58,9 +58,15 @@ self.addEventListener("fetch", (event) => {
           }
           return resp;
         })
-        .catch(() =>
-          caches.match(event.request).then((cached) => cached || caches.match(url.pathname)),
-        ),
+        .catch(async () => {
+          const cached = await caches.match(event.request);
+          if (cached) return cached;
+          if (!url.search) {
+            const verHit = await caches.match(`${url.pathname}?v=${encodeURIComponent(VER)}`);
+            if (verHit) return verHit;
+          }
+          return caches.match(url.pathname);
+        }),
     );
     return;
   }

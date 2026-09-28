@@ -130,6 +130,28 @@ input, select, textarea, button {
   animation: soft-in 0.65s ease 0.06s both;
 }
 
+.day-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+  animation: soft-in 0.65s ease 0.06s both;
+}
+
+.day-col {
+  margin: 0;
+  min-width: 0;
+}
+
+.day-col-health {
+  box-shadow: inset 3px 0 0 rgba(45, 122, 94, 0.45);
+}
+
+.cards-in-col {
+  grid-template-columns: 1fr 1fr;
+  animation: none;
+}
+
 .card {
   background: var(--surface);
   backdrop-filter: blur(10px);
@@ -670,9 +692,16 @@ details summary {
   font-weight: 700;
 }
 
+@media (max-width: 720px) {
+  .day-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 420px) {
   .source-grid,
-  .goal-strip {
+  .goal-strip,
+  .cards-in-col {
     grid-template-columns: 1fr;
   }
 
@@ -687,7 +716,7 @@ details summary {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .stage, .cards, .actions, .panel, .coach-cta, .coach-hero, .lift, .source-card { animation: none; }
+  .stage, .cards, .day-columns, .actions, .panel, .coach-cta, .coach-hero, .lift, .source-card { animation: none; }
 }
 
 /* —— Compact stage on non-today tabs —— */
