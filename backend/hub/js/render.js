@@ -217,6 +217,16 @@ export function renderToday() {
   }
   const bpList = sortBpNewestFirst(d.bp);
   const isEmptyDay = !totals.calories && d.steps == null && d.sleep_min == null && !bp && weightVal === "—";
+  const miConnected = Boolean(state.collectorStatus?.connections?.xiaomi?.connected);
+  const distKm = d.steps_distance_m != null ? (Number(d.steps_distance_m) / 1000).toFixed(1) : null;
+  const stepsSub = [
+    distKm != null ? `${distKm} км` : null,
+    d.steps_calories != null ? `${d.steps_calories} ккал` : null,
+    miConnected ? "Mi Fitness · облако" : "ручной ввод / Xiaomi нет",
+  ].filter(Boolean).join(" · ");
+  const sleepHr = d.sleep_avg_hr != null ? `пульс сна ${d.sleep_avg_hr}` : null;
+  const sleepSubFull = [sleepSub, sleepHr].filter(Boolean).join(" · ");
+  const workouts = d.workouts || [];
   return `
     <section class="panel stack-gap">
       <div class="panel-head">
@@ -227,40 +237,71 @@ export function renderToday() {
       ${hasManualLocks(d) ? `<button class="btn soft" id="unlock-cloud" type="button">Снова из облака</button>` : ""}
       ${isEmptyDay ? emptyState("День пока пустой", "Подключите источники и нажмите «Обновить».", "refresh", "Обновить данные") : ""}
     </section>
-    <div class="cards">
-      <div class="card"><h2>Давление</h2><div class="value ${high ? "high" : ""}">${bp ? `${bp.systolic}/${bp.diastolic}` : "—"}</div>
-        <div class="sub">${avg ? `среднее 7д ${avg.systolic}/${avg.diastolic}` : "нет среднего"}</div>
-        ${bpList.length > 1 ? `<ul class="list compact">${bpList.slice(0, 4).map((r) => {
-          const t = String(r.measured_at || "");
-          const hh = t.includes("T") ? t.split("T")[1].slice(0, 5) : "";
-          return `<li><span>${r.systolic}/${r.diastolic}${r.pulse ? ` · ${r.pulse}` : ""}${hh ? ` · ${hh}` : ""}</span></li>`;
-        }).join("")}</ul>` : ""}
-      </div>
-      <div class="card"><h2>Сон</h2><div class="value">${sleepH}</div><div class="sub">${sleepSub}</div></div>
-      <div class="card"><h2>Шаги</h2><div class="value">${d.steps ?? "—"}</div>
-        <div class="sub">${state.collectorStatus?.connections?.xiaomi?.connected ? "Mi Fitness · облако" : "ручной ввод / Xiaomi нет"}</div></div>
-      <div class="card"><h2>Вес</h2><div class="value">${weightVal}</div><div class="sub">${weightSub}</div></div>
-      ${bc && renderBodyMetrics(bc) ? `<div class="card wide"><h2>Состав тела</h2>${renderBodyMetrics(bc)}</div>` : ""}
-      ${d.heart_rate ? `<div class="card"><h2>Пульс</h2><div class="value">${d.heart_rate.avg ?? "—"}</div>
-        <div class="sub">мин ${d.heart_rate.min ?? "—"} / макс ${d.heart_rate.max ?? "—"}</div></div>` : ""}
-      ${(d.workouts || []).length ? `<div class="card wide"><h2>Тренировки</h2><ul class="list">${d.workouts.map((w) => {
-        const sub = [w.duration_min && `${w.duration_min} мин`, w.calories && `${w.calories} ккал`, w.avg_hr && `пульс ${w.avg_hr}`].filter(Boolean).join(" · ");
-        return `<li><span>${escapeHtml(w.name || "Тренировка")}${sub ? ` — ${escapeHtml(sub)}` : ""}</span></li>`;
-      }).join("")}</ul></div>` : ""}
-      <div class="card wide">
-        <h2>Еда</h2>
-        <div class="value">${Math.round(totals.calories)} ккал</div>
-        <div class="sub">Б ${Math.round(totals.protein_g)} · Ж ${Math.round(totals.fat_g)} · У ${Math.round(totals.carbs_g)}</div>
-        ${kcalVs ? `<div class="${goalClass}">● ${kcalVs}</div>` : ""}
-        <ul class="list">${d.meals.length
-          ? d.meals.map((m, i) => {
-              const label = `${escapeHtml(MEAL_RU[m.meal_type] || m.meal_type)}: ${escapeHtml(m.name)}`;
-              return m.source === "fatsecret"
-                ? `<li><span>${label}</span></li>`
-                : `<li><span>${label}</span><button class="btn ghost" data-del-meal="${i}" type="button">×</button></li>`;
-            }).join("")
-          : `<li class="empty">Пока пусто — FatSecret + «Обновить»</li>`}</ul>
-      </div>
+    <div class="day-columns">
+      <section class="day-col day-col-health panel stack-gap">
+        <div class="panel-head">
+          <h2 class="panel-title">Здоровье</h2>
+          <p class="panel-sub">Mi Fitness · сон, активность, пульс</p>
+        </div>
+        <div class="cards cards-in-col">
+          <div class="card"><h2>Сон</h2><div class="value">${sleepH}</div><div class="sub">${sleepSubFull}</div></div>
+          <div class="card"><h2>Шаги</h2><div class="value">${d.steps ?? "—"}</div><div class="sub">${stepsSub}</div></div>
+          <div class="card"><h2>Пульс</h2>
+            <div class="value">${d.heart_rate?.avg ?? "—"}</div>
+            <div class="sub">${d.heart_rate
+              ? `мин ${d.heart_rate.min ?? "—"} / макс ${d.heart_rate.max ?? "—"}${d.heart_rate.samples != null ? ` · ${d.heart_rate.samples} зам.` : ""}`
+              : "нет данных Mi Fitness"}</div>
+          </div>
+          <div class="card"><h2>Активность</h2>
+            <div class="value">${d.steps_calories != null ? d.steps_calories : "—"}</div>
+            <div class="sub">${[
+              distKm != null ? `${distKm} км` : null,
+              workouts.length ? `тренировок ${workouts.length}` : "без тренировок",
+            ].filter(Boolean).join(" · ")}</div>
+          </div>
+          ${workouts.length ? `<div class="card wide"><h2>Тренировки</h2><ul class="list">${workouts.map((w) => {
+            const sub = [
+              w.duration_min && `${w.duration_min} мин`,
+              w.distance_m && `${(Number(w.distance_m) / 1000).toFixed(1)} км`,
+              w.calories && `${w.calories} ккал`,
+              w.avg_hr && `пульс ${w.avg_hr}`,
+            ].filter(Boolean).join(" · ");
+            return `<li><span>${escapeHtml(w.name || "Тренировка")}${sub ? ` — ${escapeHtml(sub)}` : ""}</span></li>`;
+          }).join("")}</ul><div class="sub">из Mi Fitness</div></div>` : ""}
+        </div>
+      </section>
+      <section class="day-col day-col-day panel stack-gap">
+        <div class="panel-head">
+          <h2 class="panel-title">День</h2>
+          <p class="panel-sub">Давление, вес, питание</p>
+        </div>
+        <div class="cards cards-in-col">
+          <div class="card"><h2>Давление</h2><div class="value ${high ? "high" : ""}">${bp ? `${bp.systolic}/${bp.diastolic}` : "—"}</div>
+            <div class="sub">${avg ? `среднее 7д ${avg.systolic}/${avg.diastolic}` : "нет среднего"}</div>
+            ${bpList.length > 1 ? `<ul class="list compact">${bpList.slice(0, 4).map((r) => {
+              const t = String(r.measured_at || "");
+              const hh = t.includes("T") ? t.split("T")[1].slice(0, 5) : "";
+              return `<li><span>${r.systolic}/${r.diastolic}${r.pulse ? ` · ${r.pulse}` : ""}${hh ? ` · ${hh}` : ""}</span></li>`;
+            }).join("")}</ul>` : ""}
+          </div>
+          <div class="card"><h2>Вес</h2><div class="value">${weightVal}</div><div class="sub">${weightSub}</div></div>
+          ${bc && renderBodyMetrics(bc) ? `<div class="card wide"><h2>Состав тела</h2>${renderBodyMetrics(bc)}</div>` : ""}
+          <div class="card wide">
+            <h2>Еда</h2>
+            <div class="value">${Math.round(totals.calories)} ккал</div>
+            <div class="sub">Б ${Math.round(totals.protein_g)} · Ж ${Math.round(totals.fat_g)} · У ${Math.round(totals.carbs_g)}</div>
+            ${kcalVs ? `<div class="${goalClass}">● ${kcalVs}</div>` : ""}
+            <ul class="list">${d.meals.length
+              ? d.meals.map((m, i) => {
+                  const label = `${escapeHtml(MEAL_RU[m.meal_type] || m.meal_type)}: ${escapeHtml(m.name)}`;
+                  return m.source === "fatsecret"
+                    ? `<li><span>${label}</span></li>`
+                    : `<li><span>${label}</span><button class="btn ghost" data-del-meal="${i}" type="button">×</button></li>`;
+                }).join("")
+              : `<li class="empty">Пока пусто — FatSecret + «Обновить»</li>`}</ul>
+          </div>
+        </div>
+      </section>
     </div>
     <div class="coach-cta">
       <p class="coach-cta-kicker">Главное действие</p>

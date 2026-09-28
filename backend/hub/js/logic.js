@@ -30,7 +30,11 @@ export const emptyDay = (date) => ({
   sleep_light_min: null,
   sleep_rem_min: null,
   sleep_in_bed_min: null,
+  sleep_avg_hr: null,
   steps: null,
+  steps_distance_m: null,
+  steps_calories: null,
+  heart_rate: null,
   weight_kg: null,
   body_composition: null,
   notes: "",
@@ -117,6 +121,10 @@ export function applySnapshotToDay(d, snap, { force = false, onWeight } = {}) {
   ) {
     d.steps = Number(stepCount);
   }
+  if (snap.steps && (force || snap.source === "mi_fitness_auto" || d.steps_distance_m == null)) {
+    if (snap.steps.distance_m != null) d.steps_distance_m = Number(snap.steps.distance_m);
+    if (snap.steps.calories != null) d.steps_calories = Number(snap.steps.calories);
+  }
   const sleepMin = snap.sleep?.total_min ?? snap.sleep?.duration_min;
   const cloudSleep = snap.source === "mi_fitness_auto";
   if (
@@ -130,12 +138,15 @@ export function applySnapshotToDay(d, snap, { force = false, onWeight } = {}) {
       if (snap.sleep?.rem_min != null) d.sleep_rem_min = Number(snap.sleep.rem_min);
       if (snap.sleep?.in_bed_min != null) d.sleep_in_bed_min = Number(snap.sleep.in_bed_min);
       else d.sleep_in_bed_min = null;
+      if (snap.sleep?.avg_hr != null) d.sleep_avg_hr = Number(snap.sleep.avg_hr);
+      else d.sleep_avg_hr = null;
     } else if (force && cloudSleep && Object.prototype.hasOwnProperty.call(snap, "sleep") && snap.sleep == null) {
       d.sleep_min = null;
       d.sleep_deep_min = null;
       d.sleep_light_min = null;
       d.sleep_rem_min = null;
       d.sleep_in_bed_min = null;
+      d.sleep_avg_hr = null;
     }
   }
   if (

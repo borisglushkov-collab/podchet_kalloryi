@@ -61,6 +61,27 @@ test("manual locks block cloud overwrite", () => {
   assert.equal(hasManualLocks(d), false);
 });
 
+test("Mi Fitness steps store distance and activity calories", () => {
+  const d = emptyDay("2026-09-28");
+  applySnapshotToDay(
+    d,
+    {
+      source: "mi_fitness_auto",
+      steps: { count: 6244, distance_m: 3755, calories: 312, source: "mi_fitness" },
+      sleep: { total_min: 401, deep_min: 63, light_min: 245, rem_min: 93, avg_hr: 57, in_bed_min: 414 },
+      heart_rate: { avg: 74, min: 49, max: 115, samples: 117 },
+      workouts: [{ name: "Ходьба", duration_min: 10, calories: 49, distance_m: 736 }],
+    },
+    { force: true },
+  );
+  assert.equal(d.steps, 6244);
+  assert.equal(d.steps_distance_m, 3755);
+  assert.equal(d.steps_calories, 312);
+  assert.equal(d.sleep_avg_hr, 57);
+  assert.equal(d.heart_rate.avg, 74);
+  assert.equal(d.workouts.length, 1);
+});
+
 test("week goal stats count days in range", () => {
   const stats = weekGoalStats(
     [
