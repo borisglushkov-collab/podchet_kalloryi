@@ -241,7 +241,7 @@ export function renderToday() {
       <section class="day-col day-col-health panel stack-gap">
         <div class="panel-head">
           <h2 class="panel-title">Здоровье</h2>
-          <p class="panel-sub">Mi Fitness · сон, активность, пульс</p>
+          <p class="panel-sub">Mi Fitness · сон, активность, пульс · hub ${escapeHtml(state.assetVersion || "")}</p>
         </div>
         <div class="cards cards-in-col">
           <div class="card"><h2>Сон</h2><div class="value">${sleepH}</div><div class="sub">${sleepSubFull}</div></div>

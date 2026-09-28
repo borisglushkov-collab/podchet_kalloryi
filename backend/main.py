@@ -1047,15 +1047,17 @@ def _hub_index_html() -> str:
     version = app.version
     return (
         raw.replace("{{HUB_VERSION}}", version)
-        .replace("styles.css?v=ASSET", f"styles.css?v={version}")
-        .replace("js/main.js?v=ASSET", f"js/main.js?v={version}")
+        .replace("ASSET", version)
     )
 
 
 @app.get("/hub/", response_class=HTMLResponse)
 @app.get("/hub/index.html", response_class=HTMLResponse)
 async def hub_index():
-    return HTMLResponse(_hub_index_html())
+    return HTMLResponse(
+        _hub_index_html(),
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.post("/api/reset-session")
