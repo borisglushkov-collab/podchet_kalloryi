@@ -55,8 +55,10 @@ export function mealQtyLabel(item) {
     item.units ?? item.number_of_units ?? item.grams ?? 0,
   );
   if (!Number.isFinite(units) || units <= 0) return "";
+  // Multiply description grams only for serving counts (<20). Weighed items
+  // often have units=192 and desc="192 g" — already grams, do not multiply.
   const desc = String(item.serving_description || item.food_entry_description || "");
-  const gm = desc.match(/(\d+(?:[.,]\d+)?)\s*(?:г|гр|g|gram|grams)\b/i);
+  const gm = units < 20 ? desc.match(/(\d+(?:[.,]\d+)?)\s*(?:г|гр|g|gram|grams)\b/i) : null;
   if (gm) {
     const per = Number(String(gm[1]).replace(",", "."));
     if (Number.isFinite(per) && per > 0) {

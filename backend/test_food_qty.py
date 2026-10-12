@@ -27,3 +27,11 @@ def test_cheese_fractional_serving():
     q = quantity_fields({"grams": 0.3})
     assert q["qty_is_servings"] is True
     assert q["qty_label"].startswith("×0.3")
+
+
+def test_weighed_item_with_same_grams_in_description():
+    """Cucumber: units=192 and desc '192 g' must stay 192 г, not 192×192."""
+    q = quantity_fields({"grams": 192, "food_entry_description": "192 g"})
+    assert q["qty_is_servings"] is False
+    assert q["qty_label"] == "192 г"
+    assert q["grams_estimated"] == 192

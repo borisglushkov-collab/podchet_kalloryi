@@ -36,7 +36,9 @@ def quantity_fields(entry: dict[str, Any]) -> dict[str, Any]:
     desc = str(entry.get("food_entry_description") or entry.get("serving_description") or "").strip()
     grams_from_desc = None
     match = _GRAMS_IN_DESC.search(desc)
-    if match:
+    # Only multiply description grams when units look like servings (<20).
+    # Weighed items often have units=192 and desc="192 g" — that is already grams.
+    if match and 0 < units < SERVING_UNITS_MAX:
         per = float(match.group(1).replace(",", "."))
         grams_from_desc = round(units * per, 1) if units else round(per, 1)
 

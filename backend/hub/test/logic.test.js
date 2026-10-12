@@ -49,6 +49,10 @@ test("mealQtyLabel shows FatSecret servings and real grams", () => {
     mealQtyLabel({ number_of_units: 4, food_entry_description: "100 g" }),
     "4 × 100 г ≈ 400 г",
   );
+  assert.equal(
+    mealQtyLabel({ grams: 192, food_entry_description: "192 g" }),
+    "192 г",
+  );
 });
 
 test("normalizeNutritionItem keeps qty fields from FatSecret", () => {
