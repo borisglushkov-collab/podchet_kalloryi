@@ -47,11 +47,33 @@ test("mealQtyLabel shows FatSecret servings and real grams", () => {
   assert.equal(mealQtyLabel({ qty_label: "150 г" }), "150 г");
   assert.equal(
     mealQtyLabel({ number_of_units: 4, food_entry_description: "100 g" }),
-    "4 × 100 г ≈ 400 г",
+    "400 г",
   );
   assert.equal(
     mealQtyLabel({ grams: 192, food_entry_description: "192 g" }),
     "192 г",
+  );
+  assert.equal(
+    mealQtyLabel({
+      number_of_units: 1.3,
+      food_entry_description: "1.3 servings Пятерочка Помидоры",
+    }),
+    "130 г",
+  );
+  assert.equal(
+    mealQtyLabel({
+      number_of_units: 1.23,
+      food_entry_description: "1.23 servings Мираторг Шашлык из Свиной Шейки",
+    }),
+    "123 г",
+  );
+  assert.equal(
+    mealQtyLabel({
+      number_of_units: 1,
+      food_entry_description: "1 medium Банан",
+      metric_serving_grams: 118,
+    }),
+    "118 г",
   );
 });
 

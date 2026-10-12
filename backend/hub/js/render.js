@@ -484,7 +484,7 @@ export function renderToday() {
               }).join("")
             : `<li class="empty">Пока пусто — FatSecret + «Обновить»</li>`}</ul>
           ${d.meals.some((m) => m.source === "fatsecret")
-            ? `<div class="sub">«ед. FatSecret» — порции дневника (не всегда граммы). Огурец 192 г — уже граммы.</div>`
+            ? `<div class="sub">Граммы как в FatSecret: взвешенные продукты и порции ×100 г. «ед.» — только если размер порции неизвестен.</div>`
             : ""}
         </div>
       </div>

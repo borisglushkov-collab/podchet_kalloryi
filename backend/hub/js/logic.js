@@ -55,19 +55,26 @@ export function mealQtyLabel(item) {
     item.units ?? item.number_of_units ?? item.grams ?? 0,
   );
   if (!Number.isFinite(units) || units <= 0) return "";
-  // Multiply description grams only for serving counts (<20). Weighed items
-  // often have units=192 and desc="192 g" — already grams, do not multiply.
+  if (item.grams_estimated != null && Number(item.grams_estimated) > 0) {
+    return `${Number(item.grams_estimated)} г`;
+  }
   const desc = String(item.serving_description || item.food_entry_description || "");
+  const metric = Number(item.metric_serving_grams ?? item.serving_grams ?? 0);
+  // Multiply description/metric grams only for serving counts (<20). Weighed
+  // items often have units=192 and desc="192 g" — already grams.
+  if (units < 20 && Number.isFinite(metric) && metric > 0) {
+    return `${Math.round(units * metric * 10) / 10} г`;
+  }
   const gm = units < 20 ? desc.match(/(\d+(?:[.,]\d+)?)\s*(?:г|гр|g|gram|grams)\b/i) : null;
   if (gm) {
     const per = Number(String(gm[1]).replace(",", "."));
     if (Number.isFinite(per) && per > 0) {
-      const total = Math.round(units * per * 10) / 10;
-      return `${units} × ${per} г ≈ ${total} г`;
+      return `${Math.round(units * per * 10) / 10} г`;
     }
   }
-  if (item.grams_estimated != null && Number(item.grams_estimated) > 0) {
-    return `${Number(item.grams_estimated)} г`;
+  // Custom/brand diary rows: «1.3 servings …» → 130 г (FatSecret app).
+  if (units < 20 && /\b(?:servings?|порц(?:ия|ии|ий|ию)?)\b/i.test(desc)) {
+    return `${Math.round(units * 100 * 10) / 10} г`;
   }
   if (units >= 20) return `${units} г`;
   return `×${units} ед. FatSecret`;

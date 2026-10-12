@@ -19,7 +19,7 @@ def test_cucumber_grams_stay_grams():
 def test_description_100g_serving_estimates_pack():
     q = quantity_fields({"number_of_units": 4, "food_entry_description": "100 g"})
     assert q["grams_estimated"] == 400.0
-    assert "400" in q["qty_label"]
+    assert q["qty_label"] == "400 г"
     assert q["qty_is_servings"] is False
 
 
@@ -35,3 +35,37 @@ def test_weighed_item_with_same_grams_in_description():
     assert q["qty_is_servings"] is False
     assert q["qty_label"] == "192 г"
     assert q["grams_estimated"] == 192
+
+
+def test_servings_description_uses_100g_like_fatsecret_app():
+    tomatoes = quantity_fields(
+        {
+            "number_of_units": 1.3,
+            "food_entry_description": "1.3 servings Пятерочка Помидоры",
+        }
+    )
+    assert tomatoes["qty_label"] == "130 г"
+    assert tomatoes["grams_estimated"] == 130.0
+    assert tomatoes["qty_is_servings"] is False
+
+    kebab = quantity_fields(
+        {
+            "number_of_units": 1.23,
+            "food_entry_description": "1.23 servings Мираторг Шашлык из Свиной Шейки",
+        }
+    )
+    assert kebab["units"] == 1.23
+    assert kebab["qty_label"] == "123 г"
+    assert kebab["grams_estimated"] == 123.0
+
+
+def test_metric_serving_grams_from_api():
+    q = quantity_fields(
+        {
+            "number_of_units": 1,
+            "food_entry_description": "1 medium Банан",
+            "metric_serving_grams": 118,
+        }
+    )
+    assert q["qty_label"] == "118 г"
+    assert q["grams_estimated"] == 118.0

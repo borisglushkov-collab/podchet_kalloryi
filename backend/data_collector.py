@@ -565,9 +565,11 @@ def _normalize_food_entry(entry: dict[str, Any]) -> dict[str, Any]:
     fat = round(float(entry.get("fat") or 0), 1)
     carbs = round(float(entry.get("carbs") or 0), 1)
     qty = quantity_fields(entry)
+    units = float(qty.get("units") or entry.get("grams") or 0)
     row = {
         "name": str(entry.get("name") or "").strip(),
-        "grams": round(float(qty.get("units") or entry.get("grams") or 0), 1),
+        # Keep FatSecret unit precision (1.23 servings → 123 г, not 1.2).
+        "grams": round(units, 3),
         "calories": round(float(entry.get("calories") or 0), 1),
         "protein": protein,
         "fat": fat,
@@ -583,6 +585,8 @@ def _normalize_food_entry(entry: dict[str, Any]) -> dict[str, Any]:
         row["grams_estimated"] = qty["grams_estimated"]
     if qty.get("serving_description"):
         row["serving_description"] = qty["serving_description"]
+    if entry.get("metric_serving_grams") not in (None, "", 0, 0.0):
+        row["metric_serving_grams"] = float(entry["metric_serving_grams"])
     return row
 
 
