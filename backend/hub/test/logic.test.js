@@ -9,7 +9,9 @@ import {
   hasManualLocks,
   importNutritionMeals,
   latestBpReading,
+  mealQtyLabel,
   mergeProfilesLww,
+  normalizeNutritionItem,
   sleepQualityLabel,
   syncTone,
   weekGoalStats,
@@ -37,6 +39,30 @@ test("FatSecret meals replace when incoming has items", () => {
   assert.equal(d.meals.length, 1);
   assert.equal(d.meals[0].name, "суп");
   assert.equal(d.meals[0].source, "fatsecret");
+});
+
+test("mealQtyLabel shows FatSecret servings and real grams", () => {
+  assert.equal(mealQtyLabel({ grams: 0.3 }), "×0.3 ед. FatSecret");
+  assert.equal(mealQtyLabel({ grams: 192 }), "192 г");
+  assert.equal(mealQtyLabel({ qty_label: "150 г" }), "150 г");
+  assert.equal(
+    mealQtyLabel({ number_of_units: 4, food_entry_description: "100 g" }),
+    "4 × 100 г ≈ 400 г",
+  );
+});
+
+test("normalizeNutritionItem keeps qty fields from FatSecret", () => {
+  const row = normalizeNutritionItem({
+    name: "Омлет",
+    grams: 1,
+    calories: 200,
+    qty_label: "×1 ед. FatSecret",
+    qty_is_servings: true,
+  });
+  assert.equal(row.qty_label, "×1 ед. FatSecret");
+  assert.equal(row.qty_is_servings, true);
+  const inferred = normalizeNutritionItem({ name: "Огурец", grams: 192, calories: 29 });
+  assert.equal(inferred.qty_label, "192 г");
 });
 
 test("force refresh clears sleep when cloud reports null", () => {

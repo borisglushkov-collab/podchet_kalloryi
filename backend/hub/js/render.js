@@ -4,6 +4,7 @@ import {
   formatSleepDuration,
   hasManualLocks,
   latestBpReading,
+  mealQtyLabel,
   nutritionTotals,
   sleepQualityLabel,
   sortBpNewestFirst,
@@ -473,12 +474,18 @@ export function renderToday() {
           ${kcalVs ? `<div class="${goalClass}">● ${kcalVs}</div>` : ""}
           <ul class="list">${d.meals.length
             ? d.meals.map((m, i) => {
-                const label = `${escapeHtml(MEAL_RU[m.meal_type] || m.meal_type)}: ${escapeHtml(m.name)}`;
+                const qty = mealQtyLabel(m);
+                const kcal = m.calories ? `${Math.round(Number(m.calories))} ккал` : "";
+                const bits = [qty, kcal].filter(Boolean).join(" · ");
+                const label = `${escapeHtml(MEAL_RU[m.meal_type] || m.meal_type)}: ${escapeHtml(m.name)}${bits ? ` · ${escapeHtml(bits)}` : ""}`;
                 return m.source === "fatsecret"
                   ? `<li><span>${label}</span></li>`
                   : `<li><span>${label}</span><button class="btn ghost" data-del-meal="${i}" type="button">×</button></li>`;
               }).join("")
             : `<li class="empty">Пока пусто — FatSecret + «Обновить»</li>`}</ul>
+          ${d.meals.some((m) => m.source === "fatsecret")
+            ? `<div class="sub">«ед. FatSecret» — порции дневника (не всегда граммы). Огурец 192 г — уже граммы.</div>`
+            : ""}
         </div>
       </div>
     </section>

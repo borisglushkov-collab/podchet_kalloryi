@@ -277,15 +277,22 @@ def _normalize_entry(e: Any) -> dict[str, Any]:
         e = e.to_dict()
     if not isinstance(e, dict):
         return {"raw": str(e)}
-    return {
+    units = _num(e.get("number_of_units")) or _num(e.get("serving_size"))
+    desc = str(e.get("food_entry_description") or e.get("serving_description") or "").strip()
+    row = {
         "name": e.get("food_entry_name") or e.get("food_name", ""),
         "meal": e.get("meal", ""),
         "calories": _num(e.get("calories")),
         "protein": _num(e.get("protein")),
         "fat": _num(e.get("fat")),
         "carbs": _num(e.get("carbohydrate")),
-        "grams": _num(e.get("number_of_units")) or _num(e.get("serving_size")),
+        "grams": units,
+        "number_of_units": units,
     }
+    if desc:
+        row["food_entry_description"] = desc
+        row["serving_description"] = desc
+    return row
 
 
 def _normalize_day(d: Any) -> dict[str, Any]:

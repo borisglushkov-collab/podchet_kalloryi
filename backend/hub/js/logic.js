@@ -47,18 +47,54 @@ export function countNutritionItems(nutrition) {
   return (nutrition?.meals || []).reduce((n, m) => n + (m.items?.length || 0), 0);
 }
 
+/** FatSecret number_of_units is often servings, not grams (<20 → порции). */
+export function mealQtyLabel(item) {
+  if (!item) return "";
+  if (item.qty_label) return String(item.qty_label);
+  const units = Number(
+    item.units ?? item.number_of_units ?? item.grams ?? 0,
+  );
+  if (!Number.isFinite(units) || units <= 0) return "";
+  const desc = String(item.serving_description || item.food_entry_description || "");
+  const gm = desc.match(/(\d+(?:[.,]\d+)?)\s*(?:г|гр|g|gram|grams)\b/i);
+  if (gm) {
+    const per = Number(String(gm[1]).replace(",", "."));
+    if (Number.isFinite(per) && per > 0) {
+      const total = Math.round(units * per * 10) / 10;
+      return `${units} × ${per} г ≈ ${total} г`;
+    }
+  }
+  if (item.grams_estimated != null && Number(item.grams_estimated) > 0) {
+    return `${Number(item.grams_estimated)} г`;
+  }
+  if (units >= 20) return `${units} г`;
+  return `×${units} ед. FatSecret`;
+}
+
 export function normalizeNutritionItem(it) {
   if (!it) return null;
   const name = String(it.name || it.food_entry_name || it.food_name || "").trim();
   if (!name) return null;
-  return {
+  const units = Number(it.units ?? it.number_of_units ?? it.grams ?? 0);
+  const row = {
     name,
-    grams: Number(it.grams ?? it.number_of_units ?? 0),
+    grams: Number.isFinite(units) ? units : Number(it.grams ?? 0),
     calories: Number(it.calories ?? 0),
     protein: Number(it.protein ?? it.protein_g ?? 0),
     fat: Number(it.fat ?? it.fat_g ?? 0),
     carbs: Number(it.carbs ?? it.carbs_g ?? it.carbohydrate ?? 0),
   };
+  if (it.units != null || it.number_of_units != null) row.units = Number(it.units ?? it.number_of_units);
+  if (it.qty_label) row.qty_label = String(it.qty_label);
+  if (it.qty_is_servings != null) row.qty_is_servings = Boolean(it.qty_is_servings);
+  if (it.grams_estimated != null) row.grams_estimated = Number(it.grams_estimated);
+  const desc = it.serving_description || it.food_entry_description;
+  if (desc) row.serving_description = String(desc);
+  if (!row.qty_label) {
+    const label = mealQtyLabel(row);
+    if (label) row.qty_label = label;
+  }
+  return row;
 }
 
 export function importNutritionMeals(d, nutrition, force = false) {
