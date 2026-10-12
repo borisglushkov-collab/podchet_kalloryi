@@ -4,6 +4,7 @@ import {
   clearManualLocks,
   defaultProfile,
   latestBpReading,
+  mealQtyLabel,
   mergeProfilesLww,
   nutritionTotals,
   todayIso,
@@ -75,14 +76,20 @@ function snapshot() {
   for (const meal of d.meals) {
     const key = meal.meal_type || "snack";
     mealsByType[key] ??= { meal_type: key, items: [] };
-    mealsByType[key].items.push({
+    const item = {
       name: meal.name,
       grams: Number(meal.grams || 0),
       calories: Number(meal.calories || 0),
       protein_g: Number(meal.protein || 0),
       fat_g: Number(meal.fat || 0),
       carbs_g: Number(meal.carbs || 0),
-    });
+    };
+    const qty = mealQtyLabel(meal);
+    if (qty) item.qty_label = qty;
+    if (meal.qty_is_servings != null) item.qty_is_servings = meal.qty_is_servings;
+    if (meal.units != null) item.units = Number(meal.units);
+    if (meal.grams_estimated != null) item.grams_estimated = Number(meal.grams_estimated);
+    mealsByType[key].items.push(item);
   }
   const bp = latestBp();
   return {
@@ -169,7 +176,11 @@ function formatReport(snap) {
   const n = snap.nutrition || {};
   const mealBits = (n.meals || [])
     .map((meal) => {
-      const names = (meal.items || []).map((i) => i.name).filter(Boolean);
+      const names = (meal.items || []).map((i) => {
+        if (!i?.name) return "";
+        const qty = mealQtyLabel(i);
+        return qty ? `${i.name} (${qty})` : i.name;
+      }).filter(Boolean);
       return names.length ? `${MEAL_RU[meal.meal_type] || meal.meal_type}: ${names.join(", ")}` : "";
     })
     .filter(Boolean);
@@ -742,7 +753,23 @@ async function medmLogin() {
   }
 }
 
+function openHealthDetail(id) {
+  if (!id) return;
+  state.healthDetail = id;
+  document.body.classList.add("health-sheet-open");
+  render();
+  document.querySelector(".sheet-back")?.focus();
+}
+
+function closeHealthDetail() {
+  if (!state.healthDetail) return;
+  state.healthDetail = null;
+  document.body.classList.remove("health-sheet-open");
+  render();
+}
+
 function bind() {
+  document.body.classList.toggle("health-sheet-open", Boolean(state.healthDetail));
   document.getElementById("copy-report")?.addEventListener("click", copyReport);
   document.getElementById("share-report")?.addEventListener("click", shareReport);
   document.getElementById("copy-week-report")?.addEventListener("click", copyWeekReport);
@@ -759,6 +786,25 @@ function bind() {
   });
   document.getElementById("ask-coach")?.addEventListener("click", () => {
     state.tab = "coach";
+    render();
+  });
+  document.querySelectorAll("[data-health-tile]").forEach((btn) => {
+    btn.addEventListener("click", () => openHealthDetail(btn.dataset.healthTile));
+  });
+  document.querySelectorAll("[data-health-close]").forEach((el) => {
+    el.addEventListener("click", closeHealthDetail);
+  });
+  document.getElementById("health-add")?.addEventListener("click", () => {
+    state.tab = "add";
+    state.healthDetail = null;
+    document.body.classList.remove("health-sheet-open");
+    render();
+  });
+  document.getElementById("health-manage")?.addEventListener("click", () => {
+    state.tab = "more";
+    state.morePane = "sources";
+    state.healthDetail = null;
+    document.body.classList.remove("health-sheet-open");
     render();
   });
   document.querySelectorAll("[data-more-pane]").forEach((btn) => {
@@ -891,9 +937,17 @@ function wireShell() {
   document.querySelectorAll(".tabs button").forEach((btn) => {
     btn.addEventListener("click", async () => {
       state.tab = btn.dataset.tab;
+      state.healthDetail = null;
+      document.body.classList.remove("health-sheet-open");
       if (state.tab === "week") await loadWeek();
       render();
     });
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && state.healthDetail) {
+      e.preventDefault();
+      closeHealthDetail();
+    }
   });
   window.addEventListener("online", () => {
     state.online = true;

@@ -47,18 +47,63 @@ export function countNutritionItems(nutrition) {
   return (nutrition?.meals || []).reduce((n, m) => n + (m.items?.length || 0), 0);
 }
 
+/** FatSecret number_of_units is often servings, not grams (<20 → порции). */
+export function mealQtyLabel(item) {
+  if (!item) return "";
+  if (item.qty_label) return String(item.qty_label);
+  const units = Number(
+    item.units ?? item.number_of_units ?? item.grams ?? 0,
+  );
+  if (!Number.isFinite(units) || units <= 0) return "";
+  if (item.grams_estimated != null && Number(item.grams_estimated) > 0) {
+    return `${Number(item.grams_estimated)} г`;
+  }
+  const desc = String(item.serving_description || item.food_entry_description || "");
+  const metric = Number(item.metric_serving_grams ?? item.serving_grams ?? 0);
+  // Multiply description/metric grams only for serving counts (<20). Weighed
+  // items often have units=192 and desc="192 g" — already grams.
+  if (units < 20 && Number.isFinite(metric) && metric > 0) {
+    return `${Math.round(units * metric * 10) / 10} г`;
+  }
+  const gm = units < 20 ? desc.match(/(\d+(?:[.,]\d+)?)\s*(?:г|гр|g|gram|grams)\b/i) : null;
+  if (gm) {
+    const per = Number(String(gm[1]).replace(",", "."));
+    if (Number.isFinite(per) && per > 0) {
+      return `${Math.round(units * per * 10) / 10} г`;
+    }
+  }
+  // Custom/brand diary rows: «1.3 servings …» → 130 г (FatSecret app).
+  if (units < 20 && /\b(?:servings?|порц(?:ия|ии|ий|ию)?)\b/i.test(desc)) {
+    return `${Math.round(units * 100 * 10) / 10} г`;
+  }
+  if (units >= 20) return `${units} г`;
+  return `×${units} ед. FatSecret`;
+}
+
 export function normalizeNutritionItem(it) {
   if (!it) return null;
   const name = String(it.name || it.food_entry_name || it.food_name || "").trim();
   if (!name) return null;
-  return {
+  const units = Number(it.units ?? it.number_of_units ?? it.grams ?? 0);
+  const row = {
     name,
-    grams: Number(it.grams ?? it.number_of_units ?? 0),
+    grams: Number.isFinite(units) ? units : Number(it.grams ?? 0),
     calories: Number(it.calories ?? 0),
     protein: Number(it.protein ?? it.protein_g ?? 0),
     fat: Number(it.fat ?? it.fat_g ?? 0),
     carbs: Number(it.carbs ?? it.carbs_g ?? it.carbohydrate ?? 0),
   };
+  if (it.units != null || it.number_of_units != null) row.units = Number(it.units ?? it.number_of_units);
+  if (it.qty_label) row.qty_label = String(it.qty_label);
+  if (it.qty_is_servings != null) row.qty_is_servings = Boolean(it.qty_is_servings);
+  if (it.grams_estimated != null) row.grams_estimated = Number(it.grams_estimated);
+  const desc = it.serving_description || it.food_entry_description;
+  if (desc) row.serving_description = String(desc);
+  if (!row.qty_label) {
+    const label = mealQtyLabel(row);
+    if (label) row.qty_label = label;
+  }
+  return row;
 }
 
 export function importNutritionMeals(d, nutrition, force = false) {
@@ -320,4 +365,186 @@ export function todayIso(date = new Date()) {
     month: "2-digit",
     day: "2-digit",
   }).format(date);
+}
+
+export function formatSleepDuration(min) {
+  if (min == null || Number.isNaN(Number(min))) return null;
+  const n = Math.round(Number(min));
+  const h = Math.floor(n / 60);
+  const m = n % 60;
+  if (h <= 0) return `${m} мин`;
+  return `${h} ч ${m} мин`;
+}
+
+/** Rough sleep-quality label from total minutes (hub design, not Mi score). */
+export function sleepQualityLabel(sleepMin) {
+  if (sleepMin == null) return null;
+  const n = Number(sleepMin);
+  if (!Number.isFinite(n)) return null;
+  if (n >= 450) return "Отлично";
+  if (n >= 390) return "Хорошо";
+  if (n >= 330) return "Нормально";
+  if (n >= 270) return "Слабо";
+  return "Плохо";
+}
+
+export function sleepQualityPct(sleepMin) {
+  if (sleepMin == null) return null;
+  const n = Number(sleepMin);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(100, Math.round((n / 480) * 100)));
+}
+
+/**
+ * Build Mi Fitness–style health tiles from a day snapshot.
+ * Only metrics we actually collect; empty tiles still appear so the grid stays stable.
+ */
+export function buildHealthTiles(d, { miConnected = false, dateLabel = "" } = {}) {
+  const day = d || {};
+  const sleepH = formatSleepDuration(day.sleep_min);
+  const quality = sleepQualityLabel(day.sleep_min);
+  const qualityPct = sleepQualityPct(day.sleep_min);
+  const deep = Number(day.sleep_deep_min || 0);
+  const light = Number(day.sleep_light_min || 0);
+  const rem = Number(day.sleep_rem_min || 0);
+  const stageSum = deep + light + rem;
+  const stages = stageSum > 0
+    ? {
+      deep: Math.round((deep / stageSum) * 100),
+      light: Math.round((light / stageSum) * 100),
+      rem: Math.max(0, 100 - Math.round((deep / stageSum) * 100) - Math.round((light / stageSum) * 100)),
+    }
+    : null;
+
+  const distKm = day.steps_distance_m != null
+    ? (Number(day.steps_distance_m) / 1000).toFixed(1)
+    : null;
+  const stepsGoal = 10000;
+  const stepsPct = day.steps != null
+    ? Math.max(0, Math.min(100, Math.round((Number(day.steps) / stepsGoal) * 100)))
+    : null;
+
+  const hr = day.heart_rate || null;
+  const bp = latestBpReading(day.bp);
+  const bc = day.body_composition;
+  const weightVal = bc?.weight_kg ?? day.weight_kg ?? null;
+  const workouts = Array.isArray(day.workouts) ? day.workouts : [];
+
+  const stamp = dateLabel || "";
+
+  return [
+    {
+      id: "sleep",
+      tone: "sleep",
+      title: "Сон",
+      value: sleepH || "Нет данных",
+      sub: sleepH
+        ? [stamp, quality].filter(Boolean).join(" · ")
+        : (miConnected ? "Наденьте устройство на ночь" : "Нет данных Mi Fitness"),
+      empty: !sleepH,
+      viz: sleepH ? "sleep-scale" : "none",
+      vizData: { pct: qualityPct, stages, labels: ["Плохо", "Превосходно"] },
+    },
+    {
+      id: "steps",
+      tone: "steps",
+      title: "Шаги",
+      value: day.steps != null ? String(day.steps) : "Нет данных",
+      sub: day.steps != null
+        ? [distKm != null ? `${distKm} км` : null, stamp || (miConnected ? "Mi Fitness" : null)].filter(Boolean).join(" · ")
+        : (miConnected ? "Пока нет шагов за день" : "Нет данных"),
+      empty: day.steps == null,
+      viz: day.steps != null ? "progress" : "none",
+      vizData: { pct: stepsPct, left: "0", right: "10 000" },
+    },
+    {
+      id: "heart",
+      tone: "heart",
+      title: "Пульс",
+      value: hr?.avg != null ? `${hr.avg}` : "Нет данных",
+      sub: hr
+        ? [`уд/мин`, stamp, hr.samples != null ? `${hr.samples} зам.` : null].filter(Boolean).join(" · ")
+        : "Нет данных Mi Fitness",
+      empty: !hr,
+      viz: hr ? "range" : "none",
+      vizData: {
+        min: hr?.min ?? null,
+        mid: hr?.avg ?? null,
+        max: hr?.max ?? null,
+        left: "мин",
+        right: "макс",
+      },
+    },
+    {
+      id: "activity",
+      tone: "activity",
+      title: "Активность",
+      value: day.steps_calories != null ? `${day.steps_calories}` : "Нет данных",
+      sub: day.steps_calories != null
+        ? ["ккал", distKm != null ? `${distKm} км` : null, workouts.length ? `трен. ${workouts.length}` : null]
+          .filter(Boolean).join(" · ")
+        : (workouts.length ? `Тренировок ${workouts.length}` : "Нет данных"),
+      empty: day.steps_calories == null && !workouts.length,
+      viz: day.steps_calories != null ? "progress" : "none",
+      vizData: {
+        pct: day.steps_calories != null
+          ? Math.max(0, Math.min(100, Math.round((Number(day.steps_calories) / 500) * 100)))
+          : null,
+        left: "0",
+        right: "500",
+      },
+    },
+    {
+      id: "bp",
+      tone: "bp",
+      title: "Давление",
+      value: bp ? `${bp.systolic}/${bp.diastolic}` : "Нет данных",
+      sub: bp
+        ? [bp.pulse != null ? `пульс ${bp.pulse}` : null, stamp, (day.bp || []).length > 1 ? `${day.bp.length} зам.` : null]
+          .filter(Boolean).join(" · ")
+        : "Измерьте или подключите MedM",
+      empty: !bp,
+      viz: bp ? "bp-mark" : "none",
+      vizData: {
+        high: bp ? (bp.systolic >= 140 || bp.diastolic >= 90) : false,
+        left: "норма",
+        right: "высоко",
+      },
+    },
+    {
+      id: "weight",
+      tone: "weight",
+      title: "Вес",
+      value: weightVal != null ? String(weightVal) : "Нет данных",
+      sub: weightVal != null
+        ? [bc?.bmi != null ? `ИМТ ${bc.bmi}` : "кг", stamp].filter(Boolean).join(" · ")
+        : "Встаньте на весы Xiaomi",
+      empty: weightVal == null,
+      viz: weightVal != null && bc?.body_score != null ? "progress" : "none",
+      vizData: {
+        pct: bc?.body_score != null ? Math.max(0, Math.min(100, Number(bc.body_score))) : null,
+        left: "0",
+        right: "100",
+      },
+    },
+    {
+      id: "workouts",
+      tone: "workouts",
+      title: "Тренировки",
+      value: workouts.length ? String(workouts.length) : "Нет данных",
+      sub: workouts.length
+        ? [
+          workouts[0]?.name || "Тренировка",
+          workouts[0]?.duration_min != null ? `${workouts[0].duration_min} мин` : null,
+        ].filter(Boolean).join(" · ")
+        : "Пока без тренировок",
+      empty: !workouts.length,
+      viz: workouts.length ? "progress" : "none",
+      vizData: {
+        pct: workouts.length ? Math.min(100, workouts.length * 25) : null,
+        left: "0",
+        right: `${Math.max(workouts.length, 4)}`,
+      },
+    },
+  ];
 }

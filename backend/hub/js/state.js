@@ -40,6 +40,7 @@ export const state = {
   online: typeof navigator === "undefined" ? true : navigator.onLine,
   lastError: null,
   coachReportOpen: false,
+  healthDetail: null, // sleep | steps | heart | activity | bp | weight | workouts
   assetVersion: document.querySelector('meta[name="hub-version"]')?.content || "dev",
 };
 

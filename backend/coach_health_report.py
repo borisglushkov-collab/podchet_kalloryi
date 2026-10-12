@@ -21,13 +21,33 @@ def _fmt_sleep(minutes: int | None) -> str | None:
     return f"{hours}h{mins:02d}"
 
 
+def _item_name(item: dict[str, Any]) -> str:
+    name = str(item.get("name") or "").strip()
+    if not name:
+        return ""
+    qty = str(item.get("qty_label") or "").strip()
+    if qty:
+        return f"{name} ({qty})"
+    grams = item.get("grams")
+    try:
+        g = float(grams)
+    except (TypeError, ValueError):
+        g = 0.0
+    if g >= 20:
+        return f"{name} ({g:g} г)"
+    if 0 < g < 20:
+        return f"{name} (×{g:g} ед. FatSecret)"
+    return name
+
+
 def _meal_names(nutrition: dict[str, Any]) -> str:
     meals = nutrition.get("meals") or []
     parts: list[str] = []
     for meal in meals:
         mtype = _MEAL_RU.get(str(meal.get("meal_type") or ""), meal.get("meal_type") or "")
         items = meal.get("items") or []
-        names = [str(i.get("name") or "").strip() for i in items if str(i.get("name") or "").strip()]
+        names = [_item_name(i) for i in items]
+        names = [n for n in names if n]
         if names:
             parts.append(f"{mtype}: {', '.join(names)}")
     return "; ".join(parts)

@@ -2,12 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   applySnapshotToDay,
+  buildHealthTiles,
   clearManualLocks,
   emptyDay,
+  formatSleepDuration,
   hasManualLocks,
   importNutritionMeals,
   latestBpReading,
+  mealQtyLabel,
   mergeProfilesLww,
+  normalizeNutritionItem,
+  sleepQualityLabel,
   syncTone,
   weekGoalStats,
 } from "../js/logic.js";
@@ -34,6 +39,56 @@ test("FatSecret meals replace when incoming has items", () => {
   assert.equal(d.meals.length, 1);
   assert.equal(d.meals[0].name, "суп");
   assert.equal(d.meals[0].source, "fatsecret");
+});
+
+test("mealQtyLabel shows FatSecret servings and real grams", () => {
+  assert.equal(mealQtyLabel({ grams: 0.3 }), "×0.3 ед. FatSecret");
+  assert.equal(mealQtyLabel({ grams: 192 }), "192 г");
+  assert.equal(mealQtyLabel({ qty_label: "150 г" }), "150 г");
+  assert.equal(
+    mealQtyLabel({ number_of_units: 4, food_entry_description: "100 g" }),
+    "400 г",
+  );
+  assert.equal(
+    mealQtyLabel({ grams: 192, food_entry_description: "192 g" }),
+    "192 г",
+  );
+  assert.equal(
+    mealQtyLabel({
+      number_of_units: 1.3,
+      food_entry_description: "1.3 servings Пятерочка Помидоры",
+    }),
+    "130 г",
+  );
+  assert.equal(
+    mealQtyLabel({
+      number_of_units: 1.23,
+      food_entry_description: "1.23 servings Мираторг Шашлык из Свиной Шейки",
+    }),
+    "123 г",
+  );
+  assert.equal(
+    mealQtyLabel({
+      number_of_units: 1,
+      food_entry_description: "1 medium Банан",
+      metric_serving_grams: 118,
+    }),
+    "118 г",
+  );
+});
+
+test("normalizeNutritionItem keeps qty fields from FatSecret", () => {
+  const row = normalizeNutritionItem({
+    name: "Омлет",
+    grams: 1,
+    calories: 200,
+    qty_label: "×1 ед. FatSecret",
+    qty_is_servings: true,
+  });
+  assert.equal(row.qty_label, "×1 ед. FatSecret");
+  assert.equal(row.qty_is_servings, true);
+  const inferred = normalizeNutritionItem({ name: "Огурец", grams: 192, calories: 29 });
+  assert.equal(inferred.qty_label, "192 г");
 });
 
 test("force refresh clears sleep when cloud reports null", () => {
@@ -145,4 +200,45 @@ test("profile merge last-write-wins", () => {
   );
   assert.equal(b.winner, "server");
   assert.equal(b.profile.height_cm, 170);
+});
+
+test("formatSleepDuration and sleep quality", () => {
+  assert.equal(formatSleepDuration(401), "6 ч 41 мин");
+  assert.equal(formatSleepDuration(45), "45 мин");
+  assert.equal(sleepQualityLabel(401), "Хорошо");
+  assert.equal(sleepQualityLabel(480), "Отлично");
+});
+
+test("buildHealthTiles wires available day metrics", () => {
+  const d = emptyDay("2026-09-28");
+  d.sleep_min = 401;
+  d.sleep_deep_min = 63;
+  d.sleep_light_min = 245;
+  d.sleep_rem_min = 93;
+  d.steps = 6244;
+  d.steps_distance_m = 3755;
+  d.steps_calories = 312;
+  d.heart_rate = { avg: 74, min: 49, max: 115, samples: 117 };
+  d.bp = [{ systolic: 139, diastolic: 87, pulse: 72, measured_at: "2026-09-28T10:00:00", source: "medm" }];
+  d.weight_kg = 111.3;
+  d.workouts = [{ name: "Ходьба", duration_min: 10, calories: 49 }];
+  const tiles = buildHealthTiles(d, { miConnected: true, dateLabel: "28 сентября" });
+  assert.equal(tiles.length, 7);
+  const byId = Object.fromEntries(tiles.map((t) => [t.id, t]));
+  assert.equal(byId.sleep.value, "6 ч 41 мин");
+  assert.equal(byId.sleep.empty, false);
+  assert.equal(byId.steps.value, "6244");
+  assert.equal(byId.heart.value, "74");
+  assert.equal(byId.activity.value, "312");
+  assert.equal(byId.bp.value, "139/87");
+  assert.equal(byId.weight.value, "111.3");
+  assert.equal(byId.workouts.value, "1");
+  assert.ok(byId.sleep.sub.includes("28 сентября"));
+});
+
+test("buildHealthTiles keeps empty placeholders", () => {
+  const tiles = buildHealthTiles(emptyDay("2026-09-28"), { miConnected: true });
+  assert.equal(tiles.length, 7);
+  assert.ok(tiles.every((t) => t.empty));
+  assert.equal(tiles.find((t) => t.id === "sleep").value, "Нет данных");
 });

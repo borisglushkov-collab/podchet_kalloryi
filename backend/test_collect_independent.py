@@ -39,3 +39,6 @@ def test_collect_works_without_xiaomi(monkeypatch):
     assert result["sources_status"]["mi_fitness"]["ok"] is False
     assert result["sources_status"]["fatsecret"]["ok"] is True
     assert result["sources_status"]["fatsecret"]["count"] == 1
+    item = result["nutrition"]["meals"][0]["items"][0]
+    assert item["qty_is_servings"] is True
+    assert "ед. FatSecret" in item["qty_label"]
