@@ -515,10 +515,36 @@ def _aggregate_metric_values(values: list[int]) -> int:
     return total_sum
 
 
-def _aggregate_steps_for_day(steps_list: list[dict[str, Any]], target_date: date) -> dict[str, int] | None:
+def _ts_to_iso(ts: int | float | None, zone_offset: int | None = None) -> str | None:
+    """Format a unix timestamp as ISO in the record's zone (fallback Europe/Moscow)."""
+    if ts is None:
+        return None
+    try:
+        ts_i = int(ts)
+        if ts_i > 1_000_000_000_000:
+            ts_i //= 1000
+        if ts_i <= 0:
+            return None
+        instant = datetime.fromtimestamp(ts_i, tz=timezone.utc)
+        if zone_offset is not None:
+            local = instant + timedelta(seconds=int(zone_offset))
+            # Keep offset in the string for clients.
+            sign = "+" if int(zone_offset) >= 0 else "-"
+            off = abs(int(zone_offset))
+            hh, mm = divmod(off // 60, 60)
+            return f"{local.strftime('%Y-%m-%dT%H:%M:%S')}{sign}{hh:02d}:{mm:02d}"
+        return instant.astimezone(_USER_TZ).isoformat()
+    except (OSError, OverflowError, TypeError, ValueError):
+        return None
+
+
+def _aggregate_steps_for_day(steps_list: list[dict[str, Any]], target_date: date) -> dict[str, Any] | None:
     iso = target_date.isoformat()
     # Dedupe by timestamp — Xiaomi sometimes repeats the same minute bucket.
     by_ts: dict[int, dict[str, int]] = {}
+    max_update_ts = 0
+    max_sample_ts = 0
+    zone_offset: int | None = None
     for item in steps_list:
         if _step_record_date(item) != iso:
             continue
@@ -539,18 +565,40 @@ def _aggregate_steps_for_day(steps_list: list[dict[str, Any]], target_date: date
                 "distance": max(prev["distance"], distance),
                 "calories": max(prev["calories"], calories),
             }
+        if ts > max_sample_ts:
+            max_sample_ts = ts
+        try:
+            upd = int(item.get("update_time") or 0)
+        except (TypeError, ValueError):
+            upd = 0
+        if upd > max_update_ts:
+            max_update_ts = upd
+        if zone_offset is None and item.get("zone_offset") is not None:
+            try:
+                zone_offset = int(item.get("zone_offset"))
+            except (TypeError, ValueError):
+                zone_offset = None
     if not by_ts:
         return None
     buckets = [by_ts[ts] for ts in sorted(by_ts)]
     step_vals = [b["steps"] for b in buckets if b["steps"] > 0]
     dist_vals = [b["distance"] for b in buckets if b["distance"] > 0]
     cal_vals = [b["calories"] for b in buckets if b["calories"] > 0]
-    return {
+    out: dict[str, Any] = {
         "count": _aggregate_metric_values(step_vals),
         "distance_m": _aggregate_metric_values(dist_vals),
         "calories": _aggregate_metric_values(cal_vals),
         "source": "mi_fitness",
+        "samples": len(buckets),
     }
+    # Prefer Xiaomi upload time so hub can warn when the watch stopped syncing.
+    updated_at = _ts_to_iso(max_update_ts or max_sample_ts, zone_offset)
+    sample_at = _ts_to_iso(max_sample_ts, zone_offset)
+    if updated_at:
+        out["updated_at"] = updated_at
+    if sample_at:
+        out["sample_at"] = sample_at
+    return out
 
 
 def _meal_type_key(raw: str | None) -> str:
@@ -901,6 +949,44 @@ async def debug_sleep_for_date(target_date: date) -> dict[str, Any]:
     out["sleep_items"] = len(items)
     out["sessions"] = sessions
     out["picked"] = _pick_sleep_for_day(items, target_date)
+    return out
+
+
+async def debug_steps_for_date(target_date: date) -> dict[str, Any]:
+    """Fetch raw Mi Fitness step buckets and aggregation diagnostics (no store writes)."""
+    out: dict[str, Any] = {"date": target_date.isoformat(), "connected": False}
+    tokens = XiaomiTokens.load()
+    if not tokens or not tokens.service_token:
+        out["error"] = "xiaomi_not_connected"
+        return out
+    out["connected"] = True
+    client = MiFitnessClient(tokens, region=_REGION)
+    await client.connect()
+    raw = await client.get_day_summary(target_date) or {}
+    items = raw.get("steps") or []
+    rows = []
+    for item in items:
+        v = _parse_value(item)
+        rows.append(
+            {
+                "time": item.get("time"),
+                "update_time": item.get("update_time"),
+                "zone_offset": item.get("zone_offset"),
+                "local_date": _step_record_date(item),
+                "steps": int(v.get("steps", 0) or 0),
+                "distance": int(v.get("distance", 0) or 0),
+                "calories": int(v.get("calories", 0) or 0),
+            }
+        )
+    rows.sort(key=lambda r: int(r.get("time") or 0))
+    out["step_items"] = len(items)
+    out["rows"] = rows
+    out["aggregated"] = _aggregate_steps_for_day(items, target_date)
+    if rows:
+        max_upd = max(int(r.get("update_time") or 0) for r in rows)
+        max_sample = max(int(r.get("time") or 0) for r in rows)
+        out["last_update_at"] = _ts_to_iso(max_upd, rows[-1].get("zone_offset"))
+        out["last_sample_at"] = _ts_to_iso(max_sample, rows[-1].get("zone_offset"))
     return out
 
 

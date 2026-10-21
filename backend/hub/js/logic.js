@@ -34,6 +34,8 @@ export const emptyDay = (date) => ({
   steps: null,
   steps_distance_m: null,
   steps_calories: null,
+  steps_updated_at: null,
+  steps_sample_at: null,
   heart_rate: null,
   weight_kg: null,
   body_composition: null,
@@ -169,6 +171,8 @@ export function applySnapshotToDay(d, snap, { force = false, onWeight } = {}) {
   if (snap.steps && (force || snap.source === "mi_fitness_auto" || d.steps_distance_m == null)) {
     if (snap.steps.distance_m != null) d.steps_distance_m = Number(snap.steps.distance_m);
     if (snap.steps.calories != null) d.steps_calories = Number(snap.steps.calories);
+    if (snap.steps.updated_at) d.steps_updated_at = String(snap.steps.updated_at);
+    if (snap.steps.sample_at) d.steps_sample_at = String(snap.steps.sample_at);
   }
   const sleepMin = snap.sleep?.total_min ?? snap.sleep?.duration_min;
   const cloudSleep = snap.source === "mi_fitness_auto";
@@ -395,6 +399,23 @@ export function sleepQualityPct(sleepMin) {
   return Math.max(0, Math.min(100, Math.round((n / 480) * 100)));
 }
 
+/** Xiaomi cloud freshness for steps (upload time), or null. */
+export function stepsCloudHint(day, { now = Date.now(), staleMinutes = 90 } = {}) {
+  const raw = day?.steps_updated_at || day?.steps_sample_at;
+  if (!raw) return null;
+  const updated = Date.parse(raw);
+  if (!Number.isFinite(updated)) return null;
+  const ageMin = (now - updated) / 60000;
+  const t = new Date(updated).toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  if (ageMin >= staleMinutes) {
+    return `облако до ${t} · откройте Mi Fitness`;
+  }
+  return `облако ${t}`;
+}
+
 /**
  * Build Mi Fitness–style health tiles from a day snapshot.
  * Only metrics we actually collect; empty tiles still appear so the grid stays stable.
@@ -451,7 +472,10 @@ export function buildHealthTiles(d, { miConnected = false, dateLabel = "" } = {}
       title: "Шаги",
       value: day.steps != null ? String(day.steps) : "Нет данных",
       sub: day.steps != null
-        ? [distKm != null ? `${distKm} км` : null, stamp || (miConnected ? "Mi Fitness" : null)].filter(Boolean).join(" · ")
+        ? [
+          distKm != null ? `${distKm} км` : null,
+          stepsCloudHint(day) || stamp || (miConnected ? "Mi Fitness" : null),
+        ].filter(Boolean).join(" · ")
         : (miConnected ? "Пока нет шагов за день" : "Нет данных"),
       empty: day.steps == null,
       viz: day.steps != null ? "progress" : "none",

@@ -287,7 +287,20 @@ function setRefreshBusy(busy) {
 function summarizeCollectedSnapshot(snap) {
   const parts = [];
   const steps = snap.steps?.count ?? snap.activity?.steps;
-  if (steps != null) parts.push(`шаги ${steps}`);
+  if (steps != null) {
+    let bit = `шаги ${steps}`;
+    const upd = snap.steps?.updated_at || snap.steps?.sample_at;
+    if (upd) {
+      const ms = Date.parse(upd);
+      if (Number.isFinite(ms)) {
+        const ageMin = (Date.now() - ms) / 60000;
+        const t = new Date(ms).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+        if (ageMin >= 90) bit += ` (облако до ${t} — откройте Mi Fitness)`;
+        else bit += ` (до ${t})`;
+      }
+    }
+    parts.push(bit);
+  }
   const mealCount = (snap.nutrition?.meals || []).reduce((n, m) => n + (m.items?.length || 0), 0);
   const mealKcal = snap.nutrition?.calories;
   if (mealCount) parts.push(mealKcal ? `еда ${mealCount} (${Math.round(mealKcal)} ккал)` : `еда ${mealCount}`);

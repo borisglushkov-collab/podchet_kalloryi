@@ -13,6 +13,7 @@ import {
   mergeProfilesLww,
   normalizeNutritionItem,
   sleepQualityLabel,
+  stepsCloudHint,
   syncTone,
   weekGoalStats,
 } from "../js/logic.js";
@@ -241,4 +242,42 @@ test("buildHealthTiles keeps empty placeholders", () => {
   assert.equal(tiles.length, 7);
   assert.ok(tiles.every((t) => t.empty));
   assert.equal(tiles.find((t) => t.id === "sleep").value, "Нет данных");
+});
+
+test("stepsCloudHint warns when Xiaomi upload is stale", () => {
+  const now = Date.parse("2026-10-21T21:00:00+03:00");
+  const stale = stepsCloudHint(
+    { steps_updated_at: "2026-10-21T14:13:14+03:00" },
+    { now, staleMinutes: 90 },
+  );
+  assert.match(stale, /облако до/);
+  assert.match(stale, /Mi Fitness/);
+  const fresh = stepsCloudHint(
+    { steps_updated_at: "2026-10-21T20:30:00+03:00" },
+    { now, staleMinutes: 90 },
+  );
+  assert.match(fresh, /^облако /);
+  assert.equal(fresh.includes("откройте"), false);
+});
+
+test("applySnapshotToDay keeps Xiaomi step freshness", () => {
+  const d = emptyDay("2026-10-21");
+  applySnapshotToDay(
+    d,
+    {
+      source: "mi_fitness_auto",
+      steps: {
+        count: 2186,
+        distance_m: 1298,
+        calories: 146,
+        source: "mi_fitness",
+        updated_at: "2026-10-21T14:13:14+03:00",
+        sample_at: "2026-10-21T14:10:00+03:00",
+      },
+    },
+    { force: true },
+  );
+  assert.equal(d.steps, 2186);
+  assert.equal(d.steps_updated_at, "2026-10-21T14:13:14+03:00");
+  assert.equal(d.steps_sample_at, "2026-10-21T14:10:00+03:00");
 });
