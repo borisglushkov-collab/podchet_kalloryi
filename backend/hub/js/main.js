@@ -294,7 +294,11 @@ function summarizeCollectedSnapshot(snap) {
       const ms = Date.parse(upd);
       if (Number.isFinite(ms)) {
         const ageMin = (Date.now() - ms) / 60000;
-        const t = new Date(ms).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+        const t = new Date(ms).toLocaleTimeString("ru-RU", {
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: "Europe/Moscow",
+        });
         if (ageMin >= 90) bit += ` (облако до ${t} — откройте Mi Fitness)`;
         else bit += ` (до ${t})`;
       }

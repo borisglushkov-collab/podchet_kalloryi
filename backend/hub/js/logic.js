@@ -409,6 +409,7 @@ export function stepsCloudHint(day, { now = Date.now(), staleMinutes = 90 } = {}
   const t = new Date(updated).toLocaleTimeString("ru-RU", {
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "Europe/Moscow",
   });
   if (ageMin >= staleMinutes) {
     return `облако до ${t} · откройте Mi Fitness`;

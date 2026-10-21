@@ -250,13 +250,13 @@ test("stepsCloudHint warns when Xiaomi upload is stale", () => {
     { steps_updated_at: "2026-10-21T14:13:14+03:00" },
     { now, staleMinutes: 90 },
   );
-  assert.match(stale, /облако до/);
+  assert.match(stale, /облако до 14:13/);
   assert.match(stale, /Mi Fitness/);
   const fresh = stepsCloudHint(
     { steps_updated_at: "2026-10-21T20:30:00+03:00" },
     { now, staleMinutes: 90 },
   );
-  assert.match(fresh, /^облако /);
+  assert.match(fresh, /^облако 20:30/);
   assert.equal(fresh.includes("откройте"), false);
 });
 
