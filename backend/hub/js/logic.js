@@ -161,12 +161,16 @@ export function applySnapshotToDay(d, snap, { force = false, onWeight } = {}) {
   } else if (snap.activity?.source === "mi_fitness" && snap.activity?.steps != null) {
     stepCount = snap.activity.steps;
   }
+  // Manual lock only protects a real local count. An empty lock (or force refresh)
+  // must not hide Mi Fitness steps — that left the tile as «Нет данных».
+  const stepsLocked = Boolean(d.locks.steps && d.steps != null);
   if (
     stepCount != null
-    && !d.locks.steps
+    && (force || !stepsLocked)
     && (force || d.steps == null || snap.source === "mi_fitness_auto")
   ) {
     d.steps = Number(stepCount);
+    if (force || !stepsLocked) d.locks.steps = false;
   }
   if (snap.steps && (force || snap.source === "mi_fitness_auto" || d.steps_distance_m == null)) {
     if (snap.steps.distance_m != null) d.steps_distance_m = Number(snap.steps.distance_m);
@@ -177,9 +181,12 @@ export function applySnapshotToDay(d, snap, { force = false, onWeight } = {}) {
   const sleepMin = snap.sleep?.total_min ?? snap.sleep?.duration_min;
   const cloudSleep = snap.source === "mi_fitness_auto";
   if (
-    !d.locks.sleep
+    (force || !d.locks.sleep)
     && (force || d.sleep_min == null || cloudSleep)
   ) {
+    if (force && (sleepMin != null || (cloudSleep && Object.prototype.hasOwnProperty.call(snap, "sleep")))) {
+      d.locks.sleep = false;
+    }
     if (sleepMin != null) {
       d.sleep_min = Number(sleepMin);
       if (snap.sleep?.deep_min != null) d.sleep_deep_min = Number(snap.sleep.deep_min);
@@ -200,13 +207,14 @@ export function applySnapshotToDay(d, snap, { force = false, onWeight } = {}) {
   }
   if (
     snap.weight?.kg != null
-    && !d.locks.weight
+    && (force || !d.locks.weight)
     && (force || d.weight_kg == null || snap.weight.source === "xiaomi_home")
   ) {
     const bc = bodyCompositionFromWeight(snap.weight);
     if (bc) {
       d.weight_kg = bc.weight_kg;
       d.body_composition = bc;
+      if (force) d.locks.weight = false;
       if (typeof onWeight === "function") onWeight(bc.weight_kg);
     }
   }

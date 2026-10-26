@@ -105,16 +105,33 @@ test("force refresh clears sleep when cloud reports null", () => {
   assert.equal(d.sleep_deep_min, null);
 });
 
-test("manual locks block cloud overwrite", () => {
+test("manual locks block passive cloud overwrite", () => {
   const d = emptyDay("2026-08-20");
   d.steps = 100;
   d.locks.steps = true;
-  applySnapshotToDay(d, { steps: { count: 5000 }, source: "mi_fitness_auto" }, { force: true });
+  applySnapshotToDay(d, { steps: { count: 5000 }, source: "mi_fitness_auto" }, { force: false });
   assert.equal(d.steps, 100);
-  clearManualLocks(d);
-  applySnapshotToDay(d, { steps: { count: 5000 }, source: "mi_fitness_auto" }, { force: true });
+  assert.equal(d.locks.steps, true);
+});
+
+test("force refresh overrides manual step lock", () => {
+  const d = emptyDay("2026-08-20");
+  d.steps = 100;
+  d.locks.steps = true;
+  applySnapshotToDay(d, { steps: { count: 5000, source: "mi_fitness" }, source: "mi_fitness_auto" }, { force: true });
   assert.equal(d.steps, 5000);
+  assert.equal(d.locks.steps, false);
   assert.equal(hasManualLocks(d), false);
+});
+
+test("empty step lock does not hide cloud steps", () => {
+  const d = emptyDay("2026-08-20");
+  d.steps = null;
+  d.locks.steps = true;
+  applySnapshotToDay(d, { steps: { count: 12166, source: "mi_fitness" }, source: "mi_fitness_auto" }, { force: false });
+  assert.equal(d.steps, 12166);
+  assert.equal(d.locks.steps, false);
+  clearManualLocks(d);
 });
 
 test("Mi Fitness steps store distance and activity calories", () => {
