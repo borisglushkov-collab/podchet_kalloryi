@@ -240,7 +240,8 @@ def fetch_food_entries_for_date(target_date: date | None = None) -> list[dict[st
             return []
         if not isinstance(entries, list):
             entries = [entries]
-        return [_normalize_entry(e) for e in entries]
+        serving_cache: dict[tuple[int, int], float | None] = {}
+        return [_normalize_entry(e, fs=fs, serving_cache=serving_cache) for e in entries]
     except Exception as exc:
         logger.warning("FatSecret food_entries_get failed: %s", exc)
         return []
@@ -271,21 +272,90 @@ def fetch_food_month(target_date: date | None = None) -> list[dict[str, Any]]:
         return []
 
 
-def _normalize_entry(e: Any) -> dict[str, Any]:
+def _lookup_metric_serving_grams(
+    fs: Fatsecret | None,
+    food_id: Any,
+    serving_id: Any,
+    cache: dict[tuple[int, int], float | None] | None = None,
+) -> float | None:
+    """Resolve grams (or ml-as-g) for one serving via foods.get. Custom foods often 404."""
+    try:
+        fid = int(food_id)
+        sid = int(serving_id)
+    except (TypeError, ValueError):
+        return None
+    key = (fid, sid)
+    if cache is not None and key in cache:
+        return cache[key]
+    grams: float | None = None
+    if fs is not None:
+        try:
+            food = fs.foods.get_v2(fid)
+            if hasattr(food, "to_dict"):
+                food = food.to_dict()
+            servings = (food or {}).get("servings") or {}
+            if isinstance(servings, dict):
+                serving_list = servings.get("serving")
+            else:
+                serving_list = servings
+            if not isinstance(serving_list, list):
+                serving_list = [serving_list] if serving_list else []
+            for serving in serving_list:
+                if hasattr(serving, "to_dict"):
+                    serving = serving.to_dict()
+                if not isinstance(serving, dict):
+                    continue
+                if str(serving.get("serving_id")) != str(sid):
+                    continue
+                amount = _num(serving.get("metric_serving_amount"), digits=3)
+                unit = str(serving.get("metric_serving_unit") or "").strip().lower()
+                if amount > 0 and unit in {"g", "ml", "г", "мл"}:
+                    grams = amount
+                break
+        except Exception as exc:
+            logger.debug("FatSecret foods.get_v2(%s) skipped: %s", fid, exc)
+            grams = None
+    if cache is not None:
+        cache[key] = grams
+    return grams
+
+
+def _normalize_entry(
+    e: Any,
+    fs: Fatsecret | None = None,
+    serving_cache: dict[tuple[int, int], float | None] | None = None,
+) -> dict[str, Any]:
     """Normalize a single food entry."""
     if hasattr(e, "to_dict"):
         e = e.to_dict()
     if not isinstance(e, dict):
         return {"raw": str(e)}
-    return {
+    # Keep 1.230 → 1.23 (app shows 123 г = 1.23×100 г). Do not round to 1 decimal.
+    units = _num(e.get("number_of_units"), digits=3) or _num(e.get("serving_size"), digits=3)
+    desc = str(e.get("food_entry_description") or e.get("serving_description") or "").strip()
+    food_id = e.get("food_id")
+    serving_id = e.get("serving_id")
+    row = {
         "name": e.get("food_entry_name") or e.get("food_name", ""),
         "meal": e.get("meal", ""),
         "calories": _num(e.get("calories")),
         "protein": _num(e.get("protein")),
         "fat": _num(e.get("fat")),
         "carbs": _num(e.get("carbohydrate")),
-        "grams": _num(e.get("number_of_units")) or _num(e.get("serving_size")),
+        "grams": units,
+        "number_of_units": units,
     }
+    if food_id not in (None, ""):
+        row["food_id"] = food_id
+    if serving_id not in (None, ""):
+        row["serving_id"] = serving_id
+    if desc:
+        row["food_entry_description"] = desc
+        row["serving_description"] = desc
+    metric = _lookup_metric_serving_grams(fs, food_id, serving_id, serving_cache)
+    if metric:
+        row["metric_serving_grams"] = metric
+    return row
 
 
 def _normalize_day(d: Any) -> dict[str, Any]:
@@ -310,10 +380,10 @@ def _normalize_day(d: Any) -> dict[str, Any]:
     }
 
 
-def _num(val: Any) -> float:
+def _num(val: Any, digits: int = 1) -> float:
     if val is None:
         return 0
     try:
-        return round(float(val), 1)
+        return round(float(val), digits)
     except (ValueError, TypeError):
         return 0
