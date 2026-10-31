@@ -832,6 +832,9 @@ body.is-refreshing .panel {
   background: rgba(255, 255, 255, 0.7);
   border: 1px solid rgba(36, 48, 65, 0.06);
 }
+.segment.segment-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 .segment-btn {
   border: 0;
   background: transparent;
@@ -845,6 +848,62 @@ body.is-refreshing .panel {
 .segment-btn.active {
   background: var(--brand-soft);
   color: #8a3d1d;
+}
+
+.pill-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.pill-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(36, 48, 65, 0.06);
+}
+.pill-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  color: var(--ink);
+  flex: 1;
+  min-width: 0;
+}
+.pill-check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brand);
+  flex: 0 0 auto;
+}
+.pill-del {
+  padding: 6px 10px;
+  min-width: 0;
+}
+.pill-empty {
+  color: var(--secondary);
+  font-size: 13px;
+  padding: 8px 2px;
+}
+.pill-add-row {
+  align-items: stretch;
+}
+.pill-add-row input {
+  flex: 1;
+}
+.pill-today-list {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 12px;
+}
+.pills-today .sub {
+  margin-top: 2px;
 }
 
 .report-fold {

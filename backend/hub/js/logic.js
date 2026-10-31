@@ -40,10 +40,41 @@ export const emptyDay = (date) => ({
   weight_kg: null,
   body_composition: null,
   notes: "",
+  meds_taken: [],
   sources_status: null,
   last_synced_at: null,
   locks: { steps: false, sleep: false, weight: false },
 });
+
+/** Normalize free-text / array medication names for profile.medications. */
+export function normalizeMedications(list) {
+  const raw = Array.isArray(list) ? list : String(list || "").split(",");
+  const out = [];
+  const seen = new Set();
+  for (const item of raw) {
+    const name = String(item || "").trim().replace(/\s+/g, " ");
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
+
+export function toggleMedTaken(takenList, name, taken) {
+  const med = String(name || "").trim();
+  if (!med) return normalizeMedications(takenList);
+  const cur = new Set(normalizeMedications(takenList).map((x) => x.toLowerCase()));
+  const key = med.toLowerCase();
+  if (taken) cur.add(key);
+  else cur.delete(key);
+  // Preserve display names from the union of previous + this med.
+  const byKey = new Map();
+  for (const n of normalizeMedications(takenList)) byKey.set(n.toLowerCase(), n);
+  byKey.set(key, med);
+  return [...cur].map((k) => byKey.get(k)).filter(Boolean);
+}
 
 export function countNutritionItems(nutrition) {
   return (nutrition?.meals || []).reduce((n, m) => n + (m.items?.length || 0), 0);
@@ -277,6 +308,9 @@ export function applySnapshotToDay(d, snap, { force = false, onWeight } = {}) {
   d.bp = sortBpNewestFirst(d.bp);
 
   importNutritionMeals(d, snap.nutrition, force);
+  if (Array.isArray(snap.medications_taken)) {
+    d.meds_taken = normalizeMedications(snap.medications_taken);
+  }
   return d;
 }
 

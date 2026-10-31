@@ -6,8 +6,10 @@ import {
   latestBpReading,
   mealQtyLabel,
   mergeProfilesLww,
+  normalizeMedications,
   nutritionTotals,
   todayIso,
+  toggleMedTaken,
 } from "./logic.js";
 import { ApiError, healthApi } from "./api.js";
 import { state, day, dayFor, persistLocal, saveJson, STORAGE_DAYS, STORAGE_PROFILE, STORAGE_CHAT } from "./state.js";
@@ -131,6 +133,7 @@ function snapshot() {
     } : (d.weight_kg == null ? undefined : { kg: Number(d.weight_kg) }),
     workouts: d.workouts || [],
     notes: d.notes || "",
+    medications_taken: normalizeMedications(d.meds_taken || []),
   };
 }
 
@@ -201,6 +204,13 @@ function formatReport(snap) {
   }
   const meds = snap.profile?.medications || [];
   if (meds.length) lines.push(`Лекарства: ${meds.join(", ")}`);
+  const taken = snap.medications_taken || [];
+  if (meds.length) {
+    const takenSet = new Set(taken.map((m) => String(m).toLowerCase()));
+    const marks = meds.map((m) => `${m}${takenSet.has(String(m).toLowerCase()) ? " ✓" : ""}`);
+    lines.push(`Таблетки сегодня: ${marks.join("; ")}`);
+  }
+  if (snap.profile?.height_cm) lines.push(`Рост: ${snap.profile.height_cm} см`);
   const t = snap.profile?.coaching_calorie_target || {};
   if (t.kcal_min || t.kcal_max) {
     lines.push(`Рабочая цель: ${t.kcal_min}–${t.kcal_max} ккал${t.protein_g ? `, Б ${t.protein_g}` : ""}`);
@@ -889,10 +899,9 @@ function bind() {
     });
   });
   document.getElementById("send-coach")?.addEventListener("click", sendCoach);
-  document.getElementById("save-profile")?.addEventListener("click", async () => {
+  document.getElementById("save-params")?.addEventListener("click", async () => {
     const height = val("height");
     state.profile.height_cm = height ? Number(height) : null;
-    state.profile.medications = val("meds").split(",").map((s) => s.trim()).filter(Boolean);
     state.profile.coaching_calorie_target = {
       kcal_min: Number(val("kcal-min") || 1900),
       kcal_max: Number(val("kcal-max") || 2100),
@@ -900,7 +909,60 @@ function bind() {
     };
     day().notes = val("notes");
     persistLocal();
+    const ok = await saveServerProfile(false);
+    toast(ok
+      ? (state.profile.height_cm ? `Параметры сохранены · рост ${state.profile.height_cm} см` : "Параметры сохранены")
+      : "Сохранено локально (сервер недоступен)");
+    persist();
+    render();
+  });
+  document.getElementById("add-med")?.addEventListener("click", async () => {
+    const name = val("med-new");
+    const next = normalizeMedications([...(state.profile.medications || []), name]);
+    if (!name.trim()) return toast("Введите название");
+    if (next.length === (state.profile.medications || []).length) return toast("Уже в списке");
+    state.profile.medications = next;
+    persistLocal();
+    await saveServerProfile(false);
+    toast("Добавлено");
+    render();
+  });
+  document.getElementById("med-new")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") document.getElementById("add-med")?.click();
+  });
+  document.querySelectorAll("[data-del-med]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const idx = Number(btn.dataset.delMed);
+      const meds = [...(state.profile.medications || [])];
+      const removed = meds.splice(idx, 1)[0];
+      state.profile.medications = meds;
+      if (removed) {
+        day().meds_taken = toggleMedTaken(day().meds_taken, removed, false);
+      }
+      persistLocal();
+      await saveServerProfile(false);
+      persist();
+      render();
+    });
+  });
+  document.querySelectorAll("[data-med-taken]").forEach((el) => {
+    el.addEventListener("change", () => {
+      const name = el.dataset.medTaken;
+      day().meds_taken = toggleMedTaken(day().meds_taken, name, el.checked);
+      persist();
+      render();
+    });
+  });
+  document.getElementById("save-meds")?.addEventListener("click", async () => {
+    state.profile.medications = normalizeMedications(state.profile.medications || []);
+    persistLocal();
     await saveServerProfile(true);
+    persist();
+  });
+  document.getElementById("goto-pills")?.addEventListener("click", () => {
+    state.tab = "more";
+    state.morePane = "pills";
+    render();
   });
   document.getElementById("unlock-cloud")?.addEventListener("click", async () => {
     clearManualLocks(day());

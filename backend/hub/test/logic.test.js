@@ -11,10 +11,12 @@ import {
   latestBpReading,
   mealQtyLabel,
   mergeProfilesLww,
+  normalizeMedications,
   normalizeNutritionItem,
   sleepQualityLabel,
   stepsCloudHint,
   syncTone,
+  toggleMedTaken,
   weekGoalStats,
 } from "../js/logic.js";
 
@@ -297,4 +299,25 @@ test("applySnapshotToDay keeps Xiaomi step freshness", () => {
   assert.equal(d.steps, 2186);
   assert.equal(d.steps_updated_at, "2026-10-21T14:13:14+03:00");
   assert.equal(d.steps_sample_at, "2026-10-21T14:10:00+03:00");
+});
+
+test("normalizeMedications dedupes and trims", () => {
+  assert.deepEqual(
+    normalizeMedications([" Эдарби АМ 40+5 ", "эдарби ам 40+5", "Магний", ""]),
+    ["Эдарби АМ 40+5", "Магний"],
+  );
+  assert.deepEqual(normalizeMedications("A, B, a"), ["A", "B"]);
+});
+
+test("toggleMedTaken marks daily adherence", () => {
+  let taken = toggleMedTaken([], "Эдарби АМ", true);
+  assert.deepEqual(taken, ["Эдарби АМ"]);
+  taken = toggleMedTaken(taken, "Эдарби АМ", false);
+  assert.deepEqual(taken, []);
+});
+
+test("applySnapshotToDay restores medications_taken", () => {
+  const d = emptyDay("2026-10-31");
+  applySnapshotToDay(d, { medications_taken: ["Эдарби АМ", ""] }, { force: true });
+  assert.deepEqual(d.meds_taken, ["Эдарби АМ"]);
 });

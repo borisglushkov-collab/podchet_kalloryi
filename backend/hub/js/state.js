@@ -24,7 +24,7 @@ export function saveJson(key, value) {
 export const state = {
   date: todayIso(),
   tab: "today",
-  morePane: "sources", // sources | profile
+  morePane: "sources", // sources | params | pills
   days: loadJson(STORAGE_DAYS, {}),
   profile: { ...defaultProfile(), ...loadJson(STORAGE_PROFILE, {}) },
   chat: loadJson(STORAGE_CHAT, []),

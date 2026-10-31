@@ -463,9 +463,10 @@ export function renderToday() {
     <section class="panel stack-gap">
       <div class="panel-head">
         <h2 class="panel-title">День</h2>
-        <p class="panel-sub">Питание и состав тела</p>
+        <p class="panel-sub">Питание, таблетки и состав тела</p>
       </div>
       <div class="cards">
+        ${renderPillsTodayCard()}
         ${bc && renderBodyMetrics(bc) ? `<div class="card wide"><h2>Состав тела</h2>${renderBodyMetrics(bc)}</div>` : ""}
         <div class="card wide">
           <h2>Еда</h2>
@@ -680,43 +681,112 @@ function renderSourcesPane() {
     </div>`;
 }
 
-function renderProfilePane() {
+function renderParamsPane() {
   const t = state.profile.coaching_calorie_target || {};
+  const height = state.profile.height_cm;
   return `
     <div class="card wide form lift">
-      <h2>Профиль для коуча</h2>
-      <p class="hint">Сервер · last-write-wins по updated_at${state.profile.updated_at ? ` · ${new Date(state.profile.updated_at).toLocaleString("ru-RU")}` : ""}</p>
-      <label>Рост, см</label>
-      <input id="height" inputmode="numeric" value="${state.profile.height_cm ?? ""}" placeholder="165" />
-      <label>Лекарства (через запятую)</label>
-      <input id="meds" value="${escapeAttr((state.profile.medications || []).join(", "))}" />
-      <label>Цель ккал мин–макс · белок</label>
+      <h2>Параметры</h2>
+      <p class="hint">Рост и цели для коуча${state.profile.updated_at ? ` · ${new Date(state.profile.updated_at).toLocaleString("ru-RU")}` : ""}</p>
+      <label for="height">Рост, см</label>
+      <input id="height" inputmode="decimal" value="${height ?? ""}" placeholder="165" />
+      <p class="hint">${height ? `Сейчас: ${height} см` : "Нужен для ИМТ и отчёта коучу"}</p>
+      <label>Цель ккал мин–макс · белок, г</label>
       <div class="row">
-        <input id="kcal-min" value="${t.kcal_min ?? 1900}" />
-        <input id="kcal-max" value="${t.kcal_max ?? 2100}" />
-        <input id="protein" value="${t.protein_g ?? 130}" placeholder="Белок" />
+        <input id="kcal-min" value="${t.kcal_min ?? 1900}" aria-label="Ккал мин" />
+        <input id="kcal-max" value="${t.kcal_max ?? 2100}" aria-label="Ккал макс" />
+        <input id="protein" value="${t.protein_g ?? 130}" placeholder="Белок" aria-label="Белок" />
       </div>
-      <label>Заметка дня</label>
+      <label for="notes">Заметка дня</label>
       <textarea id="notes" rows="2">${escapeAttr(day().notes || "")}</textarea>
-      <button class="btn primary" id="save-profile" type="button">Сохранить профиль</button>
+      <button class="btn primary" id="save-params" type="button">Сохранить параметры</button>
     </div>
     <p class="hint">Android: Chrome → «Добавить на главный экран»</p>`;
 }
 
+function renderPillsPane() {
+  const meds = state.profile.medications || [];
+  const taken = new Set((day().meds_taken || []).map((m) => String(m).toLowerCase()));
+  const rows = meds.length
+    ? meds.map((name, i) => {
+        const on = taken.has(String(name).toLowerCase());
+        return `<li class="pill-row">
+          <label class="pill-check">
+            <input type="checkbox" data-med-taken="${escapeAttr(name)}" ${on ? "checked" : ""} />
+            <span>${escapeAttr(name)}</span>
+          </label>
+          <button type="button" class="btn ghost pill-del" data-del-med="${i}" aria-label="Удалить">✕</button>
+        </li>`;
+      }).join("")
+    : `<li class="pill-empty">Пока пусто — добавьте, например «Эдарби АМ 40+5»</li>`;
+  const takenCount = meds.filter((n) => taken.has(String(n).toLowerCase())).length;
+  return `
+    <div class="card wide form lift">
+      <h2>Таблетки</h2>
+      <p class="hint">Список лекарств и отметка «принял» за ${state.date}${meds.length ? ` · сегодня ${takenCount}/${meds.length}` : ""}</p>
+      <ul class="pill-list">${rows}</ul>
+      <label for="med-new">Добавить лекарство</label>
+      <div class="row pill-add-row">
+        <input id="med-new" placeholder="Эдарби АМ 40+5" />
+        <button class="btn primary" id="add-med" type="button">Добавить</button>
+      </div>
+      <button class="btn soft" id="save-meds" type="button">Сохранить список на сервере</button>
+    </div>`;
+}
+
+export function renderPillsTodayCard() {
+  const meds = state.profile.medications || [];
+  if (!meds.length) {
+    return `<div class="card wide lift pills-today">
+      <h2>Таблетки</h2>
+      <p class="hint">Список лекарств пока пуст</p>
+      <button class="btn soft" id="goto-pills" type="button">Открыть раздел</button>
+    </div>`;
+  }
+  const taken = new Set((day().meds_taken || []).map((m) => String(m).toLowerCase()));
+  const takenCount = meds.filter((n) => taken.has(String(n).toLowerCase())).length;
+  const rows = meds.map((name) => {
+    const on = taken.has(String(name).toLowerCase());
+    return `<label class="pill-check">
+      <input type="checkbox" data-med-taken="${escapeAttr(name)}" ${on ? "checked" : ""} />
+      <span>${escapeAttr(name)}</span>
+    </label>`;
+  }).join("");
+  return `<div class="card wide lift pills-today">
+    <h2>Таблетки</h2>
+    <div class="sub">${takenCount}/${meds.length} сегодня</div>
+    <div class="pill-today-list">${rows}</div>
+    <button class="btn soft" id="goto-pills" type="button">Все таблетки</button>
+  </div>`;
+}
+
+function morePaneId() {
+  const raw = state.morePane;
+  if (raw === "profile" || raw === "params") return "params";
+  if (raw === "pills" || raw === "meds") return "pills";
+  return "sources";
+}
+
 export function renderMore() {
-  const pane = state.morePane === "profile" ? "profile" : "sources";
+  const pane = morePaneId();
+  const body = pane === "params"
+    ? renderParamsPane()
+    : pane === "pills"
+      ? renderPillsPane()
+      : renderSourcesPane();
   return `
     <section class="panel stack-gap">
       <div class="panel-head">
         <h2 class="panel-title">Ещё</h2>
-        <p class="panel-sub">Источники и профиль — отдельно</p>
+        <p class="panel-sub">Источники, параметры и таблетки</p>
       </div>
-      <div class="segment" role="tablist" aria-label="Разделы">
+      <div class="segment segment-3" role="tablist" aria-label="Разделы">
         <button type="button" class="segment-btn ${pane === "sources" ? "active" : ""}" data-more-pane="sources" role="tab" aria-selected="${pane === "sources"}">Источники</button>
-        <button type="button" class="segment-btn ${pane === "profile" ? "active" : ""}" data-more-pane="profile" role="tab" aria-selected="${pane === "profile"}">Профиль</button>
+        <button type="button" class="segment-btn ${pane === "params" ? "active" : ""}" data-more-pane="params" role="tab" aria-selected="${pane === "params"}">Параметры</button>
+        <button type="button" class="segment-btn ${pane === "pills" ? "active" : ""}" data-more-pane="pills" role="tab" aria-selected="${pane === "pills"}">Таблетки</button>
       </div>
     </section>
-    ${pane === "profile" ? renderProfilePane() : renderSourcesPane()}`;
+    ${body}`;
 }
 
 export function weekSeriesFromLocal(daysCount = 7) {
