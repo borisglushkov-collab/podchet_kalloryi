@@ -829,8 +829,9 @@ body.is-refreshing .panel {
   gap: 4px;
   padding: 4px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(36, 48, 65, 0.06);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(36, 48, 65, 0.12);
+  box-shadow: 0 1px 0 rgba(36, 48, 65, 0.04);
 }
 .segment.segment-3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -839,15 +840,18 @@ body.is-refreshing .panel {
   border: 0;
   background: transparent;
   border-radius: 12px;
-  padding: 11px 10px;
+  padding: 11px 6px;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.2;
   color: var(--secondary);
   cursor: pointer;
+  white-space: nowrap;
 }
 .segment-btn.active {
   background: var(--brand-soft);
   color: #8a3d1d;
+  box-shadow: inset 0 0 0 1px rgba(138, 61, 29, 0.12);
 }
 
 .pill-list {

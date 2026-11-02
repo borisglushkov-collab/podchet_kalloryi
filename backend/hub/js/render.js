@@ -584,6 +584,17 @@ export function renderAdd() {
         <span></span>
       </div>
       <button class="btn primary" id="save-meal" type="button">Добавить еду</button>
+    </div>
+    <div class="card wide form lift">
+      <h2>Таблетки</h2>
+      <p class="hint">Постоянный список лекарств (сохраняется в профиле)</p>
+      <ul class="pill-list">${(state.profile.medications || []).length
+        ? (state.profile.medications || []).map((name, i) => `<li class="pill-row">
+            <span class="pill-check"><span>${escapeAttr(name)}</span></span>
+            <button type="button" class="btn ghost pill-del" data-del-med="${i}" aria-label="Удалить">✕</button>
+          </li>`).join("")
+        : `<li class="pill-empty">Пока пусто</li>`}</ul>
+      ${renderPillAddFields("addtab-med")}
     </div>`;
 }
 
@@ -725,38 +736,40 @@ function renderPillsPane() {
       <h2>Таблетки</h2>
       <p class="hint">Список лекарств и отметка «принял» за ${state.date}${meds.length ? ` · сегодня ${takenCount}/${meds.length}` : ""}</p>
       <ul class="pill-list">${rows}</ul>
-      <label for="med-new">Добавить лекарство</label>
-      <div class="row pill-add-row">
-        <input id="med-new" placeholder="Эдарби АМ 40+5" />
-        <button class="btn primary" id="add-med" type="button">Добавить</button>
-      </div>
+      ${renderPillAddFields("med")}
       <button class="btn soft" id="save-meds" type="button">Сохранить список на сервере</button>
+    </div>`;
+}
+
+function renderPillAddFields(idPrefix = "med") {
+  const inputId = `${idPrefix}-new`;
+  return `
+    <label for="${inputId}">Добавить лекарство</label>
+    <div class="row pill-add-row">
+      <input id="${inputId}" placeholder="Эдарби АМ 40+5" autocomplete="off" />
+      <button class="btn primary" type="button" data-add-med-input="${inputId}">Добавить</button>
     </div>`;
 }
 
 export function renderPillsTodayCard() {
   const meds = state.profile.medications || [];
-  if (!meds.length) {
-    return `<div class="card wide lift pills-today">
-      <h2>Таблетки</h2>
-      <p class="hint">Список лекарств пока пуст</p>
-      <button class="btn soft" id="goto-pills" type="button">Открыть раздел</button>
-    </div>`;
-  }
   const taken = new Set((day().meds_taken || []).map((m) => String(m).toLowerCase()));
   const takenCount = meds.filter((n) => taken.has(String(n).toLowerCase())).length;
-  const rows = meds.map((name) => {
-    const on = taken.has(String(name).toLowerCase());
-    return `<label class="pill-check">
-      <input type="checkbox" data-med-taken="${escapeAttr(name)}" ${on ? "checked" : ""} />
-      <span>${escapeAttr(name)}</span>
-    </label>`;
-  }).join("");
-  return `<div class="card wide lift pills-today">
+  const rows = meds.length
+    ? meds.map((name) => {
+        const on = taken.has(String(name).toLowerCase());
+        return `<label class="pill-check">
+          <input type="checkbox" data-med-taken="${escapeAttr(name)}" ${on ? "checked" : ""} />
+          <span>${escapeAttr(name)}</span>
+        </label>`;
+      }).join("")
+    : `<p class="hint">Пока пусто — добавьте название ниже</p>`;
+  return `<div class="card wide form lift pills-today">
     <h2>Таблетки</h2>
-    <div class="sub">${takenCount}/${meds.length} сегодня</div>
+    <div class="sub">${meds.length ? `${takenCount}/${meds.length} сегодня` : "Список для коуча и отметки за день"}</div>
     <div class="pill-today-list">${rows}</div>
-    <button class="btn soft" id="goto-pills" type="button">Все таблетки</button>
+    ${renderPillAddFields("day-med")}
+    <button class="btn soft" id="goto-pills" type="button">Открыть раздел «Таблетки»</button>
   </div>`;
 }
 

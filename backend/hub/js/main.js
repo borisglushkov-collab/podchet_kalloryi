@@ -916,19 +916,28 @@ function bind() {
     persist();
     render();
   });
-  document.getElementById("add-med")?.addEventListener("click", async () => {
-    const name = val("med-new");
+  async function addMedicationFromInput(inputId) {
+    const name = val(inputId);
+    if (!name) return toast("Введите название лекарства");
     const next = normalizeMedications([...(state.profile.medications || []), name]);
-    if (!name.trim()) return toast("Введите название");
     if (next.length === (state.profile.medications || []).length) return toast("Уже в списке");
     state.profile.medications = next;
     persistLocal();
-    await saveServerProfile(false);
-    toast("Добавлено");
+    const ok = await saveServerProfile(false);
+    toast(ok ? `Добавлено: ${name}` : "Добавлено локально (сервер недоступен)");
+    const el = document.getElementById(inputId);
+    if (el) el.value = "";
     render();
+  }
+  document.querySelectorAll("[data-add-med-input]").forEach((btn) => {
+    btn.addEventListener("click", () => addMedicationFromInput(btn.dataset.addMedInput));
   });
-  document.getElementById("med-new")?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") document.getElementById("add-med")?.click();
+  ["med-new", "day-med-new", "addtab-med-new"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      addMedicationFromInput(id);
+    });
   });
   document.querySelectorAll("[data-del-med]").forEach((btn) => {
     btn.addEventListener("click", async () => {
