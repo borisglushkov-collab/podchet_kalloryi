@@ -104,7 +104,14 @@ function snapshot() {
       medications: state.profile.medications || [],
       coaching_calorie_target: state.profile.coaching_calorie_target,
     },
-    nutrition: { ...totals, meals: Object.values(mealsByType) },
+    nutrition: (() => {
+      const out = { ...totals, meals: Object.values(mealsByType) };
+      const sources = [...new Set((d.meals || []).map((m) => m.source).filter(Boolean))];
+      // Preserve FatSecret tag so server merge won't treat hub sync as a blank diary.
+      if (sources.length === 1) out.source = sources[0];
+      else if (sources.includes("fatsecret")) out.source = "fatsecret";
+      return out;
+    })(),
     blood_pressure: { readings_today: d.bp, latest: bp, avg_7d: avgBp(7) },
     activity: d.steps == null ? undefined : { steps: Number(d.steps), source: "manual" },
     sleep: d.sleep_min == null ? undefined : {
@@ -256,9 +263,32 @@ async function syncServer() {
   }
 }
 
+/** Sync only pill intake times — avoids full-day snapshot wiping FatSecret meals. */
+async function syncMedsTaken() {
+  const d = day();
+  try {
+    await healthApi.sync({
+      date: d.date,
+      medications_taken: normalizeMedsTaken(d.meds_taken || []),
+    });
+    state.online = true;
+    setOfflineBanner(true);
+  } catch (err) {
+    if (err instanceof ApiError && err.offline) {
+      state.online = false;
+      setOfflineBanner(false);
+    }
+  }
+}
+
 function persist() {
   persistLocal();
   syncServer();
+}
+
+function persistMedsTaken() {
+  persistLocal();
+  syncMedsTaken();
 }
 
 function render() {
@@ -954,7 +984,7 @@ function bind() {
       }
       persistLocal();
       await saveServerProfile(false);
-      persist();
+      persistMedsTaken();
       render();
     });
   });
@@ -962,7 +992,7 @@ function bind() {
     const commit = () => {
       const name = el.dataset.medTime;
       day().meds_taken = setMedTakenTime(day().meds_taken, name, el.value);
-      persist();
+      persistMedsTaken();
       // Do not full-render on every keystroke — keep focus on time field.
     };
     el.addEventListener("change", () => {
@@ -975,7 +1005,7 @@ function bind() {
     state.profile.medications = normalizeMedications(state.profile.medications || []);
     persistLocal();
     await saveServerProfile(true);
-    persist();
+    persistMedsTaken();
   });
   document.getElementById("goto-pills")?.addEventListener("click", () => {
     state.tab = "more";

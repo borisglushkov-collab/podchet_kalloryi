@@ -28,6 +28,53 @@ def test_merge_preserves_fatsecret_when_client_sync_empty():
     assert merged["steps"]["count"] == 4034
 
 
+def test_merge_preserves_fatsecret_when_hub_resyncs_same_count_without_source():
+    """Pill-time full sync used to rebuild meals without source and wipe FatSecret tag."""
+    existing = {
+        "date": "2026-11-02",
+        "nutrition": {
+            "calories": 1603,
+            "source": "fatsecret",
+            "meals": [
+                {"meal_type": "breakfast", "items": [{"name": "A"}, {"name": "B"}]},
+                {"meal_type": "lunch", "items": [{"name": "C"}]},
+            ],
+        },
+    }
+    incoming = {
+        "date": "2026-11-02",
+        "nutrition": {
+            "calories": 1603,
+            "meals": [
+                {"meal_type": "breakfast", "items": [{"name": "A"}, {"name": "B"}]},
+                {"meal_type": "lunch", "items": [{"name": "C"}]},
+            ],
+        },
+        "medications_taken": [{"name": "Эдарби АМ", "time": "08:30"}],
+    }
+    merged = merge_snapshots(existing, incoming)
+    assert merged["nutrition"]["source"] == "fatsecret"
+    assert merged["medications_taken"][0]["time"] == "08:30"
+
+
+def test_merge_meds_only_patch_keeps_nutrition():
+    existing = {
+        "date": "2026-11-02",
+        "nutrition": {
+            "calories": 1603,
+            "source": "fatsecret",
+            "meals": [{"meal_type": "dinner", "items": [{"name": "Суп"}]}],
+        },
+    }
+    merged = merge_snapshots(
+        existing,
+        {"date": "2026-11-02", "medications_taken": [{"name": "Магний", "time": "21:00"}]},
+    )
+    assert merged["nutrition"]["source"] == "fatsecret"
+    assert merged["nutrition"]["meals"][0]["items"][0]["name"] == "Суп"
+    assert merged["medications_taken"] == [{"name": "Магний", "time": "21:00"}]
+
+
 def test_merge_prefers_new_fatsecret_payload():
     existing = {
         "date": "2026-08-19",

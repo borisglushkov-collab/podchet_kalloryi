@@ -31,7 +31,11 @@ def _merge_nutrition(
 
     if incoming_source == "fatsecret":
         return incoming
-    if existing_source == "fatsecret" and incoming_count < existing_count:
+    # Hub client sync often rebuilds meals without source=fatsecret. Never let an
+    # equal/smaller non-FatSecret payload replace a FatSecret diary.
+    if existing_source == "fatsecret" and incoming_source != "fatsecret":
+        if incoming_count > existing_count:
+            return incoming
         return existing
     if incoming_count >= existing_count:
         return incoming
