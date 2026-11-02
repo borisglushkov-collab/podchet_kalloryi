@@ -34,3 +34,27 @@ def test_aggregate_steps_dedupes_same_timestamp():
     result = _aggregate_steps_for_day(items, target)
     assert result is not None
     assert result["count"] == 2800
+
+
+def test_aggregate_steps_exposes_xiaomi_upload_time():
+    target = date(2026, 8, 19)
+    items = [
+        {
+            "time": 1787122800,
+            "update_time": 1787122900,
+            "zone_offset": 10800,
+            "value": '{"steps":1500,"distance":800,"calories":90}',
+        },
+        {
+            "time": 1787130000,
+            "update_time": 1787131200,
+            "zone_offset": 10800,
+            "value": '{"steps":1300,"distance":700,"calories":80}',
+        },
+    ]
+    result = _aggregate_steps_for_day(items, target)
+    assert result is not None
+    assert result["count"] == 2800
+    assert result["samples"] == 2
+    assert result["updated_at"].startswith("2026-08-19T")
+    assert result["sample_at"].startswith("2026-08-19T")

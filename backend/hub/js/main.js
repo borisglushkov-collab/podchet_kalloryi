@@ -4,8 +4,12 @@ import {
   clearManualLocks,
   defaultProfile,
   latestBpReading,
+  mealQtyLabel,
   mergeProfilesLww,
+  normalizeMedications,
+  normalizeMedsTaken,
   nutritionTotals,
+  setMedTakenTime,
   todayIso,
 } from "./logic.js";
 import { ApiError, healthApi } from "./api.js";
@@ -75,14 +79,20 @@ function snapshot() {
   for (const meal of d.meals) {
     const key = meal.meal_type || "snack";
     mealsByType[key] ??= { meal_type: key, items: [] };
-    mealsByType[key].items.push({
+    const item = {
       name: meal.name,
       grams: Number(meal.grams || 0),
       calories: Number(meal.calories || 0),
       protein_g: Number(meal.protein || 0),
       fat_g: Number(meal.fat || 0),
       carbs_g: Number(meal.carbs || 0),
-    });
+    };
+    const qty = mealQtyLabel(meal);
+    if (qty) item.qty_label = qty;
+    if (meal.qty_is_servings != null) item.qty_is_servings = meal.qty_is_servings;
+    if (meal.units != null) item.units = Number(meal.units);
+    if (meal.grams_estimated != null) item.grams_estimated = Number(meal.grams_estimated);
+    mealsByType[key].items.push(item);
   }
   const bp = latestBp();
   return {
@@ -94,7 +104,14 @@ function snapshot() {
       medications: state.profile.medications || [],
       coaching_calorie_target: state.profile.coaching_calorie_target,
     },
-    nutrition: { ...totals, meals: Object.values(mealsByType) },
+    nutrition: (() => {
+      const out = { ...totals, meals: Object.values(mealsByType) };
+      const sources = [...new Set((d.meals || []).map((m) => m.source).filter(Boolean))];
+      // Preserve FatSecret tag so server merge won't treat hub sync as a blank diary.
+      if (sources.length === 1) out.source = sources[0];
+      else if (sources.includes("fatsecret")) out.source = "fatsecret";
+      return out;
+    })(),
     blood_pressure: { readings_today: d.bp, latest: bp, avg_7d: avgBp(7) },
     activity: d.steps == null ? undefined : { steps: Number(d.steps), source: "manual" },
     sleep: d.sleep_min == null ? undefined : {
@@ -124,6 +141,7 @@ function snapshot() {
     } : (d.weight_kg == null ? undefined : { kg: Number(d.weight_kg) }),
     workouts: d.workouts || [],
     notes: d.notes || "",
+    medications_taken: normalizeMedsTaken(d.meds_taken || []),
   };
 }
 
@@ -169,7 +187,11 @@ function formatReport(snap) {
   const n = snap.nutrition || {};
   const mealBits = (n.meals || [])
     .map((meal) => {
-      const names = (meal.items || []).map((i) => i.name).filter(Boolean);
+      const names = (meal.items || []).map((i) => {
+        if (!i?.name) return "";
+        const qty = mealQtyLabel(i);
+        return qty ? `${i.name} (${qty})` : i.name;
+      }).filter(Boolean);
       return names.length ? `${MEAL_RU[meal.meal_type] || meal.meal_type}: ${names.join(", ")}` : "";
     })
     .filter(Boolean);
@@ -190,6 +212,16 @@ function formatReport(snap) {
   }
   const meds = snap.profile?.medications || [];
   if (meds.length) lines.push(`Лекарства: ${meds.join(", ")}`);
+  const taken = normalizeMedsTaken(snap.medications_taken || []);
+  if (meds.length) {
+    const byKey = new Map(taken.map((x) => [x.name.toLowerCase(), x.time]));
+    const marks = meds.map((m) => {
+      const t = byKey.get(String(m).toLowerCase());
+      return t ? `${m} ${t}` : `${m} —`;
+    });
+    lines.push(`Таблетки сегодня: ${marks.join("; ")}`);
+  }
+  if (snap.profile?.height_cm) lines.push(`Рост: ${snap.profile.height_cm} см`);
   const t = snap.profile?.coaching_calorie_target || {};
   if (t.kcal_min || t.kcal_max) {
     lines.push(`Рабочая цель: ${t.kcal_min}–${t.kcal_max} ккал${t.protein_g ? `, Б ${t.protein_g}` : ""}`);
@@ -231,9 +263,32 @@ async function syncServer() {
   }
 }
 
+/** Sync only pill intake times — avoids full-day snapshot wiping FatSecret meals. */
+async function syncMedsTaken() {
+  const d = day();
+  try {
+    await healthApi.sync({
+      date: d.date,
+      medications_taken: normalizeMedsTaken(d.meds_taken || []),
+    });
+    state.online = true;
+    setOfflineBanner(true);
+  } catch (err) {
+    if (err instanceof ApiError && err.offline) {
+      state.online = false;
+      setOfflineBanner(false);
+    }
+  }
+}
+
 function persist() {
   persistLocal();
   syncServer();
+}
+
+function persistMedsTaken() {
+  persistLocal();
+  syncMedsTaken();
 }
 
 function render() {
@@ -276,7 +331,24 @@ function setRefreshBusy(busy) {
 function summarizeCollectedSnapshot(snap) {
   const parts = [];
   const steps = snap.steps?.count ?? snap.activity?.steps;
-  if (steps != null) parts.push(`шаги ${steps}`);
+  if (steps != null) {
+    let bit = `шаги ${steps}`;
+    const upd = snap.steps?.updated_at || snap.steps?.sample_at;
+    if (upd) {
+      const ms = Date.parse(upd);
+      if (Number.isFinite(ms)) {
+        const ageMin = (Date.now() - ms) / 60000;
+        const t = new Date(ms).toLocaleTimeString("ru-RU", {
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: "Europe/Moscow",
+        });
+        if (ageMin >= 90) bit += ` (облако до ${t} — откройте Mi Fitness)`;
+        else bit += ` (до ${t})`;
+      }
+    }
+    parts.push(bit);
+  }
   const mealCount = (snap.nutrition?.meals || []).reduce((n, m) => n + (m.items?.length || 0), 0);
   const mealKcal = snap.nutrition?.calories;
   if (mealCount) parts.push(mealKcal ? `еда ${mealCount} (${Math.round(mealKcal)} ккал)` : `еда ${mealCount}`);
@@ -742,7 +814,23 @@ async function medmLogin() {
   }
 }
 
+function openHealthDetail(id) {
+  if (!id) return;
+  state.healthDetail = id;
+  document.body.classList.add("health-sheet-open");
+  render();
+  document.querySelector(".sheet-back")?.focus();
+}
+
+function closeHealthDetail() {
+  if (!state.healthDetail) return;
+  state.healthDetail = null;
+  document.body.classList.remove("health-sheet-open");
+  render();
+}
+
 function bind() {
+  document.body.classList.toggle("health-sheet-open", Boolean(state.healthDetail));
   document.getElementById("copy-report")?.addEventListener("click", copyReport);
   document.getElementById("share-report")?.addEventListener("click", shareReport);
   document.getElementById("copy-week-report")?.addEventListener("click", copyWeekReport);
@@ -759,6 +847,25 @@ function bind() {
   });
   document.getElementById("ask-coach")?.addEventListener("click", () => {
     state.tab = "coach";
+    render();
+  });
+  document.querySelectorAll("[data-health-tile]").forEach((btn) => {
+    btn.addEventListener("click", () => openHealthDetail(btn.dataset.healthTile));
+  });
+  document.querySelectorAll("[data-health-close]").forEach((el) => {
+    el.addEventListener("click", closeHealthDetail);
+  });
+  document.getElementById("health-add")?.addEventListener("click", () => {
+    state.tab = "add";
+    state.healthDetail = null;
+    document.body.classList.remove("health-sheet-open");
+    render();
+  });
+  document.getElementById("health-manage")?.addEventListener("click", () => {
+    state.tab = "more";
+    state.morePane = "sources";
+    state.healthDetail = null;
+    document.body.classList.remove("health-sheet-open");
     render();
   });
   document.querySelectorAll("[data-more-pane]").forEach((btn) => {
@@ -826,10 +933,9 @@ function bind() {
     });
   });
   document.getElementById("send-coach")?.addEventListener("click", sendCoach);
-  document.getElementById("save-profile")?.addEventListener("click", async () => {
+  document.getElementById("save-params")?.addEventListener("click", async () => {
     const height = val("height");
     state.profile.height_cm = height ? Number(height) : null;
-    state.profile.medications = val("meds").split(",").map((s) => s.trim()).filter(Boolean);
     state.profile.coaching_calorie_target = {
       kcal_min: Number(val("kcal-min") || 1900),
       kcal_max: Number(val("kcal-max") || 2100),
@@ -837,7 +943,74 @@ function bind() {
     };
     day().notes = val("notes");
     persistLocal();
+    const ok = await saveServerProfile(false);
+    toast(ok
+      ? (state.profile.height_cm ? `Параметры сохранены · рост ${state.profile.height_cm} см` : "Параметры сохранены")
+      : "Сохранено локально (сервер недоступен)");
+    persist();
+    render();
+  });
+  async function addMedicationFromInput(inputId) {
+    const name = val(inputId);
+    if (!name) return toast("Введите название лекарства");
+    const next = normalizeMedications([...(state.profile.medications || []), name]);
+    if (next.length === (state.profile.medications || []).length) return toast("Уже в списке");
+    state.profile.medications = next;
+    persistLocal();
+    const ok = await saveServerProfile(false);
+    toast(ok ? `Добавлено: ${name}` : "Добавлено локально (сервер недоступен)");
+    const el = document.getElementById(inputId);
+    if (el) el.value = "";
+    render();
+  }
+  document.querySelectorAll("[data-add-med-input]").forEach((btn) => {
+    btn.addEventListener("click", () => addMedicationFromInput(btn.dataset.addMedInput));
+  });
+  ["med-new", "day-med-new", "addtab-med-new"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      addMedicationFromInput(id);
+    });
+  });
+  document.querySelectorAll("[data-del-med]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const idx = Number(btn.dataset.delMed);
+      const meds = [...(state.profile.medications || [])];
+      const removed = meds.splice(idx, 1)[0];
+      state.profile.medications = meds;
+      if (removed) {
+        day().meds_taken = setMedTakenTime(day().meds_taken, removed, "");
+      }
+      persistLocal();
+      await saveServerProfile(false);
+      persistMedsTaken();
+      render();
+    });
+  });
+  document.querySelectorAll("[data-med-time]").forEach((el) => {
+    const commit = () => {
+      const name = el.dataset.medTime;
+      day().meds_taken = setMedTakenTime(day().meds_taken, name, el.value);
+      persistMedsTaken();
+      // Do not full-render on every keystroke — keep focus on time field.
+    };
+    el.addEventListener("change", () => {
+      commit();
+      render();
+    });
+    el.addEventListener("blur", commit);
+  });
+  document.getElementById("save-meds")?.addEventListener("click", async () => {
+    state.profile.medications = normalizeMedications(state.profile.medications || []);
+    persistLocal();
     await saveServerProfile(true);
+    persistMedsTaken();
+  });
+  document.getElementById("goto-pills")?.addEventListener("click", () => {
+    state.tab = "more";
+    state.morePane = "pills";
+    render();
   });
   document.getElementById("unlock-cloud")?.addEventListener("click", async () => {
     clearManualLocks(day());
@@ -891,9 +1064,17 @@ function wireShell() {
   document.querySelectorAll(".tabs button").forEach((btn) => {
     btn.addEventListener("click", async () => {
       state.tab = btn.dataset.tab;
+      state.healthDetail = null;
+      document.body.classList.remove("health-sheet-open");
       if (state.tab === "week") await loadWeek();
       render();
     });
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && state.healthDetail) {
+      e.preventDefault();
+      closeHealthDetail();
+    }
   });
   window.addEventListener("online", () => {
     state.online = true;

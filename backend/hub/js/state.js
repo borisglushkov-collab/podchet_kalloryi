@@ -24,7 +24,7 @@ export function saveJson(key, value) {
 export const state = {
   date: todayIso(),
   tab: "today",
-  morePane: "sources", // sources | profile
+  morePane: "sources", // sources | params | pills
   days: loadJson(STORAGE_DAYS, {}),
   profile: { ...defaultProfile(), ...loadJson(STORAGE_PROFILE, {}) },
   chat: loadJson(STORAGE_CHAT, []),
@@ -40,6 +40,7 @@ export const state = {
   online: typeof navigator === "undefined" ? true : navigator.onLine,
   lastError: null,
   coachReportOpen: false,
+  healthDetail: null, // sleep | steps | heart | activity | bp | weight | workouts
   assetVersion: document.querySelector('meta[name="hub-version"]')?.content || "dev",
 };
 

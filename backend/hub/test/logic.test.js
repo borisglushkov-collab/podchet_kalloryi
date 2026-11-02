@@ -2,13 +2,24 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   applySnapshotToDay,
+  buildHealthTiles,
   clearManualLocks,
   emptyDay,
+  formatSleepDuration,
   hasManualLocks,
   importNutritionMeals,
   latestBpReading,
+  mealQtyLabel,
   mergeProfilesLww,
+  normalizeMedications,
+  normalizeMedsTaken,
+  normalizeMedTime,
+  normalizeNutritionItem,
+  setMedTakenTime,
+  sleepQualityLabel,
+  stepsCloudHint,
   syncTone,
+  medTakenTime,
   weekGoalStats,
 } from "../js/logic.js";
 
@@ -36,6 +47,56 @@ test("FatSecret meals replace when incoming has items", () => {
   assert.equal(d.meals[0].source, "fatsecret");
 });
 
+test("mealQtyLabel shows FatSecret servings and real grams", () => {
+  assert.equal(mealQtyLabel({ grams: 0.3 }), "×0.3 ед. FatSecret");
+  assert.equal(mealQtyLabel({ grams: 192 }), "192 г");
+  assert.equal(mealQtyLabel({ qty_label: "150 г" }), "150 г");
+  assert.equal(
+    mealQtyLabel({ number_of_units: 4, food_entry_description: "100 g" }),
+    "400 г",
+  );
+  assert.equal(
+    mealQtyLabel({ grams: 192, food_entry_description: "192 g" }),
+    "192 г",
+  );
+  assert.equal(
+    mealQtyLabel({
+      number_of_units: 1.3,
+      food_entry_description: "1.3 servings Пятерочка Помидоры",
+    }),
+    "130 г",
+  );
+  assert.equal(
+    mealQtyLabel({
+      number_of_units: 1.23,
+      food_entry_description: "1.23 servings Мираторг Шашлык из Свиной Шейки",
+    }),
+    "123 г",
+  );
+  assert.equal(
+    mealQtyLabel({
+      number_of_units: 1,
+      food_entry_description: "1 medium Банан",
+      metric_serving_grams: 118,
+    }),
+    "118 г",
+  );
+});
+
+test("normalizeNutritionItem keeps qty fields from FatSecret", () => {
+  const row = normalizeNutritionItem({
+    name: "Омлет",
+    grams: 1,
+    calories: 200,
+    qty_label: "×1 ед. FatSecret",
+    qty_is_servings: true,
+  });
+  assert.equal(row.qty_label, "×1 ед. FatSecret");
+  assert.equal(row.qty_is_servings, true);
+  const inferred = normalizeNutritionItem({ name: "Огурец", grams: 192, calories: 29 });
+  assert.equal(inferred.qty_label, "192 г");
+});
+
 test("force refresh clears sleep when cloud reports null", () => {
   const d = emptyDay("2026-09-02");
   d.sleep_min = 420;
@@ -49,16 +110,33 @@ test("force refresh clears sleep when cloud reports null", () => {
   assert.equal(d.sleep_deep_min, null);
 });
 
-test("manual locks block cloud overwrite", () => {
+test("manual locks block passive cloud overwrite", () => {
   const d = emptyDay("2026-08-20");
   d.steps = 100;
   d.locks.steps = true;
-  applySnapshotToDay(d, { steps: { count: 5000 }, source: "mi_fitness_auto" }, { force: true });
+  applySnapshotToDay(d, { steps: { count: 5000 }, source: "mi_fitness_auto" }, { force: false });
   assert.equal(d.steps, 100);
-  clearManualLocks(d);
-  applySnapshotToDay(d, { steps: { count: 5000 }, source: "mi_fitness_auto" }, { force: true });
+  assert.equal(d.locks.steps, true);
+});
+
+test("force refresh overrides manual step lock", () => {
+  const d = emptyDay("2026-08-20");
+  d.steps = 100;
+  d.locks.steps = true;
+  applySnapshotToDay(d, { steps: { count: 5000, source: "mi_fitness" }, source: "mi_fitness_auto" }, { force: true });
   assert.equal(d.steps, 5000);
+  assert.equal(d.locks.steps, false);
   assert.equal(hasManualLocks(d), false);
+});
+
+test("empty step lock does not hide cloud steps", () => {
+  const d = emptyDay("2026-08-20");
+  d.steps = null;
+  d.locks.steps = true;
+  applySnapshotToDay(d, { steps: { count: 12166, source: "mi_fitness" }, source: "mi_fitness_auto" }, { force: false });
+  assert.equal(d.steps, 12166);
+  assert.equal(d.locks.steps, false);
+  clearManualLocks(d);
 });
 
 test("Mi Fitness steps store distance and activity calories", () => {
@@ -145,4 +223,120 @@ test("profile merge last-write-wins", () => {
   );
   assert.equal(b.winner, "server");
   assert.equal(b.profile.height_cm, 170);
+});
+
+test("formatSleepDuration and sleep quality", () => {
+  assert.equal(formatSleepDuration(401), "6 ч 41 мин");
+  assert.equal(formatSleepDuration(45), "45 мин");
+  assert.equal(sleepQualityLabel(401), "Хорошо");
+  assert.equal(sleepQualityLabel(480), "Отлично");
+});
+
+test("buildHealthTiles wires available day metrics", () => {
+  const d = emptyDay("2026-09-28");
+  d.sleep_min = 401;
+  d.sleep_deep_min = 63;
+  d.sleep_light_min = 245;
+  d.sleep_rem_min = 93;
+  d.steps = 6244;
+  d.steps_distance_m = 3755;
+  d.steps_calories = 312;
+  d.heart_rate = { avg: 74, min: 49, max: 115, samples: 117 };
+  d.bp = [{ systolic: 139, diastolic: 87, pulse: 72, measured_at: "2026-09-28T10:00:00", source: "medm" }];
+  d.weight_kg = 111.3;
+  d.workouts = [{ name: "Ходьба", duration_min: 10, calories: 49 }];
+  const tiles = buildHealthTiles(d, { miConnected: true, dateLabel: "28 сентября" });
+  assert.equal(tiles.length, 7);
+  const byId = Object.fromEntries(tiles.map((t) => [t.id, t]));
+  assert.equal(byId.sleep.value, "6 ч 41 мин");
+  assert.equal(byId.sleep.empty, false);
+  assert.equal(byId.steps.value, "6244");
+  assert.equal(byId.heart.value, "74");
+  assert.equal(byId.activity.value, "312");
+  assert.equal(byId.bp.value, "139/87");
+  assert.equal(byId.weight.value, "111.3");
+  assert.equal(byId.workouts.value, "1");
+  assert.ok(byId.sleep.sub.includes("28 сентября"));
+});
+
+test("buildHealthTiles keeps empty placeholders", () => {
+  const tiles = buildHealthTiles(emptyDay("2026-09-28"), { miConnected: true });
+  assert.equal(tiles.length, 7);
+  assert.ok(tiles.every((t) => t.empty));
+  assert.equal(tiles.find((t) => t.id === "sleep").value, "Нет данных");
+});
+
+test("stepsCloudHint warns when Xiaomi upload is stale", () => {
+  const now = Date.parse("2026-10-21T21:00:00+03:00");
+  const stale = stepsCloudHint(
+    { steps_updated_at: "2026-10-21T14:13:14+03:00" },
+    { now, staleMinutes: 90 },
+  );
+  assert.match(stale, /облако до 14:13/);
+  assert.match(stale, /Mi Fitness/);
+  const fresh = stepsCloudHint(
+    { steps_updated_at: "2026-10-21T20:30:00+03:00" },
+    { now, staleMinutes: 90 },
+  );
+  assert.match(fresh, /^облако 20:30/);
+  assert.equal(fresh.includes("откройте"), false);
+});
+
+test("applySnapshotToDay keeps Xiaomi step freshness", () => {
+  const d = emptyDay("2026-10-21");
+  applySnapshotToDay(
+    d,
+    {
+      source: "mi_fitness_auto",
+      steps: {
+        count: 2186,
+        distance_m: 1298,
+        calories: 146,
+        source: "mi_fitness",
+        updated_at: "2026-10-21T14:13:14+03:00",
+        sample_at: "2026-10-21T14:10:00+03:00",
+      },
+    },
+    { force: true },
+  );
+  assert.equal(d.steps, 2186);
+  assert.equal(d.steps_updated_at, "2026-10-21T14:13:14+03:00");
+  assert.equal(d.steps_sample_at, "2026-10-21T14:10:00+03:00");
+});
+
+test("normalizeMedications dedupes and trims", () => {
+  assert.deepEqual(
+    normalizeMedications([" Эдарби АМ 40+5 ", "эдарби ам 40+5", "Магний", ""]),
+    ["Эдарби АМ 40+5", "Магний"],
+  );
+  assert.deepEqual(normalizeMedications("A, B, a"), ["A", "B"]);
+});
+
+test("med intake stores name and time", () => {
+  assert.equal(normalizeMedTime("8:30"), "08:30");
+  assert.equal(normalizeMedTime("08.05"), "08:05");
+  let taken = setMedTakenTime([], "Эдарби АМ", "8:30");
+  assert.deepEqual(taken, [{ name: "Эдарби АМ", time: "08:30" }]);
+  assert.equal(medTakenTime(taken, "Эдарби АМ"), "08:30");
+  taken = setMedTakenTime(taken, "Эдарби АМ", "");
+  assert.deepEqual(taken, []);
+});
+
+test("normalizeMedsTaken migrates legacy name list", () => {
+  // Legacy name-only marks without time are dropped (need explicit time now).
+  assert.deepEqual(normalizeMedsTaken(["Эдарби АМ", ""]), []);
+  assert.deepEqual(
+    normalizeMedsTaken([{ name: "Магний", time: "21:00" }, "Магний"]),
+    [{ name: "Магний", time: "21:00" }],
+  );
+});
+
+test("applySnapshotToDay restores medications_taken with times", () => {
+  const d = emptyDay("2026-10-31");
+  applySnapshotToDay(
+    d,
+    { medications_taken: [{ name: "Эдарби АМ", time: "08:15" }, ""] },
+    { force: true },
+  );
+  assert.deepEqual(d.meds_taken, [{ name: "Эдарби АМ", time: "08:15" }]);
 });
