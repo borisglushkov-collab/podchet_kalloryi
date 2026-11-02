@@ -5,6 +5,7 @@ import {
   hasManualLocks,
   latestBpReading,
   mealQtyLabel,
+  medTakenTime,
   nutritionTotals,
   sleepQualityLabel,
   sortBpNewestFirst,
@@ -587,12 +588,9 @@ export function renderAdd() {
     </div>
     <div class="card wide form lift">
       <h2>Таблетки</h2>
-      <p class="hint">Постоянный список лекарств (сохраняется в профиле)</p>
+      <p class="hint">Название и время приёма за сегодня</p>
       <ul class="pill-list">${(state.profile.medications || []).length
-        ? (state.profile.medications || []).map((name, i) => `<li class="pill-row">
-            <span class="pill-check"><span>${escapeAttr(name)}</span></span>
-            <button type="button" class="btn ghost pill-del" data-del-med="${i}" aria-label="Удалить">✕</button>
-          </li>`).join("")
+        ? (state.profile.medications || []).map((name, i) => renderMedTimeRow(name, { index: i, showDelete: true })).join("")
         : `<li class="pill-empty">Пока пусто</li>`}</ul>
       ${renderPillAddFields("addtab-med")}
     </div>`;
@@ -715,26 +713,35 @@ function renderParamsPane() {
     <p class="hint">Android: Chrome → «Добавить на главный экран»</p>`;
 }
 
+function renderMedTimeRow(name, opts = {}) {
+  const { index = null, showDelete = false } = opts;
+  const time = medTakenTime(day().meds_taken, name);
+  const del = showDelete && index != null
+    ? `<button type="button" class="btn ghost pill-del" data-del-med="${index}" aria-label="Удалить">✕</button>`
+    : "";
+  return `<li class="pill-row">
+    <span class="pill-name">${escapeAttr(name)}</span>
+    <input
+      class="pill-time"
+      type="time"
+      data-med-time="${escapeAttr(name)}"
+      value="${escapeAttr(time)}"
+      aria-label="Время приёма ${escapeAttr(name)}"
+    />
+    ${del}
+  </li>`;
+}
+
 function renderPillsPane() {
   const meds = state.profile.medications || [];
-  const taken = new Set((day().meds_taken || []).map((m) => String(m).toLowerCase()));
   const rows = meds.length
-    ? meds.map((name, i) => {
-        const on = taken.has(String(name).toLowerCase());
-        return `<li class="pill-row">
-          <label class="pill-check">
-            <input type="checkbox" data-med-taken="${escapeAttr(name)}" ${on ? "checked" : ""} />
-            <span>${escapeAttr(name)}</span>
-          </label>
-          <button type="button" class="btn ghost pill-del" data-del-med="${i}" aria-label="Удалить">✕</button>
-        </li>`;
-      }).join("")
+    ? meds.map((name, i) => renderMedTimeRow(name, { index: i, showDelete: true })).join("")
     : `<li class="pill-empty">Пока пусто — добавьте, например «Эдарби АМ 40+5»</li>`;
-  const takenCount = meds.filter((n) => taken.has(String(n).toLowerCase())).length;
+  const timed = meds.filter((n) => medTakenTime(day().meds_taken, n)).length;
   return `
     <div class="card wide form lift">
       <h2>Таблетки</h2>
-      <p class="hint">Список лекарств и отметка «принял» за ${state.date}${meds.length ? ` · сегодня ${takenCount}/${meds.length}` : ""}</p>
+      <p class="hint">Название и время приёма за ${state.date}${meds.length ? ` · отмечено ${timed}/${meds.length}` : ""}</p>
       <ul class="pill-list">${rows}</ul>
       ${renderPillAddFields("med")}
       <button class="btn soft" id="save-meds" type="button">Сохранить список на сервере</button>
@@ -753,21 +760,14 @@ function renderPillAddFields(idPrefix = "med") {
 
 export function renderPillsTodayCard() {
   const meds = state.profile.medications || [];
-  const taken = new Set((day().meds_taken || []).map((m) => String(m).toLowerCase()));
-  const takenCount = meds.filter((n) => taken.has(String(n).toLowerCase())).length;
+  const timed = meds.filter((n) => medTakenTime(day().meds_taken, n)).length;
   const rows = meds.length
-    ? meds.map((name) => {
-        const on = taken.has(String(name).toLowerCase());
-        return `<label class="pill-check">
-          <input type="checkbox" data-med-taken="${escapeAttr(name)}" ${on ? "checked" : ""} />
-          <span>${escapeAttr(name)}</span>
-        </label>`;
-      }).join("")
+    ? `<ul class="pill-list">${meds.map((name) => renderMedTimeRow(name)).join("")}</ul>`
     : `<p class="hint">Пока пусто — добавьте название ниже</p>`;
   return `<div class="card wide form lift pills-today">
     <h2>Таблетки</h2>
-    <div class="sub">${meds.length ? `${takenCount}/${meds.length} сегодня` : "Список для коуча и отметки за день"}</div>
-    <div class="pill-today-list">${rows}</div>
+    <div class="sub">${meds.length ? `${timed}/${meds.length} с временем сегодня` : "Название и время приёма"}</div>
+    ${rows}
     ${renderPillAddFields("day-med")}
     <button class="btn soft" id="goto-pills" type="button">Открыть раздел «Таблетки»</button>
   </div>`;

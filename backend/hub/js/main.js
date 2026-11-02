@@ -7,9 +7,10 @@ import {
   mealQtyLabel,
   mergeProfilesLww,
   normalizeMedications,
+  normalizeMedsTaken,
   nutritionTotals,
+  setMedTakenTime,
   todayIso,
-  toggleMedTaken,
 } from "./logic.js";
 import { ApiError, healthApi } from "./api.js";
 import { state, day, dayFor, persistLocal, saveJson, STORAGE_DAYS, STORAGE_PROFILE, STORAGE_CHAT } from "./state.js";
@@ -133,7 +134,7 @@ function snapshot() {
     } : (d.weight_kg == null ? undefined : { kg: Number(d.weight_kg) }),
     workouts: d.workouts || [],
     notes: d.notes || "",
-    medications_taken: normalizeMedications(d.meds_taken || []),
+    medications_taken: normalizeMedsTaken(d.meds_taken || []),
   };
 }
 
@@ -204,10 +205,13 @@ function formatReport(snap) {
   }
   const meds = snap.profile?.medications || [];
   if (meds.length) lines.push(`Лекарства: ${meds.join(", ")}`);
-  const taken = snap.medications_taken || [];
+  const taken = normalizeMedsTaken(snap.medications_taken || []);
   if (meds.length) {
-    const takenSet = new Set(taken.map((m) => String(m).toLowerCase()));
-    const marks = meds.map((m) => `${m}${takenSet.has(String(m).toLowerCase()) ? " ✓" : ""}`);
+    const byKey = new Map(taken.map((x) => [x.name.toLowerCase(), x.time]));
+    const marks = meds.map((m) => {
+      const t = byKey.get(String(m).toLowerCase());
+      return t ? `${m} ${t}` : `${m} —`;
+    });
     lines.push(`Таблетки сегодня: ${marks.join("; ")}`);
   }
   if (snap.profile?.height_cm) lines.push(`Рост: ${snap.profile.height_cm} см`);
@@ -946,7 +950,7 @@ function bind() {
       const removed = meds.splice(idx, 1)[0];
       state.profile.medications = meds;
       if (removed) {
-        day().meds_taken = toggleMedTaken(day().meds_taken, removed, false);
+        day().meds_taken = setMedTakenTime(day().meds_taken, removed, "");
       }
       persistLocal();
       await saveServerProfile(false);
@@ -954,13 +958,18 @@ function bind() {
       render();
     });
   });
-  document.querySelectorAll("[data-med-taken]").forEach((el) => {
-    el.addEventListener("change", () => {
-      const name = el.dataset.medTaken;
-      day().meds_taken = toggleMedTaken(day().meds_taken, name, el.checked);
+  document.querySelectorAll("[data-med-time]").forEach((el) => {
+    const commit = () => {
+      const name = el.dataset.medTime;
+      day().meds_taken = setMedTakenTime(day().meds_taken, name, el.value);
       persist();
+      // Do not full-render on every keystroke — keep focus on time field.
+    };
+    el.addEventListener("change", () => {
+      commit();
       render();
     });
+    el.addEventListener("blur", commit);
   });
   document.getElementById("save-meds")?.addEventListener("click", async () => {
     state.profile.medications = normalizeMedications(state.profile.medications || []);

@@ -12,11 +12,14 @@ import {
   mealQtyLabel,
   mergeProfilesLww,
   normalizeMedications,
+  normalizeMedsTaken,
+  normalizeMedTime,
   normalizeNutritionItem,
+  setMedTakenTime,
   sleepQualityLabel,
   stepsCloudHint,
   syncTone,
-  toggleMedTaken,
+  medTakenTime,
   weekGoalStats,
 } from "../js/logic.js";
 
@@ -309,15 +312,31 @@ test("normalizeMedications dedupes and trims", () => {
   assert.deepEqual(normalizeMedications("A, B, a"), ["A", "B"]);
 });
 
-test("toggleMedTaken marks daily adherence", () => {
-  let taken = toggleMedTaken([], "Эдарби АМ", true);
-  assert.deepEqual(taken, ["Эдарби АМ"]);
-  taken = toggleMedTaken(taken, "Эдарби АМ", false);
+test("med intake stores name and time", () => {
+  assert.equal(normalizeMedTime("8:30"), "08:30");
+  assert.equal(normalizeMedTime("08.05"), "08:05");
+  let taken = setMedTakenTime([], "Эдарби АМ", "8:30");
+  assert.deepEqual(taken, [{ name: "Эдарби АМ", time: "08:30" }]);
+  assert.equal(medTakenTime(taken, "Эдарби АМ"), "08:30");
+  taken = setMedTakenTime(taken, "Эдарби АМ", "");
   assert.deepEqual(taken, []);
 });
 
-test("applySnapshotToDay restores medications_taken", () => {
+test("normalizeMedsTaken migrates legacy name list", () => {
+  // Legacy name-only marks without time are dropped (need explicit time now).
+  assert.deepEqual(normalizeMedsTaken(["Эдарби АМ", ""]), []);
+  assert.deepEqual(
+    normalizeMedsTaken([{ name: "Магний", time: "21:00" }, "Магний"]),
+    [{ name: "Магний", time: "21:00" }],
+  );
+});
+
+test("applySnapshotToDay restores medications_taken with times", () => {
   const d = emptyDay("2026-10-31");
-  applySnapshotToDay(d, { medications_taken: ["Эдарби АМ", ""] }, { force: true });
-  assert.deepEqual(d.meds_taken, ["Эдарби АМ"]);
+  applySnapshotToDay(
+    d,
+    { medications_taken: [{ name: "Эдарби АМ", time: "08:15" }, ""] },
+    { force: true },
+  );
+  assert.deepEqual(d.meds_taken, [{ name: "Эдарби АМ", time: "08:15" }]);
 });

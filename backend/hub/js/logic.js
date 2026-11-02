@@ -62,18 +62,78 @@ export function normalizeMedications(list) {
   return out;
 }
 
-export function toggleMedTaken(takenList, name, taken) {
-  const med = String(name || "").trim();
-  if (!med) return normalizeMedications(takenList);
-  const cur = new Set(normalizeMedications(takenList).map((x) => x.toLowerCase()));
-  const key = med.toLowerCase();
-  if (taken) cur.add(key);
-  else cur.delete(key);
-  // Preserve display names from the union of previous + this med.
+/** HH:MM or empty; accepts "8:30", "08.30", "0830". */
+export function normalizeMedTime(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  const m = s.match(/^(\d{1,2})[:.hH]?(\d{2})$/);
+  if (!m) return "";
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh > 23 || mm > 59) return "";
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+/**
+ * Daily intake log: [{ name, time }].
+ * Migrates legacy string[] (names only) to objects with empty time.
+ */
+export function normalizeMedsTaken(list) {
+  const raw = Array.isArray(list) ? list : [];
   const byKey = new Map();
-  for (const n of normalizeMedications(takenList)) byKey.set(n.toLowerCase(), n);
-  byKey.set(key, med);
-  return [...cur].map((k) => byKey.get(k)).filter(Boolean);
+  for (const item of raw) {
+    let name = "";
+    let time = "";
+    if (typeof item === "string") {
+      name = item.trim().replace(/\s+/g, " ");
+    } else if (item && typeof item === "object") {
+      name = String(item.name || item.medication || "").trim().replace(/\s+/g, " ");
+      time = normalizeMedTime(item.time || item.taken_at || item.at || "");
+    }
+    if (!name) continue;
+    const key = name.toLowerCase();
+    const prev = byKey.get(key);
+    // Prefer entry that already has a time.
+    if (!prev || (!prev.time && time)) byKey.set(key, { name, time });
+  }
+  // Only keep intakes that have a time — empty means «ещё не принял».
+  return [...byKey.values()].filter((x) => x.time);
+}
+
+export function medTakenTime(takenList, name) {
+  const key = String(name || "").trim().toLowerCase();
+  if (!key) return "";
+  const hit = normalizeMedsTaken(takenList).find((x) => x.name.toLowerCase() === key);
+  return hit?.time || "";
+}
+
+export function setMedTakenTime(takenList, name, time) {
+  const med = String(name || "").trim().replace(/\s+/g, " ");
+  if (!med) return normalizeMedsTaken(takenList);
+  const t = normalizeMedTime(time);
+  const key = med.toLowerCase();
+  const next = normalizeMedsTaken(takenList).filter((x) => x.name.toLowerCase() !== key);
+  if (t) next.push({ name: med, time: t });
+  // Keep stable order: existing first, then newly timed.
+  return next;
+}
+
+/** @deprecated checkbox API — maps to set/clear time (now / empty). */
+export function toggleMedTaken(takenList, name, taken) {
+  if (taken) {
+    const existing = medTakenTime(takenList, name);
+    return setMedTakenTime(takenList, name, existing || currentTimeHm());
+  }
+  return setMedTakenTime(takenList, name, "");
+}
+
+function currentTimeHm(date = new Date()) {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Moscow",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
 export function countNutritionItems(nutrition) {
@@ -309,7 +369,7 @@ export function applySnapshotToDay(d, snap, { force = false, onWeight } = {}) {
 
   importNutritionMeals(d, snap.nutrition, force);
   if (Array.isArray(snap.medications_taken)) {
-    d.meds_taken = normalizeMedications(snap.medications_taken);
+    d.meds_taken = normalizeMedsTaken(snap.medications_taken);
   }
   return d;
 }
