@@ -221,6 +221,18 @@ def format_day_report(snapshot: dict[str, Any]) -> str:
     meds = [str(m) for m in (profile.get("medications") or []) if str(m).strip()]
     if meds:
         lines.append("Лекарства: " + ", ".join(meds))
+    taken = snapshot.get("medications_taken") or []
+    taken_bits = []
+    for item in taken:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        t = str(item.get("time") or "").strip()
+        taken_bits.append(f"{name} {t}".strip())
+    if taken_bits:
+        lines.append("Приём: " + "; ".join(taken_bits))
     if targets.get("kcal_min") or targets.get("kcal_max"):
         lines.append(
             f"Рабочая цель: {targets.get('kcal_min', '?')}–{targets.get('kcal_max', '?')} ккал"

@@ -78,6 +78,19 @@ def test_format_day_report_qty_and_short_sleep():
     assert "короткая сессия" in text
 
 
+def test_format_day_report_includes_medications_taken():
+    text = format_day_report(
+        {
+            "date": "2026-11-16",
+            "medications_taken": [
+                {"name": "Эдарби АМ 40+5", "time": "09:27"},
+                {"name": "Эдарби 20 мг", "time": "21:16"},
+            ],
+        }
+    )
+    assert "Приём: Эдарби АМ 40+5 09:27; Эдарби 20 мг 21:16" in text
+
+
 def test_format_week_report_averages():
     text = format_week_report(
         [

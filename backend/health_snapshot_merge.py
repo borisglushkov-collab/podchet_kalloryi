@@ -91,6 +91,36 @@ def _merge_activity(
     return existing
 
 
+def _med_key(item: dict[str, Any]) -> tuple[str, str]:
+    return (str(item.get("name") or "").strip().lower(), str(item.get("time") or "").strip())
+
+
+def _merge_medications_taken(
+    existing: list[Any] | None,
+    incoming: list[Any] | None,
+) -> list[dict[str, Any]] | None:
+    """Union by name+time so a coach sync does not wipe earlier doses."""
+    if incoming is None:
+        return existing
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for src in (existing or []) + list(incoming):
+        if not isinstance(src, dict):
+            continue
+        name = str(src.get("name") or "").strip()
+        if not name:
+            continue
+        key = _med_key({"name": name, "time": src.get("time")})
+        if key in seen:
+            continue
+        seen.add(key)
+        row = {"name": name}
+        if src.get("time"):
+            row["time"] = str(src["time"]).strip()
+        rows.append(row)
+    return rows
+
+
 def merge_snapshots(existing: dict[str, Any] | None, incoming: dict[str, Any]) -> dict[str, Any]:
     """Merge incoming snapshot into existing without dropping richer auto-collected fields."""
     if not existing:
@@ -121,6 +151,13 @@ def merge_snapshots(existing: dict[str, Any] | None, incoming: dict[str, Any]) -
                 out["activity"] = merged
         elif key == "notes" and not str(value).strip():
             continue
+        elif key == "medications_taken":
+            merged = _merge_medications_taken(
+                existing.get("medications_taken") if isinstance(existing.get("medications_taken"), list) else None,
+                value if isinstance(value, list) else None,
+            )
+            if merged is not None:
+                out["medications_taken"] = merged
         else:
             out[key] = value
 

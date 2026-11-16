@@ -51,3 +51,32 @@ def test_merge_prefers_new_fatsecret_payload():
     merged = merge_snapshots(existing, incoming)
     assert merged["nutrition"]["calories"] == 1138
     assert len(merged["nutrition"]["meals"]) == 2
+
+
+def test_merge_medications_taken_appends_without_wiping():
+    existing = {
+        "date": "2026-11-16",
+        "medications_taken": [{"name": "Эдарби АМ 40+5", "time": "09:27"}],
+    }
+    incoming = {
+        "date": "2026-11-16",
+        "medications_taken": [{"name": "Эдарби 20 мг", "time": "21:16"}],
+    }
+    merged = merge_snapshots(existing, incoming)
+    assert merged["medications_taken"] == [
+        {"name": "Эдарби АМ 40+5", "time": "09:27"},
+        {"name": "Эдарби 20 мг", "time": "21:16"},
+    ]
+
+
+def test_merge_medications_taken_dedupes():
+    existing = {
+        "date": "2026-11-16",
+        "medications_taken": [{"name": "Эдарби АМ 40+5", "time": "09:27"}],
+    }
+    incoming = {
+        "date": "2026-11-16",
+        "medications_taken": [{"name": "Эдарби АМ 40+5", "time": "09:27"}],
+    }
+    merged = merge_snapshots(existing, incoming)
+    assert len(merged["medications_taken"]) == 1
